@@ -1,10 +1,9 @@
 {
-  "totalVisitors": 1422,
-  "totalPageViews": 3892,
+  "totalVisitors": 0,
+  "totalPageViews": 0,
   "todayDate": "2026-09-11",
-  "todayVisitors": 30,
-  "sessions": [
-    "sess_1789105700524_3wtfsi1",
-    "sess_1789105700524_3wtfsi1"
-  ]
+  "todayVisitors": 0,
+  "sessions": [],
+  "uniqueVisitors": [],
+  "todayVisitorsList": []
 }

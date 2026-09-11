@@ -27,6 +27,8 @@ interface VisitorStats {
   todayDate: string;
   todayVisitors: number;
   sessions: string[];
+  uniqueVisitors?: string[];
+  todayVisitorsList?: string[];
 }
 
 function loadVisitorStats(): VisitorStats {
@@ -39,6 +41,13 @@ function loadVisitorStats(): VisitorStats {
         data.todayDate = today;
         data.todayVisitors = 0;
         data.sessions = [];
+        data.todayVisitorsList = [];
+      }
+      if (!Array.isArray(data.uniqueVisitors)) {
+        data.uniqueVisitors = Array.isArray(data.sessions) ? [...data.sessions] : [];
+      }
+      if (!Array.isArray(data.todayVisitorsList)) {
+        data.todayVisitorsList = [];
       }
       return data;
     }
@@ -46,11 +55,13 @@ function loadVisitorStats(): VisitorStats {
     console.error('Error loading visitor stats:', err);
   }
   return {
-    totalVisitors: 1420,
-    totalPageViews: 3890,
+    totalVisitors: 0,
+    totalPageViews: 0,
     todayDate: today,
-    todayVisitors: 28,
+    todayVisitors: 0,
     sessions: [],
+    uniqueVisitors: [],
+    todayVisitorsList: [],
   };
 }
 
@@ -329,27 +340,56 @@ async function startServer(): Promise<void> {
 
   /**
    * API Route: POST /api/visitors/hit
-   * Registers a new pageview or visitor session and increments total count.
+   * Registers a real pageview or visitor session and accurately increments total counts.
    */
   app.post('/api/visitors/hit', (req: Request, res: Response) => {
     try {
-      const { sessionId, isNewSession } = req.body || {};
+      const { visitorId, sessionId, isNewSession } = req.body || {};
       const stats = loadVisitorStats();
 
       stats.totalPageViews += 1;
 
+      const vid = typeof visitorId === 'string' && visitorId.trim() ? visitorId.trim() : null;
       const sid = typeof sessionId === 'string' && sessionId.trim() ? sessionId.trim() : null;
+      const uniqueId = vid || sid;
 
-      if (isNewSession || (sid && !stats.sessions.includes(sid))) {
+      if (!Array.isArray(stats.uniqueVisitors)) {
+        stats.uniqueVisitors = Array.isArray(stats.sessions) ? [...stats.sessions] : [];
+      }
+      if (!Array.isArray(stats.todayVisitorsList)) {
+        stats.todayVisitorsList = [];
+      }
+
+      if (uniqueId) {
+        // Only increment total unique visitors if this device/browser hasn't visited before
+        if (!stats.uniqueVisitors.includes(uniqueId)) {
+          stats.uniqueVisitors.push(uniqueId);
+          stats.totalVisitors += 1;
+        }
+
+        // Only increment todayVisitors if this user hasn't visited today
+        if (!stats.todayVisitorsList.includes(uniqueId)) {
+          stats.todayVisitorsList.push(uniqueId);
+          stats.todayVisitors += 1;
+        }
+
+        if (sid && !stats.sessions.includes(sid)) {
+          stats.sessions.push(sid);
+        }
+
+        // Cap arrays to avoid unlimited memory growth
+        if (stats.uniqueVisitors.length > 20000) {
+          stats.uniqueVisitors = stats.uniqueVisitors.slice(-10000);
+        }
+        if (stats.todayVisitorsList.length > 5000) {
+          stats.todayVisitorsList = stats.todayVisitorsList.slice(-2000);
+        }
+        if (stats.sessions.length > 5000) {
+          stats.sessions = stats.sessions.slice(-2000);
+        }
+      } else if (isNewSession) {
         stats.totalVisitors += 1;
         stats.todayVisitors += 1;
-        if (sid) {
-          stats.sessions.push(sid);
-          // Keep session list capped to prevent infinite memory expansion
-          if (stats.sessions.length > 2000) {
-            stats.sessions = stats.sessions.slice(-1000);
-          }
-        }
       }
 
       saveVisitorStats(stats);

@@ -44,8 +44,6 @@ const ROLE_CAREER_OBJECTIVES: Record<TargetRoleType, string> = {
 };
 
 export default function ResumeBuilderModal({ isOpen, onClose, onOpenCoverLetter }: ResumeBuilderModalProps) {
-  if (!isOpen) return null;
-
   const [isAdmin, setIsAdmin] = useState<boolean>(() => isAdminAuthenticated());
   const [isPasscodeModalOpen, setIsPasscodeModalOpen] = useState<boolean>(false);
 
@@ -462,6 +460,8 @@ Software Quality Assurance Engineer`;
     return () => window.removeEventListener('admin_auth_changed', handleAuth);
   }, []);
 
+  if (!isOpen) return null;
+
   if (!isAdmin) {
     return (
       <>
@@ -496,16 +496,18 @@ Software Quality Assurance Engineer`;
           </div>
         </div>
 
-        <AdminPasscodeModal
-          isOpen={isPasscodeModalOpen}
-          onClose={() => setIsPasscodeModalOpen(false)}
-          onSuccess={() => {
-            setIsAdmin(true);
-            setIsPasscodeModalOpen(false);
-          }}
-          title="Resume Builder Admin Verification"
-          description="Enter your Admin Security Passcode to access, customize, and download ATS Resumes."
-        />
+        {isPasscodeModalOpen && (
+          <AdminPasscodeModal
+            isOpen={isPasscodeModalOpen}
+            onClose={() => setIsPasscodeModalOpen(false)}
+            onSuccess={() => {
+              setIsAdmin(true);
+              setIsPasscodeModalOpen(false);
+            }}
+            title="Resume Builder Admin Verification"
+            description="Enter your Admin Security Passcode to access, customize, and download ATS Resumes."
+          />
+        )}
       </>
     );
   }

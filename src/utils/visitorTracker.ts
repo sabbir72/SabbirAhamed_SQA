@@ -17,15 +17,25 @@ export interface VisitorMetrics {
 }
 
 const VISITOR_STATS_EVENT = 'visitor_stats_updated';
+const VISITOR_ID_KEY = 'sabbir_sqa_visitor_id';
 const SESSION_KEY = 'sabbir_sqa_session';
 const LOCAL_STORAGE_STATS_KEY = 'sabbir_sqa_visitor_stats';
 
-let currentStats: VisitorMetrics = {
-  totalVisitors: 1420,
-  totalPageViews: 3890,
-  todayVisitors: 28,
-  isLoading: true,
-};
+/**
+ * Get or create unique persistent visitor identifier (unique per browser/device)
+ */
+function getOrCreateVisitorId(): string {
+  try {
+    let visitorId = localStorage.getItem(VISITOR_ID_KEY);
+    if (!visitorId) {
+      visitorId = `usr_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+      localStorage.setItem(VISITOR_ID_KEY, visitorId);
+    }
+    return visitorId;
+  } catch (err) {
+    return `usr_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+  }
+}
 
 /**
  * Get or create unique session identifier
@@ -50,10 +60,13 @@ function getOrCreateSession(): { sessionId: string; isNewSession: boolean } {
   }
 }
 
+let currentStats: VisitorMetrics = getLocalStats();
+
 /**
  * Register visitor hit and update stats
  */
 export async function trackVisitorHit(): Promise<VisitorMetrics> {
+  const visitorId = getOrCreateVisitorId();
   const { sessionId, isNewSession } = getOrCreateSession();
 
   try {
@@ -62,16 +75,16 @@ export async function trackVisitorHit(): Promise<VisitorMetrics> {
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ sessionId, isNewSession }),
+      body: JSON.stringify({ visitorId, sessionId, isNewSession }),
     });
 
     if (response.ok) {
       const data = await response.json();
       if (data.success) {
         currentStats = {
-          totalVisitors: data.totalVisitors || 1420,
-          totalPageViews: data.totalPageViews || 3890,
-          todayVisitors: data.todayVisitors || 28,
+          totalVisitors: typeof data.totalVisitors === 'number' ? data.totalVisitors : currentStats.totalVisitors,
+          totalPageViews: typeof data.totalPageViews === 'number' ? data.totalPageViews : currentStats.totalPageViews,
+          todayVisitors: typeof data.todayVisitors === 'number' ? data.todayVisitors : currentStats.todayVisitors,
           isLoading: false,
         };
         saveLocalStats(currentStats);
@@ -107,9 +120,9 @@ export async function fetchVisitorStats(): Promise<VisitorMetrics> {
       const data = await response.json();
       if (data.success) {
         currentStats = {
-          totalVisitors: data.totalVisitors,
-          totalPageViews: data.totalPageViews,
-          todayVisitors: data.todayVisitors,
+          totalVisitors: typeof data.totalVisitors === 'number' ? data.totalVisitors : currentStats.totalVisitors,
+          totalPageViews: typeof data.totalPageViews === 'number' ? data.totalPageViews : currentStats.totalPageViews,
+          todayVisitors: typeof data.todayVisitors === 'number' ? data.todayVisitors : currentStats.todayVisitors,
           isLoading: false,
         };
         saveLocalStats(currentStats);
@@ -133,21 +146,26 @@ function getLocalStats(): VisitorMetrics {
     const raw = localStorage.getItem(LOCAL_STORAGE_STATS_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
-      return {
-        totalVisitors: parsed.totalVisitors || 1420,
-        totalPageViews: parsed.totalPageViews || 3890,
-        todayVisitors: parsed.todayVisitors || 28,
-        isLoading: false,
-      };
+      // Automatically purge legacy 1422 mock baseline numbers
+      if (Number(parsed.totalVisitors) >= 1000) {
+        localStorage.removeItem(LOCAL_STORAGE_STATS_KEY);
+      } else {
+        return {
+          totalVisitors: Math.max(0, Number(parsed.totalVisitors) || 0),
+          totalPageViews: Math.max(0, Number(parsed.totalPageViews) || 0),
+          todayVisitors: Math.max(0, Number(parsed.todayVisitors) || 0),
+          isLoading: false,
+        };
+      }
     }
   } catch (e) {
     // ignore
   }
 
   return {
-    totalVisitors: 1420,
-    totalPageViews: 3890,
-    todayVisitors: 28,
+    totalVisitors: 0,
+    totalPageViews: 0,
+    todayVisitors: 0,
     isLoading: false,
   };
 }

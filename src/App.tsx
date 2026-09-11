@@ -157,32 +157,38 @@ export default function App(): React.ReactNode {
       </main>
 
       {/* Resume Builder Modal */}
-      <ResumeBuilderModal 
-        isOpen={isResumeModalOpen}
-        onClose={() => setIsResumeModalOpen(false)}
-        onOpenCoverLetter={handleOpenCoverLetter}
-      />
+      {isResumeModalOpen && (
+        <ResumeBuilderModal 
+          isOpen={isResumeModalOpen}
+          onClose={() => setIsResumeModalOpen(false)}
+          onOpenCoverLetter={handleOpenCoverLetter}
+        />
+      )}
 
       {/* AI Cover Letter Generator Modal */}
-      <CoverLetterGeneratorModal
-        isOpen={isCoverLetterModalOpen}
-        onClose={() => setIsCoverLetterModalOpen(false)}
-      />
+      {isCoverLetterModalOpen && (
+        <CoverLetterGeneratorModal
+          isOpen={isCoverLetterModalOpen}
+          onClose={() => setIsCoverLetterModalOpen(false)}
+        />
+      )}
 
       {/* Passcode Challenge Modal */}
-      <AdminPasscodeModal
-        isOpen={isAdminPasscodeModalOpen}
-        onClose={() => {
-          setIsAdminPasscodeModalOpen(false);
-          setAdminChallengeAction(null);
-        }}
-        onSuccess={handleAdminPasscodeSuccess}
-        title={adminChallengeAction === 'resume' ? 'Resume Builder Admin Access' : 'Cover Letter Generator Admin Access'}
-        description={adminChallengeAction === 'resume' 
-          ? 'Only the verified portfolio administrator (Sabbir Ahamed) has permission to create and download ATS Resumes. Enter your Admin Passcode to proceed.' 
-          : 'Only the verified portfolio administrator (Sabbir Ahamed) has permission to generate and download Cover Letters. Enter your Admin Passcode to proceed.'
-        }
-      />
+      {isAdminPasscodeModalOpen && (
+        <AdminPasscodeModal
+          isOpen={isAdminPasscodeModalOpen}
+          onClose={() => {
+            setIsAdminPasscodeModalOpen(false);
+            setAdminChallengeAction(null);
+          }}
+          onSuccess={handleAdminPasscodeSuccess}
+          title={adminChallengeAction === 'resume' ? 'Resume Builder Admin Access' : 'Cover Letter Generator Admin Access'}
+          description={adminChallengeAction === 'resume' 
+            ? 'Only the verified portfolio administrator (Sabbir Ahamed) has permission to create and download ATS Resumes. Enter your Admin Passcode to proceed.' 
+            : 'Only the verified portfolio administrator (Sabbir Ahamed) has permission to generate and download Cover Letters. Enter your Admin Passcode to proceed.'
+          }
+        />
+      )}
 
       {/* Footer */}
       <footer className="bg-[#090A0E] border-t border-white/10 py-10 px-4 sm:px-6 lg:px-8">

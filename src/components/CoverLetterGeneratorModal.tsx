@@ -113,8 +113,6 @@ export default function CoverLetterGeneratorModal({
   initialCompany = '',
   initialJobTitle = '' 
 }: CoverLetterGeneratorModalProps) {
-  if (!isOpen) return null;
-
   // Form State (Only required / optional user inputs)
   const [companyName, setCompanyName] = useState(initialCompany || 'Tech Solutions Inc.');
   const [jobTitle, setJobTitle] = useState(initialJobTitle || 'Software Quality Assurance Engineer');
@@ -542,6 +540,8 @@ ${PERSONAL_INFO.title}`;
     setSavedLetters(prev => prev.filter(item => item.id !== id));
   };
 
+  if (!isOpen) return null;
+
   if (!isAdmin) {
     return (
       <>
@@ -576,16 +576,18 @@ ${PERSONAL_INFO.title}`;
           </div>
         </div>
 
-        <AdminPasscodeModal
-          isOpen={isPasscodeModalOpen}
-          onClose={() => setIsPasscodeModalOpen(false)}
-          onSuccess={() => {
-            setIsAdmin(true);
-            setIsPasscodeModalOpen(false);
-          }}
-          title="Cover Letter Admin Verification"
-          description="Enter your Admin Security Passcode to generate and download customized Cover Letters."
-        />
+        {isPasscodeModalOpen && (
+          <AdminPasscodeModal
+            isOpen={isPasscodeModalOpen}
+            onClose={() => setIsPasscodeModalOpen(false)}
+            onSuccess={() => {
+              setIsAdmin(true);
+              setIsPasscodeModalOpen(false);
+            }}
+            title="Cover Letter Admin Verification"
+            description="Enter your Admin Security Passcode to generate and download customized Cover Letters."
+          />
+        )}
       </>
     );
   }
