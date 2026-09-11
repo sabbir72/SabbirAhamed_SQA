@@ -11,7 +11,7 @@
  */
 
 import React, { useState } from 'react';
-import { Lock, KeyRound, ShieldAlert, X, Check, Loader2 } from 'lucide-react';
+import { Lock, KeyRound, ShieldAlert, X, Check, Loader2, Eye, EyeOff } from 'lucide-react';
 import { verifyAdminPasscode } from '../utils/adminAuth';
 
 interface AdminPasscodeModalProps {
@@ -30,6 +30,7 @@ export default function AdminPasscodeModal({
   description 
 }: AdminPasscodeModalProps) {
   const [passcode, setPasscode] = useState('');
+  const [showPasscode, setShowPasscode] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
@@ -100,15 +101,29 @@ export default function AdminPasscodeModal({
             </label>
             <div className="relative">
               <input
-                type="password"
+                type={showPasscode ? "text" : "password"}
                 value={passcode}
                 onChange={(e) => setPasscode(e.target.value)}
-                placeholder="••••••••"
+                placeholder={showPasscode ? "sabbir@sqa2026" : "••••••••"}
                 autoFocus
                 required
                 disabled={isSubmitting}
-                className="w-full px-4 py-3 rounded-xl bg-white/[0.05] border border-white/20 text-sm font-mono text-white placeholder:text-white/30 focus:border-[#FF6B35] focus:outline-none transition-all disabled:opacity-50"
+                className="w-full pl-4 pr-12 py-3 rounded-xl bg-white/[0.05] border border-white/20 text-sm font-mono text-white placeholder:text-white/30 focus:border-[#FF6B35] focus:outline-none transition-all disabled:opacity-50"
               />
+              <button
+                type="button"
+                onClick={() => setShowPasscode(!showPasscode)}
+                disabled={isSubmitting}
+                className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 text-[#9CA3AF] hover:text-white transition-colors cursor-pointer rounded-lg hover:bg-white/10"
+                title={showPasscode ? "Hide Passcode" : "Show Passcode"}
+                aria-label={showPasscode ? "Hide Passcode" : "Show Passcode"}
+              >
+                {showPasscode ? (
+                  <EyeOff className="w-4 h-4 text-[#FF6B35]" />
+                ) : (
+                  <Eye className="w-4 h-4" />
+                )}
+              </button>
             </div>
           </div>
 
