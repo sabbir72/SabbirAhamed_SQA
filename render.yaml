@@ -1,0 +1,21 @@
+# Render Blueprint Specification (render.yaml)
+# https://render.com/docs/blueprint-spec
+
+services:
+  - type: web
+    name: sabbir-sqa-portfolio
+    env: node
+    region: singapore
+    plan: free
+    buildCommand: npm install --include=dev && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: BREVO_SENDER_EMAIL
+        value: sabbircse72@gmail.com
+      - key: BREVO_RECIPIENT_EMAIL
+        value: sabbircse72@gmail.com
+      - key: BREVO_API_KEY
+        sync: false # Set securely in Render Dashboard -> Environment Variables

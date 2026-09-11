@@ -1,0 +1,76 @@
+name: Production CI/CD Pipeline & Deployment
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+    branches:
+      - main
+      - master
+
+jobs:
+  lint-typecheck-build:
+    name: Code Quality & Build Verification
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci || npm install
+
+      - name: Type Check & Lint
+        run: npm run lint
+
+      - name: Production Build Verification
+        run: npm run build
+
+  deploy-render:
+    name: Deploy to Render
+    needs: lint-typecheck-build
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    runs-on: ubuntu-latest
+    env:
+      RENDER_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+
+    steps:
+      - name: Trigger Render Deploy Hook
+        run: |
+          if [ -n "$RENDER_HOOK" ]; then
+            curl -s -X POST "$RENDER_HOOK"
+            echo "Render deploy hook triggered successfully."
+          else
+            echo "RENDER_DEPLOY_HOOK_URL secret not configured, skipping Render deployment."
+          fi
+
+  deploy-vercel:
+    name: Deploy to Vercel
+    needs: lint-typecheck-build
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    runs-on: ubuntu-latest
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Deploy to Vercel
+        run: |
+          if [ -n "$VERCEL_TOKEN" ]; then
+            echo "Deploying to Vercel..."
+            npx vercel --token "$VERCEL_TOKEN" --prod --yes
+          else
+            echo "VERCEL_TOKEN secret not configured in GitHub Secrets, skipping Vercel deployment."
+          fi
