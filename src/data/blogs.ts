@@ -65,7 +65,7 @@ export const BLOG_POSTS: BlogPost[] = [
     author: {
       name: 'Sabbir Ahamed',
       role: 'Software Quality Assurance Engineer',
-      avatar: '/src/assets/images/sabbir_avatar_1784300099360.jpg',
+      avatar: '/sabbir_avatar.jpeg',
       bio: 'SQA Engineer specializing in Manual & Automated Testing, API Validation, ERPNext QA, and CI/CD Quality Gates.',
     },
     content: `
@@ -217,7 +217,7 @@ By integrating API automation into your Playwright pipeline, you catch backend b
     author: {
       name: 'Sabbir Ahamed',
       role: 'Software Quality Assurance Engineer',
-      avatar: '/src/assets/images/sabbir_avatar_1784300099360.jpg',
+      avatar: '/sabbir_avatar.jpeg',
       bio: 'SQA Engineer specializing in Manual & Automated Testing, API Validation, ERPNext QA, and CI/CD Quality Gates.',
     },
     content: `
@@ -312,7 +312,7 @@ When testing ERPNext financial modules, always run validation tests in an isolat
     author: {
       name: 'Sabbir Ahamed',
       role: 'Software Quality Assurance Engineer',
-      avatar: '/src/assets/images/sabbir_avatar_1784300099360.jpg',
+      avatar: '/sabbir_avatar.jpeg',
       bio: 'SQA Engineer specializing in Manual & Automated Testing, API Validation, ERPNext QA, and CI/CD Quality Gates.',
     },
     content: `
@@ -388,7 +388,7 @@ AI in SQA is not about automated magic—it is about **speed and analytical thor
     author: {
       name: 'Sabbir Ahamed',
       role: 'Software Quality Assurance Engineer',
-      avatar: '/src/assets/images/sabbir_avatar_1784300099360.jpg',
+      avatar: '/sabbir_avatar.jpeg',
       bio: 'SQA Engineer specializing in Manual & Automated Testing, API Validation, ERPNext QA, and CI/CD Quality Gates.',
     },
     content: `
@@ -442,7 +442,7 @@ By following this roadmap step-by-step, you build a resilient, future-proof care
     author: {
       name: 'Sabbir Ahamed',
       role: 'Software Quality Assurance Engineer',
-      avatar: '/src/assets/images/sabbir_avatar_1784300099360.jpg',
+      avatar: '/sabbir_avatar.jpeg',
       bio: 'SQA Engineer specializing in Manual & Automated Testing, API Validation, ERPNext QA, and CI/CD Quality Gates.',
     },
     content: `
@@ -495,7 +495,7 @@ By mastering bug reporting precision, SQA engineers save hours of engineering ti
     author: {
       name: 'Sabbir Ahamed',
       role: 'Software Quality Assurance Engineer',
-      avatar: '/src/assets/images/sabbir_avatar_1784300099360.jpg',
+      avatar: '/sabbir_avatar.jpeg',
       bio: 'SQA Engineer specializing in Manual & Automated Testing, API Validation, ERPNext QA, and CI/CD Quality Gates.',
     },
     content: `

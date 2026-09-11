@@ -137,7 +137,7 @@ export function upsertBlogPost(postData: Partial<BlogPost> & { title: string; co
         author: {
           name: postData.author?.name || existing.author?.name || 'Sabbir Ahamed',
           role: postData.author?.role || existing.author?.role || 'Software Quality Assurance Engineer',
-          avatar: postData.author?.avatar || existing.author?.avatar || '/src/assets/images/sabbir_avatar_1784300099360.jpg',
+          avatar: postData.author?.avatar || existing.author?.avatar || '/sabbir_avatar.jpeg',
           bio: postData.author?.bio || existing.author?.bio || 'SQA Engineer specializing in Manual & Automated Testing.',
         },
       };
@@ -165,7 +165,7 @@ export function upsertBlogPost(postData: Partial<BlogPost> & { title: string; co
     author: {
       name: postData.author?.name || 'Sabbir Ahamed',
       role: postData.author?.role || 'Software Quality Assurance Engineer',
-      avatar: postData.author?.avatar || '/src/assets/images/sabbir_avatar_1784300099360.jpg',
+      avatar: postData.author?.avatar || '/sabbir_avatar.jpeg',
       bio: postData.author?.bio || 'SQA Engineer specializing in Manual & Automated Testing, API Validation, ERPNext QA, and CI/CD Quality Gates.',
     },
   };
