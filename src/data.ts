@@ -10,8 +10,6 @@
  */
 
 import { Skill, Experience, Education, Project, BugReport, Reference } from './types';
-import sabbirAvatar from './assets/images/sabbir_avatar_1784300099360.jpg';
-
 /**
  * Personal profile details and contact links
  */
@@ -19,7 +17,7 @@ export const PERSONAL_INFO = {
   name: 'Sabbir Ahamed',
   title: 'Software Quality Assurance Engineer',
   // Profile Photo Avatar Path or Image URL (Auto updated & centered)
-  avatar: sabbirAvatar || '/sabbir_avatar.jpg',
+  avatar: '/sabbir_avatar.jpeg',
   email: 'sabbircse72@gmail.com',
   phone: '+8801681387906',
   location: 'Tongi East, Gazipur, Dhaka, Bangladesh',

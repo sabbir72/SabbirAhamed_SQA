@@ -2,9 +2,7 @@ import { useState } from 'react';
 import { Mail, Phone, MapPin, ArrowRight, Check, Copy, Code, FileText, BookOpen } from 'lucide-react';
 import { PERSONAL_INFO } from '../data';
 import { navigateTo } from '../utils/router';
-import sabbirAvatar from '../assets/images/sabbir_avatar_1784300099360.jpg';
-
-const PRIMARY_AVATAR = sabbirAvatar || PERSONAL_INFO.avatar || '/sabbir_avatar.jpg';
+const PRIMARY_AVATAR = PERSONAL_INFO.avatar || '/sabbir_avatar.jpeg';
 const FALLBACK_AVATAR = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=800';
 
 interface HeroProps {

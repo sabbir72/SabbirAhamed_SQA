@@ -76,7 +76,7 @@ export default function CreateBlogModal({ isOpen, onClose, postToEdit, onSaved }
   // Author details
   const [authorName, setAuthorName] = useState('Sabbir Ahamed');
   const [authorRole, setAuthorRole] = useState('Software Quality Assurance Engineer');
-  const [authorAvatar, setAuthorAvatar] = useState('/src/assets/images/sabbir_avatar_1784300099360.jpg');
+  const [authorAvatar, setAuthorAvatar] = useState('/sabbir_avatar.jpeg');
   const [authorBio, setAuthorBio] = useState('SQA Engineer specializing in Manual & Automated Testing, API Validation, ERPNext QA, and CI/CD Quality Gates.');
 
   // UI state
@@ -107,7 +107,7 @@ export default function CreateBlogModal({ isOpen, onClose, postToEdit, onSaved }
         setTagsInput(postToEdit.tags ? postToEdit.tags.join(', ') : '');
         setAuthorName(postToEdit.author?.name || 'Sabbir Ahamed');
         setAuthorRole(postToEdit.author?.role || 'Software Quality Assurance Engineer');
-        setAuthorAvatar(postToEdit.author?.avatar || '/src/assets/images/sabbir_avatar_1784300099360.jpg');
+        setAuthorAvatar(postToEdit.author?.avatar || '/sabbir_avatar.jpeg');
         setAuthorBio(postToEdit.author?.bio || 'SQA Engineer specializing in Manual & Automated Testing.');
       } else {
         // Defaults for new blog
@@ -130,7 +130,7 @@ export default function CreateBlogModal({ isOpen, onClose, postToEdit, onSaved }
         setTagsInput('Software Testing, SQA, Automation');
         setAuthorName('Sabbir Ahamed');
         setAuthorRole('Software Quality Assurance Engineer');
-        setAuthorAvatar('/src/assets/images/sabbir_avatar_1784300099360.jpg');
+        setAuthorAvatar('/sabbir_avatar.jpeg');
         setAuthorBio('SQA Engineer specializing in Manual & Automated Testing, API Validation, ERPNext QA, and CI/CD Quality Gates.');
       }
     }
@@ -205,7 +205,7 @@ export default function CreateBlogModal({ isOpen, onClose, postToEdit, onSaved }
         author: {
           name: authorName.trim() || 'Sabbir Ahamed',
           role: authorRole.trim() || 'SQA Engineer',
-          avatar: authorAvatar.trim() || '/src/assets/images/sabbir_avatar_1784300099360.jpg',
+          avatar: authorAvatar.trim() || '/sabbir_avatar.jpeg',
           bio: authorBio.trim() || 'SQA Engineer.',
         },
       });
