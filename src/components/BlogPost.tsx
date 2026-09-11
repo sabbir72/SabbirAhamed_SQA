@@ -32,8 +32,16 @@ import { BlogPost as BlogPostType } from '../data/blogs';
 import { getStoredBlogPosts, BLOGS_UPDATED_EVENT } from '../utils/blogStore';
 import { isAdminAuthenticated } from '../utils/adminAuth';
 import { navigateTo } from '../utils/router';
+import { PERSONAL_INFO } from '../data';
 import CreateBlogModal from './CreateBlogModal';
 import AdminPasscodeModal from './AdminPasscodeModal';
+
+const getAuthorAvatar = (author?: { name?: string; avatar?: string }) => {
+  if (!author || !author.avatar || author.avatar.includes('sabbir_avatar') || author.name === PERSONAL_INFO.name) {
+    return PERSONAL_INFO.avatar || '/sabbir_avatar.jpeg';
+  }
+  return author.avatar;
+};
 
 interface BlogPostProps {
   slug: string;
@@ -216,9 +224,12 @@ export default function BlogPost({ slug, onBackToBlog, onSelectPost, onOpenConta
             {/* Author */}
             <div className="flex items-center space-x-3">
               <img
-                src={post.author.avatar}
+                src={getAuthorAvatar(post.author)}
                 alt={post.author.name}
                 className="w-10 h-10 rounded-full border border-[#FF6B35] object-cover"
+                onError={(e) => {
+                  (e.target as HTMLImageElement).src = PERSONAL_INFO.avatar || '/sabbir_avatar.jpeg';
+                }}
               />
               <div>
                 <p className="text-white font-bold">{post.author.name}</p>
@@ -433,9 +444,12 @@ export default function BlogPost({ slug, onBackToBlog, onSelectPost, onOpenConta
         {/* ==================== AUTHOR BIO CARD ==================== */}
         <div className="p-6 rounded-3xl bg-[#12151C] border border-white/10 flex flex-col sm:flex-row items-center gap-6 text-center sm:text-left">
           <img
-            src={post.author.avatar}
+            src={getAuthorAvatar(post.author)}
             alt={post.author.name}
             className="w-20 h-20 rounded-2xl border-2 border-[#FF6B35] object-cover shrink-0 shadow-lg"
+            onError={(e) => {
+              (e.target as HTMLImageElement).src = PERSONAL_INFO.avatar || '/sabbir_avatar.jpeg';
+            }}
           />
           <div className="space-y-2 flex-1">
             <div className="flex items-center justify-center sm:justify-start space-x-2">

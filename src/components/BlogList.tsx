@@ -42,8 +42,16 @@ import {
   resetStoredBlogPosts 
 } from '../utils/blogStore';
 import { isAdminAuthenticated, logoutAdmin } from '../utils/adminAuth';
+import { PERSONAL_INFO } from '../data';
 import CreateBlogModal from './CreateBlogModal';
 import AdminPasscodeModal from './AdminPasscodeModal';
+
+const getAuthorAvatar = (author?: { name?: string; avatar?: string }) => {
+  if (!author || !author.avatar || author.avatar.includes('sabbir_avatar') || author.name === PERSONAL_INFO.name) {
+    return PERSONAL_INFO.avatar || '/sabbir_avatar.jpeg';
+  }
+  return author.avatar;
+};
 
 interface BlogListProps {
   onSelectPost: (slug: string) => void;
@@ -467,9 +475,12 @@ export default function BlogList({ onSelectPost }: BlogListProps) {
                   {/* Author Profile */}
                   <div className="flex items-center space-x-2.5">
                     <img
-                      src={featuredArticle.author.avatar}
+                      src={getAuthorAvatar(featuredArticle.author)}
                       alt={featuredArticle.author.name}
                       className="w-8 h-8 rounded-full border border-[#FF6B35] object-cover"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).src = PERSONAL_INFO.avatar || '/sabbir_avatar.jpeg';
+                      }}
                     />
                     <span className="text-xs font-mono text-white font-medium">{featuredArticle.author.name}</span>
                   </div>

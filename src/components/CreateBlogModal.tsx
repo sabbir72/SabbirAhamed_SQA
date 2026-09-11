@@ -40,6 +40,7 @@ import {
 import { BlogPost, BLOG_CATEGORIES } from '../data/blogs';
 import { upsertBlogPost, generateSlug, calculateReadingTime } from '../utils/blogStore';
 import { isAdminAuthenticated } from '../utils/adminAuth';
+import { PERSONAL_INFO } from '../data';
 import ReactMarkdown from 'react-markdown';
 
 interface CreateBlogModalProps {
@@ -74,9 +75,9 @@ export default function CreateBlogModal({ isOpen, onClose, postToEdit, onSaved }
   const [tagsInput, setTagsInput] = useState('');
 
   // Author details
-  const [authorName, setAuthorName] = useState('Sabbir Ahamed');
-  const [authorRole, setAuthorRole] = useState('Software Quality Assurance Engineer');
-  const [authorAvatar, setAuthorAvatar] = useState('/sabbir_avatar.jpeg');
+  const [authorName, setAuthorName] = useState(PERSONAL_INFO.name || 'Sabbir Ahamed');
+  const [authorRole, setAuthorRole] = useState(PERSONAL_INFO.title || 'Software Quality Assurance Engineer');
+  const [authorAvatar, setAuthorAvatar] = useState(PERSONAL_INFO.avatar || '/sabbir_avatar.jpeg');
   const [authorBio, setAuthorBio] = useState('SQA Engineer specializing in Manual & Automated Testing, API Validation, ERPNext QA, and CI/CD Quality Gates.');
 
   // UI state
@@ -105,9 +106,13 @@ export default function CreateBlogModal({ isOpen, onClose, postToEdit, onSaved }
         setPublishDate(postToEdit.publishDate);
         setReadingTime(postToEdit.readingTime);
         setTagsInput(postToEdit.tags ? postToEdit.tags.join(', ') : '');
-        setAuthorName(postToEdit.author?.name || 'Sabbir Ahamed');
-        setAuthorRole(postToEdit.author?.role || 'Software Quality Assurance Engineer');
-        setAuthorAvatar(postToEdit.author?.avatar || '/sabbir_avatar.jpeg');
+        setAuthorName(postToEdit.author?.name || PERSONAL_INFO.name);
+        setAuthorRole(postToEdit.author?.role || PERSONAL_INFO.title);
+        setAuthorAvatar(
+          postToEdit.author?.name === PERSONAL_INFO.name || !postToEdit.author?.avatar || postToEdit.author?.avatar.includes('sabbir_avatar')
+            ? (PERSONAL_INFO.avatar || '/sabbir_avatar.jpeg')
+            : postToEdit.author.avatar
+        );
         setAuthorBio(postToEdit.author?.bio || 'SQA Engineer specializing in Manual & Automated Testing.');
       } else {
         // Defaults for new blog

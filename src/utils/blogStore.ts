@@ -11,9 +11,33 @@
 
 import { BlogPost, BLOG_POSTS } from '../data/blogs';
 import { isAdminAuthenticated } from './adminAuth';
+import { PERSONAL_INFO } from '../data';
 
 const STORAGE_KEY = 'sabbir_portfolio_blogs_v1';
 export const BLOGS_UPDATED_EVENT = 'sabbir_blogs_updated';
+
+/**
+ * Normalizes author avatar to always reflect the main profile avatar from PERSONAL_INFO
+ */
+function normalizeAuthorAvatar(post: BlogPost): BlogPost {
+  const currentAvatar = post.author?.avatar || '';
+  const isSabbir = !post.author?.name || post.author.name === PERSONAL_INFO.name;
+  const isInternalAvatar = currentAvatar.includes('sabbir_avatar') || currentAvatar.includes('./assets') || !currentAvatar;
+
+  if (isSabbir || isInternalAvatar) {
+    return {
+      ...post,
+      author: {
+        ...post.author,
+        name: post.author?.name || PERSONAL_INFO.name,
+        role: post.author?.role || PERSONAL_INFO.title,
+        avatar: PERSONAL_INFO.avatar || '/sabbir_avatar.jpeg',
+        bio: post.author?.bio || 'SQA Engineer specializing in Manual & Automated Testing, API Validation, ERPNext QA, and CI/CD Quality Gates.',
+      },
+    };
+  }
+  return post;
+}
 
 /**
  * Initialize and load blog posts from LocalStorage or default dataset
@@ -23,7 +47,7 @@ export function getStoredBlogPosts(): BlogPost[] {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) {
       // First time initialization - load default posts with status 'Published'
-      const initialPosts = BLOG_POSTS.map(post => ({
+      const initialPosts = BLOG_POSTS.map(post => normalizeAuthorAvatar({
         ...post,
         status: post.status || ('Published' as const),
       }));
@@ -31,14 +55,23 @@ export function getStoredBlogPosts(): BlogPost[] {
       return initialPosts;
     }
     const parsed: BlogPost[] = JSON.parse(raw);
-    // Ensure status field exists for legacy saved posts
-    return parsed.map(post => ({
+    // Ensure status field exists and sync author profile avatar from main profile
+    const synchronizedPosts = parsed.map(post => normalizeAuthorAvatar({
       ...post,
       status: post.status || 'Published',
     }));
+
+    // Update localStorage with fixed author avatars if modified
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(synchronizedPosts));
+    } catch (e) {
+      // ignore storage quota error
+    }
+
+    return synchronizedPosts;
   } catch (err) {
     console.error('Error reading blog posts from localStorage:', err);
-    return BLOG_POSTS.map(post => ({ ...post, status: 'Published' }));
+    return BLOG_POSTS.map(post => normalizeAuthorAvatar({ ...post, status: 'Published' }));
   }
 }
 
