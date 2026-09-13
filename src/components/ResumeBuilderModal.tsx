@@ -8,7 +8,7 @@ import {
 import { PERSONAL_INFO, SKILL_CATEGORIES, WORK_EXPERIENCE, EDUCATION_HISTORY, PROJECTS, BUG_REPORTS, PROFESSIONAL_REFERENCES } from '../data';
 import { isAdminAuthenticated } from '../utils/adminAuth';
 import AdminPasscodeModal from './AdminPasscodeModal';
-import html2pdf from 'html2pdf.js';
+import html2pdf from 'html2pdf.js'; 
 
 // Safe URL normalizer for links embedded inside text
 export const normalizeUrl = (url?: string): string => {
@@ -19,7 +19,7 @@ export const normalizeUrl = (url?: string): string => {
   if (trimmed.startsWith('mailto:') || trimmed.startsWith('tel:')) return trimmed;
   return `https://${trimmed}`;
 };
-
+// TypeScript Props Interface for ResumeBuilderModal
 interface ResumeBuilderModalProps {
   isOpen: boolean;
   onClose: () => void;
