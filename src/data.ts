@@ -126,7 +126,7 @@ export const WORK_EXPERIENCE: Experience[] = [
       'Managed Data Quality Control pipelines to ensure minimal error rates and high accuracy in output assets.',
       'Developed custom custom-made internal scripts and tools to speed up the labeling and verification workflows.',
       'Fostered seamless team collaboration across annotators, ML developers, and product stakeholders.',
-      'Enforced strict Data Privacy Compliance policies throughout the ML lifecycle.'
+      
     ]
   },
   {
@@ -139,7 +139,7 @@ export const WORK_EXPERIENCE: Experience[] = [
       'Supervised and performed accurate multi-format data labeling for advanced AI and vision models.',
       'Maintained extreme Quality Control procedures on high-volume deliverables.',
       'Coordinated team collaborations and tasks assignments to meet strict project deadlines.',
-      'Ensured strict compliance with client data privacy and security requirements.'
+      
     ]
   }
 ];

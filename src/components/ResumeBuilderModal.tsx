@@ -1008,15 +1008,15 @@ Software Quality Assurance Engineer`;
                   </p>
                   <p className="text-[11px] text-black font-mono flex items-center justify-center gap-2 flex-wrap pt-0.5">
                     <span>
-                      LinkedIn: <a href={normalizeUrl(customInfo.linkedin)} target="_blank" rel="noopener noreferrer" className="text-[#0a66c2] hover:underline font-bold" style={{ color: '#0a66c2', textDecoration: 'underline' }}>LinkedIn (Click Here)</a>
+                      LinkedIn: <a href={normalizeUrl(customInfo.linkedin)} target="_blank" rel="noopener noreferrer" className="text-[#0a66c2] hover:underline font-bold" style={{ color: '#0a66c2', textDecoration: 'underline' }}>(Click Here)</a>
                     </span>
                     <span>|</span>
                     <span>
-                      GitHub: <a href={normalizeUrl(customInfo.github)} target="_blank" rel="noopener noreferrer" className="text-gray-900 hover:underline font-bold" style={{ color: '#000000', textDecoration: 'underline' }}>GitHub (Click Here)</a>
+                      GitHub: <a href={normalizeUrl(customInfo.github)} target="_blank" rel="noopener noreferrer" className="text-gray-900 hover:underline font-bold" style={{ color: '#000000', textDecoration: 'underline' }}>(Click Here)</a>
                     </span>
                     <span>|</span>
                     <span>
-                      Portfolio: <a href={normalizeUrl(window.location.origin)} target="_blank" rel="noopener noreferrer" className="text-[#ea580c] hover:underline font-bold" style={{ color: '#ea580c', textDecoration: 'underline' }}>Portfolio (Click Here)</a>
+                      Portfolio: <a href={normalizeUrl(window.location.origin)} target="_blank" rel="noopener noreferrer" className="text-[#ea580c] hover:underline font-bold" style={{ color: '#ea580c', textDecoration: 'underline' }}>(Click Here)</a>
                     </span>
                   </p>
                 </div>
@@ -1500,7 +1500,7 @@ Software Quality Assurance Engineer`;
                   <h2 className="text-xs font-extrabold uppercase text-orange-600 tracking-wider mb-1">Education</h2>
                   {EDUCATION_HISTORY.map((edu) => (
                     <div key={edu.id} className="text-[10.5px] text-black font-medium">
-                      <span className="font-bold text-black">{edu.degree}</span> - {edu.institution} ({edu.period})
+                      <span className="font-bold text-black">{edu.degree}</span> -  <br /> {edu.institution} ({edu.period})
                     </div>
                   ))}
                 </div>
