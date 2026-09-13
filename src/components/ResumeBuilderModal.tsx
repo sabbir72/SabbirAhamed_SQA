@@ -1495,15 +1495,24 @@ Software Quality Assurance Engineer`;
                     </div>
                   </div>
                 )}
-
+                
                 <div>
-                  <h2 className="text-xs font-extrabold uppercase text-orange-600 tracking-wider mb-1">Education</h2>
+                  <h2 className="text-xs font-extrabold uppercase text-orange-600 tracking-wider mb-1">
+                    Education
+                  </h2>
+
                   {EDUCATION_HISTORY.map((edu) => (
-                    <div key={edu.id} className="text-[10.5px] text-black font-medium">
-                      <span className="font-bold text-black">{edu.degree}</span> -  <br /> {edu.institution} ({edu.period})
+                    <div
+                      key={edu.id}
+                      className="text-[10.5px] text-black font-medium">
+
+                      <span className="font-bold text-black">{edu.degree}</span>
+                      - <span className="font-bold text-black">{edu.institution} ({edu.period})</span>
                     </div>
                   ))}
                 </div>
+                 
+
               </div>
             )}
 
