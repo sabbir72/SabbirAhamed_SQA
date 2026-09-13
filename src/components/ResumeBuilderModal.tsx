@@ -2,7 +2,7 @@ import { useState, useRef, useMemo, useEffect } from 'react';
 import { 
   X, Printer, Download, Copy, Check, FileText, Settings, Sliders, Sparkles, 
   CheckSquare, Square, Filter, ChevronRight, Award, Briefcase, Eye, 
-  RotateCcw, ShieldCheck, Mail, Phone, MapPin, Globe, Linkedin, Github, Target,
+  RotateCcw, ShieldCheck, Mail, Phone, MapPin, Globe, Target,
   Type, ExternalLink, User, Lock
 } from 'lucide-react';
 import { PERSONAL_INFO, SKILL_CATEGORIES, WORK_EXPERIENCE, EDUCATION_HISTORY, PROJECTS, BUG_REPORTS, PROFESSIONAL_REFERENCES } from '../data';
