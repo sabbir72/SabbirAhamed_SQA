@@ -171,6 +171,39 @@ export const EDUCATION_HISTORY: Education[] = [
  */
 export const PROJECTS: Project[] = [
   {
+    id: 'proj-erpnext-agent',
+    title: 'ERPNext + Playwright + Ollama AI Agent',
+    type: 'Automation',
+    link: 'https://github.com/sabbir72/erpnext-playwright-agent',
+    description: 'An autonomous browser testing agent that connects a local Ollama LLM (qwen2.5-coder:7b) to Playwright (Python) to autonomously inspect, navigate, and operate an ERPNext web instance. The agent dynamically decides browser actions (goto, click, fill, press, select, read_page, screenshot, wait), performs autonomous authentication, opens the Users list, captures verification artifacts, and executes smoke validation with Pytest.',
+    metrics: [
+      { label: 'LLM Model', value: 'Ollama (qwen2.5-coder:7b)' },
+      { label: 'Browser Tool', value: 'Playwright (Python)' },
+      { label: 'Target ERP', value: 'ERPNext Enterprise' },
+      { label: 'Test Runner', value: 'Pytest (pytest -q)' }
+    ],
+    tags: ['Playwright', 'Python', 'Ollama AI', 'qwen2.5-coder', 'ERPNext', 'AI Agent', 'Autonomous Testing', 'Pytest'],
+    assertions: [
+      { name: 'Connect local Ollama instance & verify qwen2.5-coder:7b', status: 'PASS', duration: '320ms' },
+      { name: 'Launch Playwright browser & navigate to ERPNext URL', status: 'PASS', duration: '890ms' },
+      { name: 'AI agent inspects DOM & decides login action (fill + click)', status: 'PASS', duration: '640ms' },
+      { name: 'Authenticate credentials & verify ERPNext desk access', status: 'PASS', duration: '580ms' },
+      { name: 'Agent autonomy: navigate to Users list & inspect records', status: 'PASS', duration: '710ms' },
+      { name: 'Capture full-page audit screenshot (users_list.png)', status: 'PASS', duration: '210ms' },
+      { name: 'Execute Playwright smoke test suite (pytest -q)', status: 'PASS', duration: '490ms' }
+    ],
+    logs: [
+      { timestamp: '10:00:01', level: 'INFO', message: 'Checking Ollama service: qwen2.5-coder:7b model active.' },
+      { timestamp: '10:00:02', level: 'INFO', message: 'Starting Playwright browser runner with Python agent.py...' },
+      { timestamp: '10:00:03', level: 'INFO', message: 'Navigating to ERPNext instance: http://localhost:8000' },
+      { timestamp: '10:00:05', level: 'PASS', message: 'Agent decision: action="fill", selector="#login_email", value="***"' },
+      { timestamp: '10:00:06', level: 'PASS', message: 'Agent decision: action="click", selector="button.btn-login"' },
+      { timestamp: '10:00:08', level: 'PASS', message: 'Desk loaded. Agent goal: "Open Users list".' },
+      { timestamp: '10:00:10', level: 'PASS', message: 'Agent executed: goto "/app/user" & captured screenshot.' },
+      { timestamp: '10:00:12', level: 'PASS', message: 'Running smoke verification: pytest -q passed completely.' }
+    ]
+  },
+  {
     id: 'proj-saucedemo',
     title: 'SauceDemo Playwright UI Automation',
     type: 'Automation',
@@ -277,6 +310,36 @@ export const PROJECTS: Project[] = [
       { timestamp: '12:10:00', level: 'INFO', message: 'Starting Java TestNG suite...' },
       { timestamp: '12:10:02', level: 'PASS', message: 'Browser launched and navigated to target e-commerce site.' },
       { timestamp: '12:10:05', level: 'PASS', message: 'Cart addition and alert popup verified successfully.' }
+    ]
+  },
+  {
+    id: 'proj-playwright-api',
+    title: 'Playwright Python API Automation Framework',
+    type: 'API',
+    link: 'https://github.com/sabbir72/Playwright_API_Framework',
+    description: 'A modular, high-coverage Python API testing framework built with Playwright request contexts and Pytest. Implements a clean layered architecture with API Client, dedicated Auth endpoints (/auth/login, /auth/me), conftest.py fixtures with JWT token injection, automated positive and negative error validation (400 responses for invalid/missing payloads), dual file/console logging, and Allure HTML reporting.',
+    metrics: [
+      { label: 'Core Tools', value: 'Playwright & Pytest' },
+      { label: 'Focus Area', value: 'Auth APIs & Negative Tests' },
+      { label: 'Test Data', value: 'JSON Payloads' },
+      { label: 'Reporting', value: 'Allure HTML' }
+    ],
+    tags: ['Playwright', 'Python', 'Pytest', 'REST API', 'Allure Reports', 'JWT Auth', 'Fixtures', 'Negative Testing'],
+    assertions: [
+      { name: 'POST /auth/login - 200 OK with valid credentials & tokens', status: 'PASS', duration: '185ms' },
+      { name: 'Validate JWT accessToken & refreshToken generation', status: 'PASS', duration: '45ms' },
+      { name: 'GET /auth/me - Bearer token authorization & profile check', status: 'PASS', duration: '120ms' },
+      { name: 'POST /auth/login - Wrong credentials return 400 Bad Request', status: 'PASS', duration: '140ms' },
+      { name: 'Negative validations - Empty & missing fields return 400', status: 'PASS', duration: '95ms' },
+      { name: 'GET /products/1 - Products API smoke assertion with schema', status: 'PASS', duration: '160ms' }
+    ],
+    logs: [
+      { timestamp: '14:00:01', level: 'INFO', message: 'Initializing Playwright APIRequestContext with BASE_URL: https://dummyjson.com' },
+      { timestamp: '14:00:02', level: 'INFO', message: 'Executing test_auth_positive.py via pytest -v' },
+      { timestamp: '14:00:03', level: 'PASS', message: 'POST /auth/login succeeded. Tokens and user ID verified.' },
+      { timestamp: '14:00:04', level: 'PASS', message: 'GET /auth/me Bearer header assertion PASSED.' },
+      { timestamp: '14:00:05', level: 'PASS', message: 'test_auth_negative.py: 6 error scenarios evaluated green.' },
+      { timestamp: '14:00:07', level: 'PASS', message: 'Allure HTML report generated in allure-results.' }
     ]
   },
   {

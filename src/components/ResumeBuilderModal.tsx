@@ -1000,7 +1000,7 @@ Software Quality Assurance Engineer`;
             {template === 'classic-ats' && (
               <div className="flex flex-col space-y-4">
                 {/* Header */}
-                <div className="border-b-2 border-black pb-3 mb-4 text-center space-y-1">
+                <div className="pb-3 mb-4 text-center space-y-1">
                   <h1 className="text-2xl font-bold uppercase tracking-wide text-black font-serif">{customInfo.name}</h1>
                   <p className="text-xs font-bold text-black uppercase tracking-wider">{customInfo.title}</p>
                   <p className="text-[11px] text-black font-mono font-medium">
@@ -1090,15 +1090,23 @@ Software Quality Assurance Engineer`;
                 )}
 
                 {/* Education */}
-                <div className="mb-4">
+                <div className="mb-4 space-y-2.5">
                   <h2 className="text-xs font-bold uppercase border-b border-black pb-1 mb-2 text-black tracking-wider">Education & Certifications</h2>
                   {EDUCATION_HISTORY.map((edu) => (
-                    <div key={edu.id} className="flex justify-between text-[11px] mb-1">
-                      <div>
-                        <span className="font-bold text-black">{edu.degree}</span> — <span className="text-black font-medium">{edu.institution}</span>
-                        {edu.details && <span className="text-black font-normal"> ({edu.details})</span>}
+                    <div key={edu.id} className="text-[11px] space-y-0.5">
+                      <div className="flex justify-between items-baseline">
+                        <span className="font-bold text-black">
+                          {edu.degree} — <span className="font-semibold text-black">{edu.institution}</span>
+                        </span>
+                        <span className="font-mono text-[10.5px] font-bold text-black shrink-0 ml-4 whitespace-nowrap">
+                          {edu.period}
+                        </span>
                       </div>
-                      <span className="font-mono text-black font-bold">{edu.period}</span>
+                      {edu.details && (
+                        <p className="text-[10px] text-black leading-snug pl-0.5">
+                          {edu.details}
+                        </p>
+                      )}
                     </div>
                   ))}
                 </div>

@@ -20,6 +20,43 @@ export default function InteractiveTestRunner() {
   // Code snippets for each project type
   const getProjectCode = (projectId: string) => {
     switch (projectId) {
+      case 'proj-erpnext-agent':
+        return `# ERPNext + Playwright + Ollama AI Agent (agent.py)
+# Connects local Ollama (qwen2.5-coder:7b) to Playwright
+import os
+from playwright.sync_api import sync_playwright
+import ollama
+
+def run_erpnext_ai_agent():
+    # 1. Initialize local Ollama client
+    client = ollama.Client()
+    
+    with sync_playwright() as p:
+        # 2. Launch browser & navigate to ERPNext
+        browser = p.chromium.launch(headless=False)
+        page = browser.new_page()
+        page.goto(os.getenv("ERPNEXT_URL", "http://localhost:8000"))
+        
+        # 3. Agent inspects page & executes autonomous actions
+        task = "Login to ERPNext and open the Users list."
+        prompt = f"Goal: '{task}'. Choose next atomic browser action from [goto, click, fill, press, select, read_page, screenshot, wait]."
+        response = client.chat(model="qwen2.5-coder:7b", messages=[{"role": "user", "content": prompt}])
+        
+        # 4. Perform autonomous login
+        page.fill("input#login_email", os.getenv("ERPNEXT_USER", "administrator"))
+        page.fill("input#login_password", os.getenv("ERPNEXT_PASS", "admin"))
+        page.click("button.btn-login")
+        page.wait_for_selector(".navbar")
+        
+        # 5. Open Users list & capture audit screenshot
+        page.goto("http://localhost:8000/app/user")
+        page.screenshot(path="users_list.png")
+        print("AI Agent workflow finished successfully.")
+        browser.close()
+
+# Smoke Test Validation: pytest -q`;
+
+      case 'proj-saucedemo':
       case 'proj-playwright-01':
         return `# Playwright Python UI Automation Script
 from playwright.sync_api import sync_playwright
@@ -52,6 +89,36 @@ def test_erp_inventory_checkout():
         assert "Inventory ticket generated successfully" in toast.inner_text()
         browser.close()`;
 
+      case 'proj-playwright-api':
+        return `# Playwright Python API Testing Framework (test/test_auth_positive.py)
+import pytest
+from api.auth_api import AuthAPI
+
+def test_login_success(api_client):
+    """Verify login with valid credentials returns 200 and valid tokens"""
+    auth_api = AuthAPI(api_client)
+    payload = {"username": "emilys", "password": "emilyspass"}
+    
+    # 1. Execute POST /auth/login
+    response = auth_api.login(payload)
+    assert response.status == 200, f"Expected 200, got {response.status}"
+    
+    data = response.json()
+    # 2. Assert JWT token integrity
+    assert "accessToken" in data and len(data["accessToken"]) > 0
+    assert "refreshToken" in data
+    assert data["username"] == "emilys"
+    assert data["id"] > 0
+    
+    # 3. Authenticated endpoint verification (GET /auth/me)
+    user_info = auth_api.get_user_info(data["accessToken"])
+    assert user_info.status == 200
+    assert user_info.json()["id"] == data["id"]
+    print("Authentication flow & token validation passed!")
+
+# Execute with: pytest test/test_auth_positive.py -v --alluredir=allure-results`;
+
+      case 'proj-postman-crud':
       case 'proj-postman-01':
         return `// Postman REST API Test Script (Newman CLI Compatible)
 pm.test("Status code is 200 OK", function () {
