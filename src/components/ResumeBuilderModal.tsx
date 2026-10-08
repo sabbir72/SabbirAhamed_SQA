@@ -5,7 +5,8 @@ import {
   RotateCcw, ShieldCheck, Mail, Phone, MapPin, Globe, Target,
   Type, ExternalLink, User, Lock
 } from 'lucide-react';
-import { PERSONAL_INFO, SKILL_CATEGORIES, WORK_EXPERIENCE, EDUCATION_HISTORY, PROJECTS, BUG_REPORTS, PROFESSIONAL_REFERENCES } from '../data';
+import { PERSONAL_INFO, EDUCATION_HISTORY, BUG_REPORTS, PROFESSIONAL_REFERENCES } from '../data';
+import { getStoredProjects, getStoredExperiences, getStoredSkills, PORTFOLIO_UPDATED_EVENT } from '../utils/portfolioStore';
 import { isAdminAuthenticated } from '../utils/adminAuth';
 import AdminPasscodeModal from './AdminPasscodeModal';
 import html2pdf from 'html2pdf.js'; 
@@ -33,7 +34,7 @@ export type AtsFontFamily = 'modern' | 'serif' | 'corporate';
 export const DEFAULT_CAREER_OBJECTIVE =
   "Seeking a Software Quality Assurance Engineer position where I can leverage 2 years of hands-on experience in manual and automation testing, solid knowledge of software testing principles, and strong attention to detail to ensure high-quality and reliable software solutions, while continuously learning and growing in a professional environment.";
 
-const ROLE_CAREER_OBJECTIVES: Record<TargetRoleType, string> = {
+export const ROLE_CAREER_OBJECTIVES: Record<TargetRoleType, string> = {
   'all-rounder': DEFAULT_CAREER_OBJECTIVE,
   'automation-qa':
     "Seeking an SQA Automation Engineer position where I can apply 2 years of hands-on experience in Playwright (Python & TypeScript), Selenium WebDriver, Pytest, and CI/CD pipelines to build scalable test frameworks and ensure high-quality, reliable software solutions.",
@@ -53,9 +54,28 @@ export default function ResumeBuilderModal({ isOpen, onClose, onOpenCoverLetter 
   const [fontFamily, setFontFamily] = useState<AtsFontFamily>('modern');
   const [activeTab, setActiveTab] = useState<'preview' | 'projects-filter' | 'customize' | 'ats-score' | 'cover-letter'>('preview');
 
+  // Dynamic Portfolio Datasets from portfolioStore
+  const [portfolioProjects, setPortfolioProjects] = useState(() => getStoredProjects());
+  const [portfolioExperiences, setPortfolioExperiences] = useState(() => getStoredExperiences());
+  const [portfolioSkills, setPortfolioSkills] = useState(() => getStoredSkills());
+
+  useEffect(() => {
+    const handleSync = () => {
+      setPortfolioProjects(getStoredProjects());
+      setPortfolioExperiences(getStoredExperiences());
+      setPortfolioSkills(getStoredSkills());
+    };
+    window.addEventListener(PORTFOLIO_UPDATED_EVENT, handleSync);
+    return () => window.removeEventListener(PORTFOLIO_UPDATED_EVENT, handleSync);
+  }, []);
+
+  const WORK_EXPERIENCE = portfolioExperiences;
+  const SKILL_CATEGORIES = portfolioSkills;
+  const PROJECTS = portfolioProjects;
+
   // Interactive Project Selection Checkboxes
-  const [selectedProjectIds, setSelectedProjectIds] = useState<string[]>(
-    PROJECTS.map(p => p.id)
+  const [selectedProjectIds, setSelectedProjectIds] = useState<string[]>(() =>
+    getStoredProjects().map(p => p.id)
   );
 
   // Customizable Fields (Synced with portfolio data by default)

@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Mail, Phone, MapPin, ArrowRight, Check, Copy, Code, FileText, BookOpen } from 'lucide-react';
 import { PERSONAL_INFO } from '../data';
 import { navigateTo } from '../utils/router';
-const PRIMARY_AVATAR = PERSONAL_INFO.avatar || '/sabbir_avatar.jpeg';
+import { getStoredProfile, PORTFOLIO_UPDATED_EVENT } from '../utils/portfolioStore';
+
 const FALLBACK_AVATAR = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=800';
 
 interface HeroProps {
@@ -11,20 +12,31 @@ interface HeroProps {
 }
 
 export default function Hero({ onOpenResumeBuilder, onOpenCoverLetter }: HeroProps) {
+  const [profile, setProfile] = useState(() => getStoredProfile());
   const [copiedEmail, setCopiedEmail] = useState(false);
 
+  useEffect(() => {
+    const handleUpdate = () => {
+      setProfile(getStoredProfile());
+    };
+    window.addEventListener(PORTFOLIO_UPDATED_EVENT, handleUpdate);
+    return () => window.removeEventListener(PORTFOLIO_UPDATED_EVENT, handleUpdate);
+  }, []);
+
   const handleCopyEmail = () => {
-    navigator.clipboard.writeText(PERSONAL_INFO.email);
+    navigator.clipboard.writeText(profile.email || PERSONAL_INFO.email);
     setCopiedEmail(true);
     setTimeout(() => setCopiedEmail(false), 2000);
   };
 
+  const primaryAvatar = profile.avatar || PERSONAL_INFO.avatar || '/sabbir_avatar.jpeg';
+
   const stats = [
-    { value: '2+ Years', label: 'Experience' },
-    { value: '150+', label: 'Test Cases' },
-    { value: '100+', label: 'Bugs Reported' },
-    { value: '20+', label: 'Automation Scripts' },
-    { value: '95%', label: 'Defect Detection' }
+    { value: profile.experienceYears || '2+ Years', label: 'Experience' },
+    { value: profile.testCasesCount || '150+', label: 'Test Cases' },
+    { value: profile.bugsReportedCount || '100+', label: 'Bugs Reported' },
+    { value: profile.automationScriptsCount || '20+', label: 'Automation Scripts' },
+    { value: profile.defectDetectionRate || '95%', label: 'Defect Detection' }
   ];
 
   return (
@@ -41,10 +53,10 @@ export default function Hero({ onOpenResumeBuilder, onOpenCoverLetter }: HeroPro
             {/* Main Title Headlines */}
             <div className="space-y-3.5">
               <h1 className="font-display font-extrabold text-3xl sm:text-5xl lg:text-6xl text-white tracking-tight leading-[1.08]">
-                Hi, I'm <span className="text-[#FF6B35]">Sabbir Ahamed</span>
+                Hi, I'm <span className="text-[#FF6B35]">{profile.name}</span>
               </h1>
               <p className="font-display font-bold text-lg sm:text-2xl text-[#F3F4F6]">
-                Software Quality Assurance Engineer
+                {profile.title}
               </p>
               <div className="flex flex-wrap items-center gap-2 pt-1.5">
                 <span className="px-3 py-1 rounded-md bg-[#12151C] border border-white/10 text-xs font-mono text-[#D1D5DB] font-medium">
@@ -72,8 +84,8 @@ export default function Hero({ onOpenResumeBuilder, onOpenCoverLetter }: HeroPro
                   {/* Centered Profile Photo Frame */}
                   <div className="relative w-full aspect-square rounded-xl overflow-hidden border border-white/15 shadow-2xl group bg-[#12151C]">
                     <img
-                      src={PRIMARY_AVATAR}
-                      alt="Sabbir Ahamed - Software QA Engineer"
+                      src={primaryAvatar}
+                      alt={`${profile.name} - ${profile.title}`}
                       className="w-full h-full object-cover object-center"
                       referrerPolicy="no-referrer"
                       onError={(e) => {
@@ -85,7 +97,7 @@ export default function Hero({ onOpenResumeBuilder, onOpenCoverLetter }: HeroPro
                     {/* Gradient Overlay at Bottom of Image */}
                     <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-[#0B0D12] via-[#0B0D12]/80 to-transparent p-2.5 flex flex-col justify-end pointer-events-none">
                       <p className="text-[9px] font-mono text-[#FF6B35] font-bold tracking-wider uppercase">SQA Engineer</p>
-                      <h4 className="font-display font-extrabold text-sm sm:text-base text-white tracking-tight leading-tight">Sabbir Ahamed</h4>
+                      <h4 className="font-display font-extrabold text-sm sm:text-base text-white tracking-tight leading-tight">{profile.name}</h4>
                     </div>
                   </div>
                 </div>
@@ -95,12 +107,16 @@ export default function Hero({ onOpenResumeBuilder, onOpenCoverLetter }: HeroPro
             {/* Premium Summary Paragraph */}
             <div className="py-1 w-full">
               <p className="text-[#D1D5DB] text-base sm:text-lg font-light leading-[1.8] sm:leading-[1.85] w-full text-justify [text-justify:inter-word] tracking-normal">
-                Software Quality Assurance Engineer with <span className="font-semibold text-white">2+ years of hands-on experience</span> in 
-                <span className="font-semibold text-white"> Manual Testing, API Testing, and Web Application Testing</span>. 
-                Experienced in designing comprehensive test cases, executing functional, regression, and exploratory testing, validating REST APIs, and reporting defects with a strong focus on software quality and user experience. Currently expanding my expertise in 
-                <span className="font-semibold text-white"> UI Automation using Playwright (Python)</span>, 
-                <span className="font-semibold text-white"> Mobile Testing</span>, and 
-                <span className="font-semibold text-white"> CI/CD with GitHub Actions</span>. Passionate about continuous learning and leveraging modern QA tools and best practices to help teams deliver reliable, secure, and high-quality software.
+                {profile.objective || (
+                  <>
+                    Software Quality Assurance Engineer with <span className="font-semibold text-white">2+ years of hands-on experience</span> in 
+                    <span className="font-semibold text-white"> Manual Testing, API Testing, and Web Application Testing</span>. 
+                    Experienced in designing comprehensive test cases, executing functional, regression, and exploratory testing, validating REST APIs, and reporting defects with a strong focus on software quality and user experience. Currently expanding my expertise in 
+                    <span className="font-semibold text-white"> UI Automation using Playwright (Python)</span>, 
+                    <span className="font-semibold text-white"> Mobile Testing</span>, and 
+                    <span className="font-semibold text-white"> CI/CD with GitHub Actions</span>.
+                  </>
+                )}
               </p>
             </div>
 
@@ -112,21 +128,21 @@ export default function Hero({ onOpenResumeBuilder, onOpenCoverLetter }: HeroPro
                 title="Click to copy email"
               >
                 <Mail className="w-3.5 h-3.5 text-[#FF6B35]" />
-                <span>{PERSONAL_INFO.email}</span>
+                <span>{profile.email}</span>
                 {copiedEmail ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5 text-[#9CA3AF]" />}
               </button>
 
               <a
-                href={`tel:${PERSONAL_INFO.phone}`}
+                href={`tel:${profile.phone}`}
                 className="flex items-center space-x-2 px-4 py-2.5 rounded-full bg-[#12151C] border border-white/10 hover:border-[#FF6B35] text-[#D1D5DB] hover:text-white transition-all"
               >
                 <Phone className="w-3.5 h-3.5 text-[#FF6B35]" />
-                <span>{PERSONAL_INFO.phone}</span>
+                <span>{profile.phone}</span>
               </a>
 
               <div className="flex items-center space-x-2 px-4 py-2.5 rounded-full bg-[#12151C] border border-white/10 hover:border-[#FF6B35] text-[#D1D5DB] transition-all">
                 <MapPin className="w-3.5 h-3.5 text-[#FF6B35]" />
-                <span>{PERSONAL_INFO.location}</span>
+                <span>{profile.location}</span>
               </div>
             </div>
 
@@ -177,8 +193,8 @@ export default function Hero({ onOpenResumeBuilder, onOpenCoverLetter }: HeroPro
                 {/* Centered Profile Photo Frame */}
                 <div className="relative w-full aspect-square sm:aspect-[4/4.2] rounded-2xl overflow-hidden border border-white/15 shadow-2xl group bg-[#12151C]">
                   <img
-                    src={PRIMARY_AVATAR}
-                    alt="Sabbir Ahamed - Software QA Engineer"
+                    src={primaryAvatar}
+                    alt={`${profile.name} - ${profile.title}`}
                     className="w-full h-full object-cover object-center"
                     referrerPolicy="no-referrer"
                     onError={(e) => {
@@ -189,8 +205,8 @@ export default function Hero({ onOpenResumeBuilder, onOpenCoverLetter }: HeroPro
 
                   {/* Gradient Overlay at Bottom of Image */}
                   <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-[#0B0D12] via-[#0B0D12]/75 to-transparent p-4 flex flex-col justify-end pointer-events-none">
-                    <p className="text-[11px] font-mono text-[#FF6B35] font-bold tracking-wider uppercase">SQA Engineer</p>
-                    <h4 className="font-display font-extrabold text-xl sm:text-2xl text-white tracking-tight">Sabbir Ahamed</h4>
+                    <p className="text-[11px] font-mono text-[#FF6B35] font-bold tracking-wider uppercase truncate">{profile.title}</p>
+                    <h4 className="font-display font-extrabold text-xl sm:text-2xl text-white tracking-tight truncate">{profile.name}</h4>
                   </div>
                 </div>
               </div>

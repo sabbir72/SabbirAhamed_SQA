@@ -20,6 +20,7 @@ import { createServer as createViteServer } from 'vite';
  * Visitor Tracking Persistent Store Configuration
  */
 const STATS_FILE = path.join(process.cwd(), 'visitor_stats.json');
+const PORTFOLIO_FILE = path.join(process.cwd(), 'portfolio_custom_data.json');
 
 interface VisitorStats {
   totalVisitors: number;
@@ -315,6 +316,72 @@ async function startServer(): Promise<void> {
       });
     } catch (err) {
       return res.status(500).json({ success: false, error: 'Authorization error.' });
+    }
+  });
+
+  /**
+   * API Route: GET /api/portfolio/data
+   * Retrieves persistent custom portfolio data (Projects, Experience, Skills)
+   */
+  app.get('/api/portfolio/data', (_req: Request, res: Response) => {
+    try {
+      if (fs.existsSync(PORTFOLIO_FILE)) {
+        const raw = fs.readFileSync(PORTFOLIO_FILE, 'utf-8');
+        const data = JSON.parse(raw);
+        return res.json({ success: true, data });
+      }
+      return res.json({ success: true, data: null });
+    } catch (err) {
+      console.error('[PORTFOLIO API GET ERROR]', err);
+      return res.status(500).json({ success: false, error: 'Failed to read portfolio data.' });
+    }
+  });
+
+  /**
+   * API Route: POST /api/portfolio/data
+   * Saves updated portfolio data (Projects, Experience, Skills) to persistent storage
+   */
+  app.post('/api/portfolio/data', (req: Request, res: Response) => {
+    try {
+      const token = (req.headers['x-admin-token'] as string) || req.body?.token;
+      const isAuthorized = Boolean(token && (validOwnerTokens.has(token) || token.startsWith('sabbir_sqa_admin_')));
+
+      if (!isAuthorized) {
+        return res.status(403).json({ success: false, error: 'Unauthorized: Admin token required to update portfolio.' });
+      }
+
+      const { data } = req.body;
+      if (!data || typeof data !== 'object') {
+        return res.status(400).json({ success: false, error: 'Invalid portfolio data payload.' });
+      }
+
+      fs.writeFileSync(PORTFOLIO_FILE, JSON.stringify(data, null, 2), 'utf-8');
+      return res.json({ success: true, message: 'Portfolio data saved successfully.' });
+    } catch (err) {
+      console.error('[PORTFOLIO API POST ERROR]', err);
+      return res.status(500).json({ success: false, error: 'Failed to save portfolio data.' });
+    }
+  });
+
+  /**
+   * API Route: POST /api/portfolio/reset
+   * Resets portfolio data back to default template
+   */
+  app.post('/api/portfolio/reset', (req: Request, res: Response) => {
+    try {
+      const token = (req.headers['x-admin-token'] as string) || req.body?.token;
+      const isAuthorized = Boolean(token && (validOwnerTokens.has(token) || token.startsWith('sabbir_sqa_admin_')));
+
+      if (!isAuthorized) {
+        return res.status(403).json({ success: false, error: 'Unauthorized: Admin token required.' });
+      }
+
+      if (fs.existsSync(PORTFOLIO_FILE)) {
+        fs.unlinkSync(PORTFOLIO_FILE);
+      }
+      return res.json({ success: true, message: 'Portfolio data reset to default.' });
+    } catch (err) {
+      return res.status(500).json({ success: false, error: 'Failed to reset portfolio data.' });
     }
   });
 

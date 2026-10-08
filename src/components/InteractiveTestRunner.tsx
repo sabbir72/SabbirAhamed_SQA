@@ -1,10 +1,27 @@
 import { useState, useEffect, useRef } from 'react';
 import { Play, RotateCcw, CheckCircle2, AlertTriangle, Terminal as TerminalIcon, Cpu, Zap, Activity, Code, FileCode, Copy, Check } from 'lucide-react';
-import { PROJECTS } from '../data';
 import { Project, TestLog } from '../types';
+import { getStoredProjects, PORTFOLIO_UPDATED_EVENT } from '../utils/portfolioStore';
 
 export default function InteractiveTestRunner() {
-  const [selectedProjectId, setSelectedProjectId] = useState<string>(PROJECTS[0].id);
+  const [projects, setProjects] = useState<Project[]>(() => getStoredProjects());
+  const [selectedProjectId, setSelectedProjectId] = useState<string>(() => {
+    const list = getStoredProjects();
+    return list[0]?.id || 'proj-playwright-api';
+  });
+
+  useEffect(() => {
+    const handleSync = () => {
+      const updated = getStoredProjects();
+      setProjects(updated);
+      if (!updated.some(p => p.id === selectedProjectId)) {
+        setSelectedProjectId(updated[0]?.id || '');
+      }
+    };
+    window.addEventListener(PORTFOLIO_UPDATED_EVENT, handleSync);
+    return () => window.removeEventListener(PORTFOLIO_UPDATED_EVENT, handleSync);
+  }, [selectedProjectId]);
+
   const [isRunning, setIsRunning] = useState<boolean>(false);
   const [progress, setProgress] = useState<number>(0);
   const [activeLogs, setActiveLogs] = useState<TestLog[]>([]);
@@ -15,7 +32,15 @@ export default function InteractiveTestRunner() {
 
   const consoleEndRef = useRef<HTMLDivElement>(null);
 
-  const selectedProject = PROJECTS.find((p) => p.id === selectedProjectId) || PROJECTS[0];
+  const selectedProject = projects.find((p) => p.id === selectedProjectId) || projects[0] || {
+    id: 'default',
+    title: 'Playwright API Automation Framework',
+    type: 'API' as const,
+    description: '',
+    tags: [],
+    assertions: [],
+    logs: [],
+  };
 
   // Code snippets for each project type
   const getProjectCode = (projectId: string) => {
@@ -269,11 +294,11 @@ WHERE t.transaction_ref = 'TXN-2026-8802'
 
         {/* Project Selection Tabs */}
         <div className="flex flex-wrap justify-center gap-2">
-          {PROJECTS.map((project) => (
+          {projects.map((project) => (
             <button
               key={project.id}
               onClick={() => setSelectedProjectId(project.id)}
-              className={`px-4 py-2 rounded-full text-xs font-mono transition-all border ${
+              className={`px-4 py-2 rounded-full text-xs font-mono transition-all border cursor-pointer ${
                 selectedProjectId === project.id
                   ? 'bg-[#FF6B35] text-white border-[#FF6B35] font-bold shadow-lg shadow-[#FF6B35]/20'
                   : 'bg-[#12151C] border-white/10 text-[#D1D5DB] hover:border-[#FF6B35]/50 hover:text-white'

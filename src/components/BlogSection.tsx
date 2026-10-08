@@ -25,6 +25,7 @@ import {
 import { BlogPost } from '../data/blogs';
 import { getStoredBlogPosts, BLOGS_UPDATED_EVENT } from '../utils/blogStore';
 import { isAdminAuthenticated } from '../utils/adminAuth';
+import { getSystemLocks, LOCKS_UPDATED_EVENT } from '../utils/lockStore';
 import { PERSONAL_INFO } from '../data';
 
 const getAuthorAvatar = (author?: { name?: string; avatar?: string }) => {
@@ -42,19 +43,26 @@ interface BlogSectionProps {
 export default function BlogSection({ onSelectPost, onViewAllBlog }: BlogSectionProps) {
   const [posts, setPosts] = useState<BlogPost[]>(() => getStoredBlogPosts());
   const [isAdmin, setIsAdmin] = useState(() => isAdminAuthenticated());
+  const [locks, setLocks] = useState(() => getSystemLocks());
 
   useEffect(() => {
     const handleUpdate = () => {
       setPosts(getStoredBlogPosts());
       setIsAdmin(isAdminAuthenticated());
+      setLocks(getSystemLocks());
     };
     window.addEventListener(BLOGS_UPDATED_EVENT, handleUpdate);
     window.addEventListener('admin_auth_changed', handleUpdate);
+    window.addEventListener(LOCKS_UPDATED_EVENT, handleUpdate);
     return () => {
       window.removeEventListener(BLOGS_UPDATED_EVENT, handleUpdate);
       window.removeEventListener('admin_auth_changed', handleUpdate);
+      window.removeEventListener(LOCKS_UPDATED_EVENT, handleUpdate);
     };
   }, []);
+
+  // Check if blog is locked from public
+  const isLockedFromPublic = locks.blogLocked && !isAdmin;
 
   // Filter published posts and grab top 3-4
   const publishedPosts = posts.filter(p => p.status !== 'Draft');
@@ -123,123 +131,146 @@ export default function BlogSection({ onSelectPost, onViewAllBlog }: BlogSection
           </div>
         </div>
 
-        {/* Blog Showcase Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-          {/* Main Featured Post */}
-          {featuredPost && (
-            <div 
-              onClick={() => onSelectPost(featuredPost.slug)}
-              className="lg:col-span-7 group cursor-pointer bg-[#12151C] border border-white/10 hover:border-[#FF6B35]/50 rounded-3xl overflow-hidden transition-all duration-300 hover:shadow-2xl hover:shadow-[#FF6B35]/10 flex flex-col"
-            >
-              <div className="relative aspect-video overflow-hidden bg-black/40">
-                <img
-                  src={featuredPost.coverImage}
-                  alt={featuredPost.title}
-                  className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-                  loading="lazy"
-                />
-                <div className="absolute top-4 left-4">
-                  <span className="px-3 py-1 rounded-full text-xs font-mono font-bold bg-[#FF6B35] text-white shadow-md">
-                    Featured
-                  </span>
-                </div>
-                <div className="absolute bottom-4 left-4 right-4 flex items-center space-x-3 text-xs font-mono text-white/90 bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-full w-fit">
-                  <span className="flex items-center gap-1">
-                    <Calendar className="w-3.5 h-3.5 text-[#FF6B35]" />
-                    {featuredPost.publishDate}
-                  </span>
-                  <span>•</span>
-                  <span className="flex items-center gap-1">
-                    <Clock className="w-3.5 h-3.5 text-[#FF6B35]" />
-                    {featuredPost.readingTime}
-                  </span>
-                </div>
-              </div>
-
-              <div className="p-6 sm:p-8 flex-1 flex flex-col justify-between space-y-4">
-                <div className="space-y-3">
-                  <span className="text-xs font-mono text-[#FF6B35] font-bold uppercase tracking-wider">
-                    {featuredPost.category}
-                  </span>
-                  <h3 className="font-display font-black text-xl sm:text-2xl text-white group-hover:text-[#FF6B35] transition-colors leading-snug">
-                    {featuredPost.title}
-                  </h3>
-                  <p className="text-[#9CA3AF] text-sm font-light leading-relaxed line-clamp-3">
-                    {featuredPost.description}
-                  </p>
-                </div>
-
-                <div className="pt-4 border-t border-white/10 flex items-center justify-between">
-                  <div className="flex items-center space-x-2.5">
-                    <img
-                      src={getAuthorAvatar(featuredPost.author)}
-                      alt={featuredPost.author.name}
-                      className="w-7 h-7 rounded-full border border-[#FF6B35] object-cover"
-                      onError={(e) => {
-                        (e.target as HTMLImageElement).src = PERSONAL_INFO.avatar || '/sabbir_avatar.jpeg';
-                      }}
-                    />
-                    <span className="text-xs font-mono text-[#D1D5DB]">{featuredPost.author.name}</span>
-                  </div>
-                  <div className="inline-flex items-center space-x-1 text-xs font-mono font-bold text-[#FF6B35] group-hover:translate-x-1 transition-transform">
-                    <span>Read Full Article</span>
-                    <ArrowRight className="w-4 h-4" />
-                  </div>
-                </div>
-              </div>
+        {/* Blog Showcase Grid or Locked State */}
+        {isLockedFromPublic ? (
+          <div className="p-10 rounded-3xl bg-[#12151C] border border-amber-500/30 text-center space-y-4 max-w-xl mx-auto shadow-2xl animate-fadeIn">
+            <div className="w-14 h-14 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-400 mx-auto flex items-center justify-center">
+              <Lock className="w-7 h-7" />
             </div>
-          )}
-
-          {/* Secondary Posts List */}
-          <div className="lg:col-span-5 flex flex-col justify-between space-y-4">
-            {secondaryPosts.map((post) => (
-              <div
-                key={post.id}
-                onClick={() => onSelectPost(post.slug)}
-                className="group cursor-pointer bg-[#12151C] border border-white/10 hover:border-[#FF6B35]/40 rounded-2xl p-5 transition-all duration-200 hover:bg-[#181C26] flex items-start gap-4"
+            <div className="space-y-1">
+              <h3 className="font-display font-bold text-xl text-white">SQA Knowledge Base Locked</h3>
+              <p className="text-xs font-mono text-[#9CA3AF] leading-relaxed">
+                Technical articles are currently restricted under the administrator lock system. Access or unlock via Admin Portal.
+              </p>
+            </div>
+            <div className="pt-2">
+              <button
+                onClick={onViewAllBlog}
+                className="inline-flex items-center space-x-2 px-5 py-2.5 rounded-full bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 font-mono text-xs font-bold transition-all cursor-pointer"
               >
-                <img
-                  src={post.coverImage}
-                  alt={post.title}
-                  className="w-24 h-24 rounded-xl object-cover shrink-0 border border-white/10 group-hover:border-[#FF6B35]/30 transition-colors"
-                  loading="lazy"
-                />
-                <div className="flex-1 min-w-0 space-y-1.5">
-                  <div className="flex items-center space-x-2 text-[11px] font-mono text-[#9CA3AF]">
-                    <span className="text-[#FF6B35] font-bold">{post.category}</span>
-                    <span>•</span>
-                    <span>{post.readingTime}</span>
+                <Lock className="w-3.5 h-3.5" />
+                <span>Admin Login to Access</span>
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+            {/* Main Featured Post */}
+            {featuredPost && (
+              <div 
+                onClick={() => onSelectPost(featuredPost.slug)}
+                className="lg:col-span-7 group cursor-pointer bg-[#12151C] border border-white/10 hover:border-[#FF6B35]/50 rounded-3xl overflow-hidden transition-all duration-300 hover:shadow-2xl hover:shadow-[#FF6B35]/10 flex flex-col"
+              >
+                <div className="relative aspect-video overflow-hidden bg-black/40">
+                  <img
+                    src={featuredPost.coverImage}
+                    alt={featuredPost.title}
+                    className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                    loading="lazy"
+                  />
+                  <div className="absolute top-4 left-4">
+                    <span className="px-3 py-1 rounded-full text-xs font-mono font-bold bg-[#FF6B35] text-white shadow-md">
+                      Featured
+                    </span>
                   </div>
-                  <h4 className="font-display font-bold text-sm sm:text-base text-white group-hover:text-[#FF6B35] transition-colors leading-snug line-clamp-2">
-                    {post.title}
-                  </h4>
-                  <p className="text-[#9CA3AF] text-xs font-light line-clamp-2 leading-relaxed">
-                    {post.description}
-                  </p>
+                  <div className="absolute bottom-4 left-4 right-4 flex items-center space-x-3 text-xs font-mono text-white/90 bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-full w-fit">
+                    <span className="flex items-center gap-1">
+                      <Calendar className="w-3.5 h-3.5 text-[#FF6B35]" />
+                      {featuredPost.publishDate}
+                    </span>
+                    <span>•</span>
+                    <span className="flex items-center gap-1">
+                      <Clock className="w-3.5 h-3.5 text-[#FF6B35]" />
+                      {featuredPost.readingTime}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="p-6 sm:p-8 flex-1 flex flex-col justify-between space-y-4">
+                  <div className="space-y-3">
+                    <span className="text-xs font-mono text-[#FF6B35] font-bold uppercase tracking-wider">
+                      {featuredPost.category}
+                    </span>
+                    <h3 className="font-display font-black text-xl sm:text-2xl text-white group-hover:text-[#FF6B35] transition-colors leading-snug">
+                      {featuredPost.title}
+                    </h3>
+                    <p className="text-[#9CA3AF] text-sm font-light leading-relaxed line-clamp-3">
+                      {featuredPost.description}
+                    </p>
+                  </div>
+
+                  <div className="pt-4 border-t border-white/10 flex items-center justify-between">
+                    <div className="flex items-center space-x-2.5">
+                      <img
+                        src={getAuthorAvatar(featuredPost.author)}
+                        alt={featuredPost.author.name}
+                        className="w-7 h-7 rounded-full border border-[#FF6B35] object-cover"
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).src = PERSONAL_INFO.avatar || '/sabbir_avatar.jpeg';
+                        }}
+                      />
+                      <span className="text-xs font-mono text-[#D1D5DB]">{featuredPost.author.name}</span>
+                    </div>
+                    <div className="inline-flex items-center space-x-1 text-xs font-mono font-bold text-[#FF6B35] group-hover:translate-x-1 transition-transform">
+                      <span>Read Full Article</span>
+                      <ArrowRight className="w-4 h-4" />
+                    </div>
+                  </div>
                 </div>
               </div>
-            ))}
+            )}
 
-            {/* Bottom Explore Card */}
-            <div 
-              onClick={onViewAllBlog}
-              className="p-6 rounded-2xl bg-gradient-to-r from-[#FF6B35]/10 to-transparent border border-[#FF6B35]/20 flex items-center justify-between group cursor-pointer hover:border-[#FF6B35]/50 transition-all"
-            >
-              <div className="space-y-1">
-                <span className="text-xs font-mono font-bold text-white flex items-center gap-1.5">
-                  <BookOpen className="w-4 h-4 text-[#FF6B35]" />
-                  Want to explore more articles?
-                </span>
-                <p className="text-xs text-[#9CA3AF] font-light">
-                  Browse topics across Manual Testing, Automation, CI/CD, and ERPNext QA.
-                </p>
-              </div>
-              <div className="w-9 h-9 rounded-full bg-[#FF6B35] text-white flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform shadow-lg shadow-[#FF6B35]/20">
-                <ArrowRight className="w-4 h-4" />
+            {/* Secondary Posts List */}
+            <div className="lg:col-span-5 flex flex-col justify-between space-y-4">
+              {secondaryPosts.map((post) => (
+                <div
+                  key={post.id}
+                  onClick={() => onSelectPost(post.slug)}
+                  className="group cursor-pointer bg-[#12151C] border border-white/10 hover:border-[#FF6B35]/40 rounded-2xl p-5 transition-all duration-200 hover:bg-[#181C26] flex items-start gap-4"
+                >
+                  <img
+                    src={post.coverImage}
+                    alt={post.title}
+                    className="w-24 h-24 rounded-xl object-cover shrink-0 border border-white/10 group-hover:border-[#FF6B35]/30 transition-colors"
+                    loading="lazy"
+                  />
+                  <div className="flex-1 min-w-0 space-y-1.5">
+                    <div className="flex items-center space-x-2 text-[11px] font-mono text-[#9CA3AF]">
+                      <span className="text-[#FF6B35] font-bold">{post.category}</span>
+                      <span>•</span>
+                      <span>{post.readingTime}</span>
+                    </div>
+                    <h4 className="font-display font-bold text-sm sm:text-base text-white group-hover:text-[#FF6B35] transition-colors leading-snug line-clamp-2">
+                      {post.title}
+                    </h4>
+                    <p className="text-[#9CA3AF] text-xs font-light line-clamp-2 leading-relaxed">
+                      {post.description}
+                    </p>
+                  </div>
+                </div>
+              ))}
+
+              {/* Bottom Explore Card */}
+              <div 
+                onClick={onViewAllBlog}
+                className="p-6 rounded-2xl bg-gradient-to-r from-[#FF6B35]/10 to-transparent border border-[#FF6B35]/20 flex items-center justify-between group cursor-pointer hover:border-[#FF6B35]/50 transition-all"
+              >
+                <div className="space-y-1">
+                  <span className="text-xs font-mono font-bold text-white flex items-center gap-1.5">
+                    <BookOpen className="w-4 h-4 text-[#FF6B35]" />
+                    Want to explore more articles?
+                  </span>
+                  <p className="text-xs text-[#9CA3AF] font-light">
+                    Browse topics across Manual Testing, Automation, CI/CD, and ERPNext QA.
+                  </p>
+                </div>
+                <div className="w-9 h-9 rounded-full bg-[#FF6B35] text-white flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform shadow-lg shadow-[#FF6B35]/20">
+                  <ArrowRight className="w-4 h-4" />
+                </div>
               </div>
             </div>
           </div>
-        </div>
+        )}
       </div>
     </section>
   );

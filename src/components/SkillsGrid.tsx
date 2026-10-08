@@ -1,13 +1,31 @@
-import { useState } from 'react';
-import { ClipboardList, Play, Layers, Activity, Database, Sparkles, CheckCircle2 } from 'lucide-react';
-import { SKILL_CATEGORIES } from '../data';
+import { useState, useEffect } from 'react';
+import { ClipboardList, Play, Layers, Activity, Database, Sparkles, CheckCircle2, Plus } from 'lucide-react';
+import { Skill } from '../types';
+import { getStoredSkills, PORTFOLIO_UPDATED_EVENT } from '../utils/portfolioStore';
+import { isAdminAuthenticated } from '../utils/adminAuth';
+import { navigateTo } from '../utils/router';
 
 export default function SkillsGrid() {
+  const [skills, setSkills] = useState<Skill[]>(() => getStoredSkills());
+  const [isAdmin, setIsAdmin] = useState(() => isAdminAuthenticated());
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
 
-  const categories = ['All', 'Manual Testing', 'Automation Testing', 'API Testing Tools', 'Performance Testing', 'Tools & Databases'];
+  useEffect(() => {
+    const handleSync = () => {
+      setSkills(getStoredSkills());
+      setIsAdmin(isAdminAuthenticated());
+    };
+    window.addEventListener(PORTFOLIO_UPDATED_EVENT, handleSync);
+    window.addEventListener('admin_auth_changed', handleSync);
+    return () => {
+      window.removeEventListener(PORTFOLIO_UPDATED_EVENT, handleSync);
+      window.removeEventListener('admin_auth_changed', handleSync);
+    };
+  }, []);
 
-  const filteredCategories = SKILL_CATEGORIES.filter((cat) =>
+  const categories = ['All', ...skills.map((s) => s.category)];
+
+  const filteredCategories = skills.filter((cat) =>
     selectedCategory === 'All' ? true : cat.category === selectedCategory
   );
 
@@ -43,6 +61,19 @@ export default function SkillsGrid() {
           <p className="text-[#D1D5DB] text-sm sm:text-base leading-relaxed font-light">
             Methodical manual verification, REST API assertion frameworks, modern web UI automation, SQL database auditing, and performance load benchmarking in my daily SQA toolkit.
           </p>
+
+          {isAdmin && (
+            <div className="pt-1 flex justify-center">
+              <button
+                onClick={() => navigateTo('/admin')}
+                className="inline-flex items-center space-x-1.5 px-3.5 py-1.5 rounded-full bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-xs font-mono transition-all cursor-pointer"
+                title="Manage Skills in Admin Portal"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Add / Manage Skills</span>
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Filter Category Chips */}

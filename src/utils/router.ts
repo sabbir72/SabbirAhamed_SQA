@@ -11,14 +11,20 @@
 export type AppRoute = 
   | { type: 'home'; sectionHash?: string }
   | { type: 'blog-list' }
-  | { type: 'blog-post'; slug: string };
+  | { type: 'blog-post'; slug: string }
+  | { type: 'admin'; initialTab?: 'projects' | 'experience' | 'skills' | 'blogs' | 'profile' | 'security' };
 
 /**
  * Parses current window location pathname into structured AppRoute state
  */
 export function getCurrentRoute(): AppRoute {
   const path = window.location.pathname.replace(/\/$/, '') || '/';
+  const hash = window.location.hash.replace('#', '');
   
+  if (path === '/admin' || hash === 'admin') {
+    return { type: 'admin' };
+  }
+
   if (path === '/blog') {
     return { type: 'blog-list' };
   }
@@ -32,7 +38,6 @@ export function getCurrentRoute(): AppRoute {
   }
 
   // Default to home page
-  const hash = window.location.hash.replace('#', '');
   return { type: 'home', sectionHash: hash };
 }
 

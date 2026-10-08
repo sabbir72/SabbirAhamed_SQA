@@ -104,7 +104,7 @@ export default function AdminPasscodeModal({
                 type={showPasscode ? "text" : "password"}
                 value={passcode}
                 onChange={(e) => setPasscode(e.target.value)}
-                placeholder={showPasscode ? "sabbir@sqa2026" : "••••••••"}
+                placeholder="*****"
                 autoFocus
                 required
                 disabled={isSubmitting}

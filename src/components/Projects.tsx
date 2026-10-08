@@ -1,17 +1,34 @@
-import { useState } from 'react';
-import { ExternalLink, Github, Terminal, CheckCircle2, Filter, Layers, Code, Cpu, Activity, FileCheck } from 'lucide-react';
-import { PROJECTS } from '../data';
+import { useState, useEffect } from 'react';
+import { ExternalLink, Github, Terminal, CheckCircle2, Filter, Layers, Code, Cpu, Activity, FileCheck, Plus, Settings } from 'lucide-react';
 import { Project } from '../types';
+import { getStoredProjects, PORTFOLIO_UPDATED_EVENT } from '../utils/portfolioStore';
+import { isAdminAuthenticated } from '../utils/adminAuth';
+import { navigateTo } from '../utils/router';
 
 export default function Projects() {
+  const [projects, setProjects] = useState<Project[]>(() => getStoredProjects());
+  const [isAdmin, setIsAdmin] = useState(() => isAdminAuthenticated());
   const [selectedType, setSelectedType] = useState<string>('All');
   const [activeModalProject, setActiveModalProject] = useState<Project | null>(null);
+
+  useEffect(() => {
+    const handleSync = () => {
+      setProjects(getStoredProjects());
+      setIsAdmin(isAdminAuthenticated());
+    };
+    window.addEventListener(PORTFOLIO_UPDATED_EVENT, handleSync);
+    window.addEventListener('admin_auth_changed', handleSync);
+    return () => {
+      window.removeEventListener(PORTFOLIO_UPDATED_EVENT, handleSync);
+      window.removeEventListener('admin_auth_changed', handleSync);
+    };
+  }, []);
 
   const categories = ['All', 'Automation', 'API', 'Performance', 'Manual'];
 
   const filteredProjects = selectedType === 'All'
-    ? PROJECTS
-    : PROJECTS.filter((p) => p.type === selectedType);
+    ? projects
+    : projects.filter((p) => p.type === selectedType);
 
   const getTypeBadgeStyle = (type: string) => {
     switch (type) {
@@ -61,23 +78,36 @@ export default function Projects() {
           </p>
         </div>
 
-        {/* Filter Tabs */}
-        <div className="flex items-center justify-center flex-wrap gap-2 pt-2">
-          {categories.map((cat) => (
+        {/* Filter Tabs & Admin CTA */}
+        <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
+          <div className="flex items-center justify-center flex-wrap gap-2">
+            {categories.map((cat) => (
+              <button
+                key={cat}
+                onClick={() => setSelectedType(cat)}
+                className={`px-4 py-2 rounded-full text-xs font-mono transition-all border flex items-center gap-1.5 cursor-pointer ${
+                  selectedType === cat
+                    ? 'bg-[#FF6B35] text-white border-[#FF6B35] font-bold shadow-lg shadow-[#FF6B35]/20'
+                    : 'bg-[#12151C] border-white/10 text-[#D1D5DB] hover:border-[#FF6B35]/50 hover:text-white'
+                }`}
+              >
+                {cat !== 'All' && getTypeIcon(cat)}
+                <span>{cat}</span>
+                {cat === 'All' && <span className="ml-1 text-[10px] text-white/60">({projects.length})</span>}
+              </button>
+            ))}
+          </div>
+
+          {isAdmin && (
             <button
-              key={cat}
-              onClick={() => setSelectedType(cat)}
-              className={`px-4 py-2 rounded-full text-xs font-mono transition-all border flex items-center gap-1.5 ${
-                selectedType === cat
-                  ? 'bg-[#FF6B35] text-white border-[#FF6B35] font-bold shadow-lg shadow-[#FF6B35]/20'
-                  : 'bg-[#12151C] border-white/10 text-[#D1D5DB] hover:border-[#FF6B35]/50 hover:text-white'
-              }`}
+              onClick={() => navigateTo('/admin')}
+              className="inline-flex items-center space-x-1.5 px-3.5 py-1.5 rounded-full bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-xs font-mono transition-all cursor-pointer"
+              title="Open Admin System to add/edit/delete projects"
             >
-              {cat !== 'All' && getTypeIcon(cat)}
-              <span>{cat}</span>
-              {cat === 'All' && <span className="ml-1 text-[10px] text-white/60">({PROJECTS.length})</span>}
+              <Plus className="w-3.5 h-3.5" />
+              <span>Add / Manage Projects</span>
             </button>
-          ))}
+          )}
         </div>
 
         {/* Projects Cards Grid */}

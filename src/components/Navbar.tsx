@@ -91,7 +91,7 @@ export default function Navbar({ onOpenResumeBuilder, onOpenCoverLetter, current
           {/* Desktop Navigation Links - STRICT UNIFIED LIST IN 1 LINE */}
           <ul className="hidden lg:flex items-center gap-3.5 xl:gap-5 text-xs xl:text-sm font-medium whitespace-nowrap flex-nowrap">
             {navItems.map((item) => {
-              const isActive = item.isRoute && isBlogActive;
+              const isActive = item.href === '/blog' && isBlogActive;
               return (
                 <li key={item.label} className="shrink-0 whitespace-nowrap">
                   <a 
