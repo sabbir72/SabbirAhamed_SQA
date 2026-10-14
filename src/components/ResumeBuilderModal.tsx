@@ -823,7 +823,7 @@ Software Quality Assurance Engineer`;
               </button>
               <button
                 onClick={() => setIsPasscodeModalOpen(true)}
-                className="flex-1 py-3 rounded-full bg-[#FF6B35] hover:bg-[#FF814F] text-white font-mono text-xs font-bold shadow-lg shadow-[#FF6B35]/25 transition-all cursor-pointer flex items-center justify-center space-x-2"
+                className="flex-1 py-3 rounded-full bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-white font-mono text-xs font-bold shadow-lg shadow-[var(--color-accent)]/25 transition-all cursor-pointer flex items-center justify-center space-x-2"
               >
                 <Lock className="w-3.5 h-3.5" />
                 <span>Admin Unlock</span>
@@ -853,8 +853,8 @@ Software Quality Assurance Engineer`;
       {/* Modal Top Navigation Header */}
       <div className="bg-[#12151C] border-b border-white/10 px-4 sm:px-6 py-3 flex items-center justify-between no-print z-20">
         <div className="flex items-center space-x-3">
-          <div className="bg-[#FF6B35]/15 p-2 rounded-xl border border-[#FF6B35]/30">
-            <FileText className="w-5 h-5 text-[#FF6B35]" />
+          <div className="bg-[var(--color-accent)]/15 p-2 rounded-xl border border-[var(--color-accent)]/30">
+            <FileText className="w-5 h-5 text-[var(--color-accent)]" />
           </div>
           <div>
             <h2 className="font-display font-bold text-base sm:text-lg text-white flex items-center gap-2">
@@ -868,7 +868,7 @@ Software Quality Assurance Engineer`;
                 ATS Optimized • Customizable
               </span>
               <span className="hidden md:inline-flex items-center gap-1 px-2 py-0.5 rounded bg-black/40 border border-white/10 text-[11px] font-mono text-[#E5E7EB]">
-                <span className="text-[#FF6B35] font-bold">File:</span>
+                <span className="text-[var(--color-accent)] font-bold">File:</span>
                 <span className="text-emerald-400 font-semibold">{getCvBaseFileName()}.pdf</span>
               </span>
             </div>
@@ -898,7 +898,7 @@ Software Quality Assurance Engineer`;
           <button
             onClick={handleDownloadPDF}
             disabled={isExportingPdf}
-            className="flex items-center space-x-1.5 px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg bg-[#FF6B35] hover:bg-[#FF814F] text-white text-xs font-mono font-semibold shadow-lg shadow-[#FF6B35]/20 transition-all cursor-pointer disabled:opacity-50"
+            className="flex items-center space-x-1.5 px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-white text-xs font-mono font-semibold shadow-lg shadow-[var(--color-accent)]/20 transition-all cursor-pointer disabled:opacity-50"
             title="Download PDF under 1MB with crisp 192 DPI and active clickable links"
           >
             <Download className="w-3.5 h-3.5" />
@@ -925,26 +925,26 @@ Software Quality Assurance Engineer`;
           <div className="grid grid-cols-4 gap-1 p-1 bg-[#12151C] rounded-xl border border-white/10 text-xs font-mono">
             <button
               onClick={() => setActiveTab('preview')}
-              className={`py-2 rounded-lg text-center transition-colors cursor-pointer ${activeTab === 'preview' ? 'bg-[#FF6B35] text-white font-bold' : 'text-[#9CA3AF] hover:text-white'}`}
+              className={`py-2 rounded-lg text-center transition-colors cursor-pointer ${activeTab === 'preview' ? 'bg-[var(--color-accent)] text-white font-bold' : 'text-[#9CA3AF] hover:text-white'}`}
             >
               Template
             </button>
             <button
               onClick={() => setActiveTab('projects-filter')}
-              className={`py-2 rounded-lg text-center transition-colors cursor-pointer relative ${activeTab === 'projects-filter' ? 'bg-[#FF6B35] text-white font-bold' : 'text-[#9CA3AF] hover:text-white'}`}
+              className={`py-2 rounded-lg text-center transition-colors cursor-pointer relative ${activeTab === 'projects-filter' ? 'bg-[var(--color-accent)] text-white font-bold' : 'text-[#9CA3AF] hover:text-white'}`}
             >
               Projects
               <span className="ml-1 text-[9px] bg-white/20 px-1 rounded-full">{selectedProjectIds.length}</span>
             </button>
             <button
               onClick={() => setActiveTab('ats-score')}
-              className={`py-2 rounded-lg text-center transition-colors cursor-pointer ${activeTab === 'ats-score' ? 'bg-[#FF6B35] text-white font-bold' : 'text-[#9CA3AF] hover:text-white'}`}
+              className={`py-2 rounded-lg text-center transition-colors cursor-pointer ${activeTab === 'ats-score' ? 'bg-[var(--color-accent)] text-white font-bold' : 'text-[#9CA3AF] hover:text-white'}`}
             >
               ATS ({atsAnalysis.totalScore}%)
             </button>
             <button
               onClick={() => setActiveTab('cover-letter')}
-              className={`py-2 rounded-lg text-center transition-colors cursor-pointer ${activeTab === 'cover-letter' ? 'bg-[#FF6B35] text-white font-bold' : 'text-[#9CA3AF] hover:text-white'}`}
+              className={`py-2 rounded-lg text-center transition-colors cursor-pointer ${activeTab === 'cover-letter' ? 'bg-[var(--color-accent)] text-white font-bold' : 'text-[#9CA3AF] hover:text-white'}`}
             >
               Cover
             </button>
@@ -955,7 +955,7 @@ Software Quality Assurance Engineer`;
             <div className="space-y-5 animate-fadeIn">
               {/* Template Switcher */}
               <div className="space-y-2">
-                <label className="text-xs font-mono text-[#FF6B35] uppercase font-bold tracking-wider flex items-center gap-1.5">
+                <label className="text-xs font-mono text-[var(--color-accent)] uppercase font-bold tracking-wider flex items-center gap-1.5">
                   <Sliders className="w-3.5 h-3.5" />
                   <span>Choose Resume Template</span>
                 </label>
@@ -972,13 +972,13 @@ Software Quality Assurance Engineer`;
                       onClick={() => setTemplate(t.id as TemplateType)}
                       className={`text-left p-3 rounded-xl border transition-all cursor-pointer ${
                         template === t.id 
-                          ? 'bg-[#12151C] border-[#FF6B35] shadow-lg shadow-[#FF6B35]/10' 
+                          ? 'bg-[#12151C] border-[var(--color-accent)] shadow-lg shadow-[var(--color-accent)]/10' 
                           : 'bg-[#12151C]/40 border-white/5 hover:border-white/20'
                       }`}
                     >
                       <div className="flex items-center justify-between">
                         <span className="text-xs font-bold text-white">{t.name}</span>
-                        {template === t.id && <Check className="w-3.5 h-3.5 text-[#FF6B35]" />}
+                        {template === t.id && <Check className="w-3.5 h-3.5 text-[var(--color-accent)]" />}
                       </div>
                       <p className="text-[11px] text-[#9CA3AF] mt-0.5 font-light">{t.desc}</p>
                     </button>
@@ -989,7 +989,7 @@ Software Quality Assurance Engineer`;
               {/* Professional ATS Typography Selector */}
               <div className="space-y-2 pt-2 border-t border-white/10">
                 <div className="flex items-center justify-between">
-                  <label className="text-xs font-mono text-[#FF6B35] uppercase font-bold tracking-wider flex items-center gap-1.5">
+                  <label className="text-xs font-mono text-[var(--color-accent)] uppercase font-bold tracking-wider flex items-center gap-1.5">
                     <Type className="w-3.5 h-3.5" />
                     <span>Professional Font</span>
                   </label>
@@ -1007,7 +1007,7 @@ Software Quality Assurance Engineer`;
                       onClick={() => setFontFamily(f.id as AtsFontFamily)}
                       className={`p-2 rounded-xl border text-left transition-all cursor-pointer ${
                         fontFamily === f.id
-                          ? 'bg-[#FF6B35] border-[#FF6B35] text-white font-bold shadow-sm'
+                          ? 'bg-[var(--color-accent)] border-[var(--color-accent)] text-white font-bold shadow-sm'
                           : 'bg-[#12151C] border-white/10 text-[#9CA3AF] hover:text-white hover:border-white/20'
                       }`}
                     >
@@ -1024,7 +1024,7 @@ Software Quality Assurance Engineer`;
               {/* Candidate Info & PDF Filename Setup */}
               <div className="space-y-2.5 pt-2 border-t border-white/10">
                 <div className="flex items-center justify-between">
-                  <label className="text-xs font-mono text-[#FF6B35] uppercase font-bold tracking-wider flex items-center gap-1.5">
+                  <label className="text-xs font-mono text-[var(--color-accent)] uppercase font-bold tracking-wider flex items-center gap-1.5">
                     <User className="w-3.5 h-3.5" />
                     <span>Candidate & PDF Export Settings</span>
                   </label>
@@ -1047,7 +1047,7 @@ Software Quality Assurance Engineer`;
                         type="text"
                         value={customInfo.name}
                         onChange={(e) => setCustomInfo(prev => ({ ...prev, name: e.target.value }))}
-                        className="w-full p-2 bg-[#0B0D12] border border-white/10 rounded text-xs text-white focus:border-[#FF6B35] outline-none font-mono"
+                        className="w-full p-2 bg-[#0B0D12] border border-white/10 rounded text-xs text-white focus:border-[var(--color-accent)] outline-none font-mono"
                         placeholder="Sabbir Ahamed"
                       />
                     </div>
@@ -1057,7 +1057,7 @@ Software Quality Assurance Engineer`;
                         type="text"
                         value={customInfo.experienceYears}
                         onChange={(e) => setCustomInfo(prev => ({ ...prev, experienceYears: e.target.value }))}
-                        className="w-full p-2 bg-[#0B0D12] border border-white/10 rounded text-xs text-white focus:border-[#FF6B35] outline-none font-mono"
+                        className="w-full p-2 bg-[#0B0D12] border border-white/10 rounded text-xs text-white focus:border-[var(--color-accent)] outline-none font-mono"
                         placeholder="2"
                       />
                     </div>
@@ -1067,7 +1067,7 @@ Software Quality Assurance Engineer`;
 
               {/* SQA Role Target Preset */}
               <div className="space-y-2 pt-2 border-t border-white/10">
-                <label className="text-xs font-mono text-[#FF6B35] uppercase font-bold tracking-wider flex items-center gap-1.5">
+                <label className="text-xs font-mono text-[var(--color-accent)] uppercase font-bold tracking-wider flex items-center gap-1.5">
                   <Briefcase className="w-3.5 h-3.5" />
                   <span>Target Role Focus</span>
                 </label>
@@ -1083,7 +1083,7 @@ Software Quality Assurance Engineer`;
                       onClick={() => handleRoleSelect(r.id as TargetRoleType)}
                       className={`p-2.5 rounded-lg border text-center transition-all cursor-pointer font-mono ${
                         targetRole === r.id
-                          ? 'bg-[#FF6B35]/20 border-[#FF6B35] text-white font-bold'
+                          ? 'bg-[var(--color-accent)]/20 border-[var(--color-accent)] text-white font-bold'
                           : 'bg-[#12151C] border-white/10 text-[#D1D5DB] hover:text-white'
                       }`}
                     >
@@ -1096,7 +1096,7 @@ Software Quality Assurance Engineer`;
               {/* Career Objective Customizer & Default Switcher */}
               <div className="space-y-2 pt-2 border-t border-white/10">
                 <div className="flex items-center justify-between">
-                  <label className="text-xs font-mono text-[#FF6B35] uppercase font-bold tracking-wider flex items-center gap-1.5">
+                  <label className="text-xs font-mono text-[var(--color-accent)] uppercase font-bold tracking-wider flex items-center gap-1.5">
                     <Target className="w-3.5 h-3.5" />
                     <span>Career Objective</span>
                   </label>
@@ -1122,7 +1122,7 @@ Software Quality Assurance Engineer`;
                   value={customInfo.careerObjective}
                   onChange={(e) => setCustomInfo(prev => ({ ...prev, careerObjective: e.target.value }))}
                   placeholder={DEFAULT_CAREER_OBJECTIVE}
-                  className="w-full p-2.5 bg-[#12151C] border border-white/10 rounded-lg text-xs text-white focus:border-[#FF6B35] outline-none font-sans leading-relaxed resize-y"
+                  className="w-full p-2.5 bg-[#12151C] border border-white/10 rounded-lg text-xs text-white focus:border-[var(--color-accent)] outline-none font-sans leading-relaxed resize-y"
                 />
                 <div className="flex justify-between items-center text-[10px] text-[#D1D5DB] font-mono">
                   <span className="text-emerald-400/90">✓ Applied to PDF & Print</span>
@@ -1156,17 +1156,17 @@ Software Quality Assurance Engineer`;
                   <button
                     onClick={handleDownloadPDF}
                     disabled={isExportingPdf}
-                    className="w-full flex items-center justify-between py-2 px-3 bg-[#FF6B35]/10 hover:bg-[#FF6B35]/20 border border-[#FF6B35]/30 rounded-lg text-xs font-mono text-[#FF6B35] transition-colors cursor-pointer text-left disabled:opacity-50"
+                    className="w-full flex items-center justify-between py-2 px-3 bg-[var(--color-accent)]/10 hover:bg-[var(--color-accent)]/20 border border-[var(--color-accent)]/30 rounded-lg text-xs font-mono text-[var(--color-accent)] transition-colors cursor-pointer text-left disabled:opacity-50"
                     title="Direct PDF download with clickable links and under 1MB size"
                   >
                     <div className="flex items-center space-x-2">
-                      <Download className="w-4 h-4 text-[#FF6B35] shrink-0" />
+                      <Download className="w-4 h-4 text-[var(--color-accent)] shrink-0" />
                       <div>
                         <div className="font-bold text-white">Direct PDF (&lt; 1MB)</div>
                         <div className="text-[10px] text-gray-300">Clickable links • 192 DPI high sharpness</div>
                       </div>
                     </div>
-                    <span className="text-[10px] bg-[#FF6B35]/20 px-1.5 py-0.5 rounded text-white font-bold">~500KB</span>
+                    <span className="text-[10px] bg-[var(--color-accent)]/20 px-1.5 py-0.5 rounded text-white font-bold">~500KB</span>
                   </button>
 
                   <button
@@ -1212,7 +1212,7 @@ Software Quality Assurance Engineer`;
           {activeTab === 'projects-filter' && (
             <div className="space-y-4 animate-fadeIn">
               <div className="flex items-center justify-between">
-                <label className="text-xs font-mono text-[#FF6B35] uppercase font-bold tracking-wider flex items-center gap-1.5">
+                <label className="text-xs font-mono text-[var(--color-accent)] uppercase font-bold tracking-wider flex items-center gap-1.5">
                   <Filter className="w-3.5 h-3.5" />
                   <span>Select Projects for Resume</span>
                 </label>
@@ -1262,12 +1262,12 @@ Software Quality Assurance Engineer`;
                       key={proj.id}
                       onClick={() => toggleProject(proj.id)}
                       className={`p-3 rounded-xl border text-left cursor-pointer transition-all flex items-start space-x-3 ${
-                        isChecked ? 'bg-[#12151C] border-[#FF6B35]/60 text-white' : 'bg-[#12151C]/30 border-white/5 text-[#9CA3AF] opacity-60'
+                        isChecked ? 'bg-[#12151C] border-[var(--color-accent)]/60 text-white' : 'bg-[#12151C]/30 border-white/5 text-[#9CA3AF] opacity-60'
                       }`}
                     >
                       <button className="mt-0.5 focus:outline-none">
                         {isChecked ? (
-                          <CheckSquare className="w-4 h-4 text-[#FF6B35]" />
+                          <CheckSquare className="w-4 h-4 text-[var(--color-accent)]" />
                         ) : (
                           <Square className="w-4 h-4 text-white/30" />
                         )}
@@ -1312,7 +1312,7 @@ Software Quality Assurance Engineer`;
               </div>
 
               <div className="space-y-2">
-                <label className="text-xs font-mono text-[#FF6B35] uppercase font-bold">ATS Audit Checklist</label>
+                <label className="text-xs font-mono text-[var(--color-accent)] uppercase font-bold">ATS Audit Checklist</label>
                 <div className="space-y-2 text-xs">
                   {atsAnalysis.checks.map((chk, idx) => (
                     <div key={idx} className="p-2.5 rounded-lg bg-[#12151C] border border-white/5 space-y-1">
@@ -1335,7 +1335,7 @@ Software Quality Assurance Engineer`;
           {/* TAB 4: COVER LETTER GENERATOR */}
           {activeTab === 'cover-letter' && (
             <div className="space-y-4 animate-fadeIn">
-              <label className="text-xs font-mono text-[#FF6B35] uppercase font-bold tracking-wider">Customize Cover Letter</label>
+              <label className="text-xs font-mono text-[var(--color-accent)] uppercase font-bold tracking-wider">Customize Cover Letter</label>
               
               <div className="space-y-3">
                 <div>
@@ -1344,7 +1344,7 @@ Software Quality Assurance Engineer`;
                     type="text"
                     value={targetCompany}
                     onChange={(e) => setTargetCompany(e.target.value)}
-                    className="w-full mt-1 p-2 bg-[#12151C] border border-white/10 rounded-lg text-xs text-white focus:border-[#FF6B35] outline-none font-mono"
+                    className="w-full mt-1 p-2 bg-[#12151C] border border-white/10 rounded-lg text-xs text-white focus:border-[var(--color-accent)] outline-none font-mono"
                     placeholder="e.g. Brain Station 23 / Enosis"
                   />
                 </div>
@@ -1354,13 +1354,13 @@ Software Quality Assurance Engineer`;
                     type="text"
                     value={targetJobTitle}
                     onChange={(e) => setTargetJobTitle(e.target.value)}
-                    className="w-full mt-1 p-2 bg-[#12151C] border border-white/10 rounded-lg text-xs text-white focus:border-[#FF6B35] outline-none font-mono"
+                    className="w-full mt-1 p-2 bg-[#12151C] border border-white/10 rounded-lg text-xs text-white focus:border-[var(--color-accent)] outline-none font-mono"
                     placeholder="e.g. SQA Automation Engineer"
                   />
                 </div>
                 <button
                   onClick={handleCopyCoverLetter}
-                  className="w-full flex items-center justify-center space-x-2 py-2.5 bg-[#FF6B35] hover:bg-[#FF814F] text-white rounded-lg text-xs font-mono font-bold transition-all cursor-pointer shadow-lg"
+                  className="w-full flex items-center justify-center space-x-2 py-2.5 bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-white rounded-lg text-xs font-mono font-bold transition-all cursor-pointer shadow-lg"
                 >
                   {copiedCover ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
                   <span>{copiedCover ? 'Cover Letter Copied!' : 'Copy Cover Letter'}</span>
@@ -1835,7 +1835,7 @@ Software Quality Assurance Engineer`;
                       <span>•</span>
                       <a href={normalizeUrl(customInfo.github)} target="_blank" rel="noopener noreferrer" className="text-gray-900 hover:underline font-bold" style={{ color: '#000000', textDecoration: 'underline' }}>GitHub (Click Here)</a>
                       <span>•</span>
-                      <a href={normalizeUrl(window.location.origin)} target="_blank" rel="noopener noreferrer" className="text-[#FF6B35] hover:underline font-bold" style={{ color: '#FF6B35', textDecoration: 'underline' }}>Portfolio (Click Here)</a>
+                      <a href={normalizeUrl(window.location.origin)} target="_blank" rel="noopener noreferrer" className="text-[var(--color-accent)] hover:underline font-bold" style={{ color: 'var(--color-accent)', textDecoration: 'underline' }}>Portfolio (Click Here)</a>
                     </div>
                   </div>
                 </div>

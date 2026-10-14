@@ -11,7 +11,11 @@ interface NavbarProps {
   currentPath?: string;
 }
 
-export default function Navbar({ onOpenResumeBuilder, onOpenCoverLetter, currentPath = '/' }: NavbarProps) {
+export default function Navbar({ 
+  onOpenResumeBuilder, 
+  onOpenCoverLetter, 
+  currentPath = '/' 
+}: NavbarProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const [readingProgress, setReadingProgress] = useState(0);
@@ -72,23 +76,23 @@ export default function Navbar({ onOpenResumeBuilder, onOpenCoverLetter, current
 
       <header className={`fixed inset-x-0 top-0 z-50 transition-all duration-300 ${
         scrolled 
-          ? 'bg-[#0B0D12]/90 backdrop-blur-md shadow-2xl border-b border-white/10 py-3' 
+          ? 'bg-[var(--color-dark-bg,#080B11)]/90 backdrop-blur-md shadow-2xl border-b border-white/10 py-3' 
           : 'bg-transparent border-b border-white/[0.06] py-4'
       }`}>
         <nav className="max-w-7xl mx-auto px-4 sm:px-6 flex items-center justify-between gap-4" aria-label="Main navigation">
           {/* Brand Logo */}
           <a href="#about" onClick={handleLogoClick} className="flex items-center space-x-2.5 group shrink-0">
-            <div className="bg-[#FF6B35]/10 p-2 rounded-xl border border-[#FF6B35]/20 group-hover:border-[#FF6B35] transition-colors">
-              <ShieldCheck className="w-5 h-5 text-[#FF6B35]" />
+            <div className="bg-[var(--color-accent)]/10 p-2 rounded-xl border border-[var(--color-accent)]/25 group-hover:border-[var(--color-accent)] transition-colors">
+              <ShieldCheck className="w-5 h-5 text-[var(--color-accent)]" />
             </div>
             <div>
               <span className="font-display font-extrabold text-lg tracking-tight text-white whitespace-nowrap">
-                Sabbir<span className="text-[#FF6B35]">.QA</span>
+                Sabbir<span className="text-[var(--color-accent)]">.QA</span>
               </span>
             </div>
           </a>
 
-          {/* Desktop Navigation Links - STRICT UNIFIED LIST IN 1 LINE */}
+          {/* Desktop Navigation Links */}
           <ul className="hidden lg:flex items-center gap-3.5 xl:gap-5 text-xs xl:text-sm font-medium whitespace-nowrap flex-nowrap">
             {navItems.map((item) => {
               const isActive = item.href === '/blog' && isBlogActive;
@@ -99,8 +103,8 @@ export default function Navbar({ onOpenResumeBuilder, onOpenCoverLetter, current
                     onClick={(e) => handleNavClick(e, item)}
                     className={`nav-link whitespace-nowrap transition-colors py-1 cursor-pointer block ${
                       isActive
-                        ? 'text-[#FF6B35] font-bold border-b-2 border-[#FF6B35]'
-                        : 'text-[#D1D5DB] hover:text-[#FF6B35]'
+                        ? 'text-[var(--color-accent)] font-bold border-b-2 border-[var(--color-accent)]'
+                        : 'text-[#D1D5DB] hover:text-[var(--color-accent)]'
                     }`}
                   >
                     {item.label}
@@ -116,7 +120,7 @@ export default function Navbar({ onOpenResumeBuilder, onOpenCoverLetter, current
               href={PERSONAL_INFO.github}
               target="_blank"
               rel="noopener noreferrer"
-              className="w-9 h-9 flex items-center justify-center text-[#D1D5DB] hover:text-white bg-[#12151C] rounded-full border border-white/10 hover:border-[#FF6B35] transition-colors"
+              className="w-9 h-9 flex items-center justify-center text-[#D1D5DB] hover:text-white bg-white/[0.05] hover:bg-white/10 rounded-full border border-white/10 hover:border-[var(--color-accent)] transition-colors"
               title="GitHub Profile"
             >
               <Github className="w-4 h-4" />
@@ -125,7 +129,7 @@ export default function Navbar({ onOpenResumeBuilder, onOpenCoverLetter, current
               href={PERSONAL_INFO.linkedin}
               target="_blank"
               rel="noopener noreferrer"
-              className="w-9 h-9 flex items-center justify-center text-[#D1D5DB] hover:text-white bg-[#12151C] rounded-full border border-white/10 hover:border-[#FF6B35] transition-colors"
+              className="w-9 h-9 flex items-center justify-center text-[#D1D5DB] hover:text-white bg-white/[0.05] hover:bg-white/10 rounded-full border border-white/10 hover:border-[var(--color-accent)] transition-colors"
               title="LinkedIn Profile"
             >
               <Linkedin className="w-4 h-4" />
@@ -138,7 +142,11 @@ export default function Navbar({ onOpenResumeBuilder, onOpenCoverLetter, current
                 e.preventDefault();
                 navigateToHomeSection('#contact');
               }}
-              className="hidden sm:inline-flex items-center space-x-1.5 shimmer bg-[#FF6B35] hover:bg-[#FF814F] text-white font-semibold px-4 py-2 rounded-full text-xs shadow-lg shadow-[#FF6B35]/20 transition-all hover:scale-[1.02] active:scale-95 cursor-pointer whitespace-nowrap"
+              className="hidden sm:inline-flex items-center space-x-1.5 shimmer text-black font-bold px-4 py-2 rounded-full text-xs shadow-lg transition-all hover:scale-[1.02] active:scale-95 cursor-pointer whitespace-nowrap"
+              style={{
+                backgroundColor: 'var(--color-accent)',
+                boxShadow: '0 10px 25px -5px var(--color-accent-glow, rgba(0,210,255,0.3))'
+              }}
             >
               <Mail className="w-3.5 h-3.5" />
               <span>Hire Me</span>
@@ -147,29 +155,30 @@ export default function Navbar({ onOpenResumeBuilder, onOpenCoverLetter, current
             {/* Mobile Menu Hamburger */}
             <button
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="lg:hidden w-9 h-9 flex items-center justify-center text-white rounded-full bg-[#12151C] border border-white/10"
+              className="lg:hidden w-9 h-9 flex items-center justify-center text-white rounded-full bg-white/[0.05] border border-white/10"
               aria-label="Toggle navigation menu"
             >
-              {mobileMenuOpen ? <X className="w-5 h-5 text-[#FF6B35]" /> : <Menu className="w-5 h-5" />}
+              {mobileMenuOpen ? <X className="w-5 h-5 text-[var(--color-accent)]" /> : <Menu className="w-5 h-5" />}
             </button>
           </div>
         </nav>
 
         {/* Mobile Navigation Drawer */}
         {mobileMenuOpen && (
-          <div className="lg:hidden bg-[#0B0D12]/95 backdrop-blur-xl border-t border-white/10 px-6 py-6 space-y-3 text-sm font-medium text-[#D1D5DB] shadow-2xl animate-fadeIn">
+          <div className="lg:hidden bg-[var(--color-dark-bg,#080B11)]/95 backdrop-blur-xl border-t border-white/10 px-6 py-6 space-y-3 text-sm font-medium text-[#D1D5DB] shadow-2xl animate-fadeIn">
             {navItems.map((item) => (
               <a
                 key={item.label}
                 href={item.href}
                 onClick={(e) => handleNavClick(e, item)}
                 className={`block py-2 transition-colors border-b border-white/[0.04] cursor-pointer ${
-                  item.isRoute && isBlogActive ? 'text-[#FF6B35] font-bold' : 'hover:text-[#FF6B35]'
+                  item.isRoute && isBlogActive ? 'text-[var(--color-accent)] font-bold' : 'hover:text-[var(--color-accent)]'
                 }`}
               >
                 {item.label}
               </a>
             ))}
+
             <div className="pt-4">
               <a
                 href="#contact"
@@ -178,7 +187,11 @@ export default function Navbar({ onOpenResumeBuilder, onOpenCoverLetter, current
                   setMobileMenuOpen(false);
                   navigateToHomeSection('#contact');
                 }}
-                className="flex items-center justify-center space-x-2 w-full py-3 shimmer bg-[#FF6B35] hover:bg-[#FF814F] text-white font-bold rounded-full text-xs shadow-lg cursor-pointer"
+                className="flex items-center justify-center space-x-2 w-full py-3 shimmer text-black font-bold rounded-full text-xs shadow-lg cursor-pointer"
+                style={{
+                  backgroundColor: 'var(--color-accent)',
+                  boxShadow: '0 8px 20px -5px var(--color-accent-glow)'
+                }}
               >
                 <Mail className="w-4 h-4" />
                 <span>Hire Me</span>
@@ -190,7 +203,3 @@ export default function Navbar({ onOpenResumeBuilder, onOpenCoverLetter, current
     </>
   );
 }
-
-
-
-

@@ -39,40 +39,57 @@ function normalizeAuthorAvatar(post: BlogPost): BlogPost {
   return post;
 }
 
+const CANDIDATE_BLOG_KEYS = [
+  STORAGE_KEY,
+  'sabbir_portfolio_blogs',
+  'sabbir_blog_posts'
+];
+
 /**
- * Initialize and load blog posts from LocalStorage or default dataset
+ * Initialize and load blog posts from LocalStorage or default dataset non-destructively
  */
 export function getStoredBlogPosts(): BlogPost[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) {
-      // First time initialization - load default posts with status 'Published'
-      const initialPosts = BLOG_POSTS.map(post => normalizeAuthorAvatar({
-        ...post,
-        status: post.status || ('Published' as const),
-      }));
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(initialPosts));
-      return initialPosts;
-    }
-    const parsed: BlogPost[] = JSON.parse(raw);
-    // Ensure status field exists and sync author profile avatar from main profile
-    const synchronizedPosts = parsed.map(post => normalizeAuthorAvatar({
-      ...post,
-      status: post.status || 'Published',
-    }));
+    for (const key of CANDIDATE_BLOG_KEYS) {
+      const raw = localStorage.getItem(key);
+      if (raw) {
+        const parsed: BlogPost[] = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          // Ensure status field exists and sync author profile avatar from main profile
+          const synchronizedPosts = parsed.map(post => normalizeAuthorAvatar({
+            ...post,
+            status: post.status || 'Published',
+          }));
 
-    // Update localStorage with fixed author avatars if modified
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(synchronizedPosts));
-    } catch (e) {
-      // ignore storage quota error
-    }
+          // Synchronize to primary key if loaded from fallback
+          if (key !== STORAGE_KEY) {
+            try {
+              localStorage.setItem(STORAGE_KEY, JSON.stringify(synchronizedPosts));
+            } catch (e) {
+              // ignore
+            }
+          }
 
-    return synchronizedPosts;
+          return synchronizedPosts;
+        }
+      }
+    }
   } catch (err) {
     console.error('Error reading blog posts from localStorage:', err);
-    return BLOG_POSTS.map(post => normalizeAuthorAvatar({ ...post, status: 'Published' }));
   }
+
+  // First time initialization fallback - load default posts with status 'Published'
+  const initialPosts = BLOG_POSTS.map(post => normalizeAuthorAvatar({
+    ...post,
+    status: post.status || ('Published' as const),
+  }));
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(initialPosts));
+    localStorage.setItem('sabbir_portfolio_blogs', JSON.stringify(initialPosts));
+  } catch (e) {
+    // ignore
+  }
+  return initialPosts;
 }
 
 /**

@@ -1,16 +1,27 @@
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Merriweather:ital,wght@0,300;0,400;0,700;1,300;1,400&family=Source+Sans+3:ital,wght@0,300;0,400;0,600;0,700;1,400&display=swap');
 @import "tailwindcss";
 
+:root {
+  --color-accent: #00D2FF;
+  --color-accent-light: #38BDF8;
+  --color-accent-hover: #0284C7;
+  --color-accent-glow: rgba(0, 210, 255, 0.28);
+  --color-accent-rgb: 0, 210, 255;
+  --color-dark-bg: #080B11;
+  --color-dark-card: #0E1422;
+  --color-border-subtle: rgba(0, 210, 255, 0.22);
+}
+
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-display: "Plus Jakarta Sans", sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
 
-  --color-accent: #FF6B35;
-  --color-accent-light: #FF814F;
-  --color-accent-hover: #FF814F;
-  --color-dark-bg: #0B0D12;
-  --color-dark-card: #12151C;
+  --color-accent: var(--color-accent, #00D2FF);
+  --color-accent-light: var(--color-accent-light, #38BDF8);
+  --color-accent-hover: var(--color-accent-hover, #0284C7);
+  --color-dark-bg: var(--color-dark-bg, #080B11);
+  --color-dark-card: var(--color-dark-card, #0E1422);
 }
 
 /* Custom scrollbar */
@@ -19,29 +30,30 @@
   height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: #0B0D12;
+  background: var(--color-dark-bg, #080B11);
 }
 ::-webkit-scrollbar-thumb {
-  background: #FF6B35;
+  background: var(--color-accent, #00D2FF);
   border-radius: 99px;
 }
 
 html {
   scroll-behavior: smooth;
-  background-color: #0B0D12;
+  background-color: var(--color-dark-bg, #080B11);
   color: #F3F4F6;
 }
 
 body {
   font-family: var(--font-sans);
-  background-color: #0B0D12;
+  background-color: var(--color-dark-bg, #080B11);
   color: #F3F4F6;
   overflow-x: hidden;
+  transition: background-color 0.3s ease;
 }
 
 /* Glassmorphism Card Style */
 .glass-card {
-  background-color: #12151C;
+  background-color: var(--color-dark-card, #0E1422);
   border: 1px solid rgba(255, 255, 255, 0.08);
   box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.6);
   backdrop-filter: blur(16px);
@@ -53,8 +65,8 @@ body {
 
 .glass-card-hover:hover {
   transform: translateY(-4px);
-  border-color: rgba(255, 107, 53, 0.35);
-  box-shadow: 0 25px 50px -12px rgba(255, 107, 53, 0.12);
+  border-color: rgba(var(--color-accent-rgb, 0, 210, 255), 0.38);
+  box-shadow: 0 25px 50px -12px var(--color-accent-glow, rgba(0, 210, 255, 0.2));
 }
 
 /* Nav underline animation */
@@ -64,7 +76,7 @@ body {
   transition: color 0.2s ease;
 }
 .nav-link:hover {
-  color: #FF6B35;
+  color: var(--color-accent, #00D2FF);
 }
 .nav-link::after {
   content: '';
@@ -73,7 +85,7 @@ body {
   left: 0;
   width: 0;
   height: 2px;
-  background: #FF6B35;
+  background: var(--color-accent, #00D2FF);
   transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 .nav-link:hover::after,
@@ -107,9 +119,9 @@ body {
   top: 0;
   left: 0;
   height: 3px;
-  background: #FF6B35;
+  background: var(--color-accent, #00D2FF);
   z-index: 100;
-  transition: width 0.1s linear;
+  transition: width 0.1s linear, background-color 0.3s ease;
 }
 
 /* Floating Animation Keyframes */

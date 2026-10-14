@@ -137,7 +137,7 @@ h3. Expected vs Actual
     <section id="bugs" className="py-24 bg-[#0B0D12] text-[#F3F4F6] border-t border-white/10 px-4 sm:px-6 relative">
       <div className="max-w-7xl mx-auto relative z-10 space-y-12">
         <div className="text-center max-w-3xl mx-auto space-y-3">
-          <p className="text-xs font-mono font-bold text-[#FF6B35] tracking-widest uppercase mb-1">
+          <p className="text-xs font-mono font-bold text-[var(--color-accent)] tracking-widest uppercase mb-1">
             QUALITY CONTROL
           </p>
           <h2 className="font-display font-extrabold text-3xl sm:text-4xl md:text-5xl text-white">
@@ -156,8 +156,8 @@ h3. Expected vs Actual
               onClick={() => setFilterSeverity(sev)}
               className={`px-4 py-2 rounded-full text-xs font-mono transition-all border ${
                 filterSeverity === sev
-                  ? 'bg-[#FF6B35] text-white border-[#FF6B35] font-bold shadow-lg shadow-[#FF6B35]/20'
-                  : 'bg-[#12151C] border-white/10 text-[#D1D5DB] hover:border-[#FF6B35]/50 hover:text-white'
+                  ? 'bg-[var(--color-accent)] text-white border-[var(--color-accent)] font-bold shadow-lg shadow-[var(--color-accent)]/20'
+                  : 'bg-[#12151C] border-white/10 text-[#D1D5DB] hover:border-[var(--color-accent)]/50 hover:text-white'
               }`}
             >
               {sev}
@@ -182,7 +182,7 @@ h3. Expected vs Actual
               <span>Queue ({filteredBugs.length} tickets)</span>
               <button
                 onClick={() => setIsModalOpen(true)}
-                className="flex items-center space-x-1 px-3 py-1.5 rounded-full bg-[#FF6B35] hover:bg-[#FF814F] text-white text-[10px] font-mono font-bold transition-all shadow-md shadow-[#FF6B35]/20"
+                className="flex items-center space-x-1 px-3 py-1.5 rounded-full bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-white text-[10px] font-mono font-bold transition-all shadow-md shadow-[var(--color-accent)]/20"
               >
                 <Plus className="w-3 h-3" />
                 <span>Log Defect</span>
@@ -197,12 +197,12 @@ h3. Expected vs Actual
                 }}
                 className={`w-full text-left p-4 rounded-2xl border transition-all flex flex-col space-y-2.5 ${
                   selectedBugId === bug.id
-                    ? 'glass-card border-[#FF6B35] shadow-lg shadow-[#FF6B35]/10'
+                    ? 'glass-card border-[var(--color-accent)] shadow-lg shadow-[var(--color-accent)]/10'
                     : 'bg-[#12151C]/60 border-white/10 hover:border-white/20'
                 }`}
               >
                 <div className="flex items-center justify-between w-full">
-                  <span className="font-mono text-[10px] text-[#FF6B35] font-bold">{bug.id}</span>
+                  <span className="font-mono text-[10px] text-[var(--color-accent)] font-bold">{bug.id}</span>
                   <div className="flex items-center space-x-1.5">
                     <span className={`px-2 py-0.5 rounded text-[9px] font-mono font-bold ${
                       bug.severity === 'Critical' ? 'bg-rose-500/10 text-rose-400 border border-rose-500/30' :
@@ -213,7 +213,7 @@ h3. Expected vs Actual
                     </span>
                     <span className={`px-2 py-0.5 rounded text-[9px] font-mono font-bold ${
                       bug.status === 'Resolved' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30' :
-                      'bg-[#FF6B35]/10 text-[#FF6B35] border border-[#FF6B35]/30'
+                      'bg-[var(--color-accent)]/10 text-[var(--color-accent)] border border-[var(--color-accent)]/30'
                     }`}>
                       {bug.status}
                     </span>
@@ -235,7 +235,7 @@ h3. Expected vs Actual
             <div className="border-b border-white/10 pb-5 space-y-3">
               <div className="flex items-center justify-between flex-wrap gap-2">
                 <div className="flex items-center space-x-2">
-                  <span className="px-2.5 py-1 bg-white/[0.04] border border-white/10 rounded-md font-mono text-[10px] font-bold text-[#FF6B35]">
+                  <span className="px-2.5 py-1 bg-white/[0.04] border border-white/10 rounded-md font-mono text-[10px] font-bold text-[var(--color-accent)]">
                     {selectedBug.id}
                   </span>
                   <span className="text-[11px] font-mono text-[#9CA3AF]">Project: {selectedBug.project}</span>
@@ -251,7 +251,7 @@ h3. Expected vs Actual
                   </button>
 
                   <span className={`px-2.5 py-1 rounded-full text-[10px] font-mono font-bold ${
-                    selectedBug.status === 'Resolved' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30' : 'bg-[#FF6B35]/10 text-[#FF6B35] border border-[#FF6B35]/30'
+                    selectedBug.status === 'Resolved' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30' : 'bg-[var(--color-accent)]/10 text-[var(--color-accent)] border border-[var(--color-accent)]/30'
                   }`}>
                     {selectedBug.status.toUpperCase()}
                   </span>
@@ -271,7 +271,7 @@ h3. Expected vs Actual
 
             {/* Steps to Reproduce */}
             <div className="space-y-3 p-4 bg-white/[0.03] rounded-xl border border-white/10 text-xs">
-              <h5 className="text-xs font-bold text-[#FF6B35] uppercase tracking-wider font-mono flex items-center space-x-1.5">
+              <h5 className="text-xs font-bold text-[var(--color-accent)] uppercase tracking-wider font-mono flex items-center space-x-1.5">
                 <ArrowRight className="w-3.5 h-3.5" />
                 <span>Steps to Reproduce (STLC Audit)</span>
               </h5>
@@ -315,7 +315,7 @@ h3. Expected vs Actual
                   className={`px-5 py-2.5 rounded-full font-semibold text-xs flex items-center space-x-2 transition-all shrink-0 select-none ${
                     retestingBugId !== null
                       ? 'bg-white/10 text-[#9CA3AF] cursor-not-allowed'
-                      : 'shimmer bg-[#FF6B35] hover:bg-[#FF814F] text-white shadow-lg shadow-[#FF6B35]/20'
+                      : 'shimmer bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-white shadow-lg shadow-[var(--color-accent)]/20'
                   }`}
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${retestingBugId === selectedBug.id ? 'animate-spin' : ''}`} />
@@ -344,7 +344,7 @@ h3. Expected vs Actual
           <div className="bg-[#12151C] border border-white/10 rounded-3xl p-6 sm:p-8 max-w-xl w-full space-y-6 shadow-2xl relative max-h-[90vh] overflow-y-auto text-[#F3F4F6]">
             <div className="flex items-center justify-between border-b border-white/10 pb-4">
               <div className="flex items-center space-x-2">
-                <ShieldAlert className="w-5 h-5 text-[#FF6B35]" />
+                <ShieldAlert className="w-5 h-5 text-[var(--color-accent)]" />
                 <h3 className="font-display font-bold text-lg text-white">
                   Log New Defect Ticket
                 </h3>
@@ -366,7 +366,7 @@ h3. Expected vs Actual
                   value={newBug.title}
                   onChange={(e) => setNewBug({ ...newBug, title: e.target.value })}
                   placeholder="E.g., Cart total calculation mismatch during discount code application"
-                  className="w-full px-4 py-2.5 rounded-full bg-white/[0.04] border border-white/10 text-white text-xs sm:text-sm focus:border-[#FF6B35] focus:outline-none placeholder:text-[#9CA3AF]/60"
+                  className="w-full px-4 py-2.5 rounded-full bg-white/[0.04] border border-white/10 text-white text-xs sm:text-sm focus:border-[var(--color-accent)] focus:outline-none placeholder:text-[#9CA3AF]/60"
                 />
               </div>
 
@@ -378,7 +378,7 @@ h3. Expected vs Actual
                     value={newBug.project}
                     onChange={(e) => setNewBug({ ...newBug, project: e.target.value })}
                     placeholder="SaaS E-Commerce Platform"
-                    className="w-full px-4 py-2.5 rounded-full bg-white/[0.04] border border-white/10 text-white text-xs focus:border-[#FF6B35] focus:outline-none placeholder:text-[#9CA3AF]/60"
+                    className="w-full px-4 py-2.5 rounded-full bg-white/[0.04] border border-white/10 text-white text-xs focus:border-[var(--color-accent)] focus:outline-none placeholder:text-[#9CA3AF]/60"
                   />
                 </div>
 
@@ -387,7 +387,7 @@ h3. Expected vs Actual
                   <select
                     value={newBug.severity}
                     onChange={(e) => setNewBug({ ...newBug, severity: e.target.value as any })}
-                    className="w-full px-4 py-2.5 rounded-full bg-[#12151C] border border-white/10 text-white text-xs focus:border-[#FF6B35] focus:outline-none"
+                    className="w-full px-4 py-2.5 rounded-full bg-[#12151C] border border-white/10 text-white text-xs focus:border-[var(--color-accent)] focus:outline-none"
                   >
                     <option value="Critical">Critical (Blocker)</option>
                     <option value="Major">Major (High Impact)</option>
@@ -404,7 +404,7 @@ h3. Expected vs Actual
                   value={newBug.description}
                   onChange={(e) => setNewBug({ ...newBug, description: e.target.value })}
                   placeholder="Provide precise context regarding where and when this bug occurs..."
-                  className="w-full px-4 py-2.5 rounded-2xl bg-white/[0.04] border border-white/10 text-white text-xs focus:border-[#FF6B35] focus:outline-none placeholder:text-[#9CA3AF]/60"
+                  className="w-full px-4 py-2.5 rounded-2xl bg-white/[0.04] border border-white/10 text-white text-xs focus:border-[var(--color-accent)] focus:outline-none placeholder:text-[#9CA3AF]/60"
                 />
               </div>
 
@@ -415,7 +415,7 @@ h3. Expected vs Actual
                   value={newBug.stepsToReproduce}
                   onChange={(e) => setNewBug({ ...newBug, stepsToReproduce: e.target.value })}
                   placeholder="1. Login as user&#10;2. Add item to cart&#10;3. Apply coupon promo CODE2026"
-                  className="w-full px-4 py-2.5 rounded-2xl bg-white/[0.04] border border-white/10 text-white text-xs focus:border-[#FF6B35] focus:outline-none font-mono placeholder:text-[#9CA3AF]/60"
+                  className="w-full px-4 py-2.5 rounded-2xl bg-white/[0.04] border border-white/10 text-white text-xs focus:border-[var(--color-accent)] focus:outline-none font-mono placeholder:text-[#9CA3AF]/60"
                 />
               </div>
 
@@ -427,7 +427,7 @@ h3. Expected vs Actual
                     value={newBug.expectedResult}
                     onChange={(e) => setNewBug({ ...newBug, expectedResult: e.target.value })}
                     placeholder="Discount applied and total reduces by 20%"
-                    className="w-full px-4 py-2 rounded-full bg-white/[0.04] border border-white/10 text-white text-xs focus:border-[#FF6B35] focus:outline-none placeholder:text-[#9CA3AF]/60"
+                    className="w-full px-4 py-2 rounded-full bg-white/[0.04] border border-white/10 text-white text-xs focus:border-[var(--color-accent)] focus:outline-none placeholder:text-[#9CA3AF]/60"
                   />
                 </div>
 
@@ -438,7 +438,7 @@ h3. Expected vs Actual
                     value={newBug.actualResult}
                     onChange={(e) => setNewBug({ ...newBug, actualResult: e.target.value })}
                     placeholder="Total reflects double discount or throws 500 error"
-                    className="w-full px-4 py-2 rounded-full bg-white/[0.04] border border-white/10 text-white text-xs focus:border-[#FF6B35] focus:outline-none placeholder:text-[#9CA3AF]/60"
+                    className="w-full px-4 py-2 rounded-full bg-white/[0.04] border border-white/10 text-white text-xs focus:border-[var(--color-accent)] focus:outline-none placeholder:text-[#9CA3AF]/60"
                   />
                 </div>
               </div>
@@ -453,7 +453,7 @@ h3. Expected vs Actual
                 </button>
                 <button
                   type="submit"
-                  className="px-6 py-2.5 rounded-full bg-[#FF6B35] hover:bg-[#FF814F] text-white text-xs font-bold transition-all shadow-md shadow-[#FF6B35]/20"
+                  className="px-6 py-2.5 rounded-full bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-white text-xs font-bold transition-all shadow-md shadow-[var(--color-accent)]/20"
                 >
                   Create Ticket
                 </button>

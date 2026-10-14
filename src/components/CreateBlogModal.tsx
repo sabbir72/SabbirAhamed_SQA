@@ -269,7 +269,7 @@ export default function CreateBlogModal({ isOpen, onClose, postToEdit, onSaved }
         {/* Header */}
         <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between bg-[#181C26] shrink-0">
           <div className="flex items-center space-x-3">
-            <div className="p-2 rounded-xl bg-[#FF6B35]/10 border border-[#FF6B35]/30 text-[#FF6B35]">
+            <div className="p-2 rounded-xl bg-[var(--color-accent)]/10 border border-[var(--color-accent)]/30 text-[var(--color-accent)]">
               <Edit3 className="w-5 h-5" />
             </div>
             <div>
@@ -313,8 +313,8 @@ export default function CreateBlogModal({ isOpen, onClose, postToEdit, onSaved }
           <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
             <div className="md:col-span-7 space-y-1.5">
               <label className="text-xs font-mono text-[#D1D5DB] font-semibold flex items-center gap-1.5">
-                <FileText className="w-3.5 h-3.5 text-[#FF6B35]" />
-                Blog Title <span className="text-[#FF6B35]">*</span>
+                <FileText className="w-3.5 h-3.5 text-[var(--color-accent)]" />
+                Blog Title <span className="text-[var(--color-accent)]">*</span>
               </label>
               <input
                 type="text"
@@ -322,13 +322,13 @@ export default function CreateBlogModal({ isOpen, onClose, postToEdit, onSaved }
                 onChange={handleTitleChange}
                 placeholder="e.g. Master Playwright API Automation & JWT Authentication"
                 required
-                className="w-full px-4 py-2.5 rounded-xl bg-white/[0.05] border border-white/15 text-sm text-white placeholder:text-white/30 focus:border-[#FF6B35] focus:outline-none transition-colors"
+                className="w-full px-4 py-2.5 rounded-xl bg-white/[0.05] border border-white/15 text-sm text-white placeholder:text-white/30 focus:border-[var(--color-accent)] focus:outline-none transition-colors"
               />
             </div>
 
             <div className="md:col-span-5 space-y-1.5">
               <label className="text-xs font-mono text-[#D1D5DB] font-semibold flex items-center gap-1.5">
-                <LinkIcon className="w-3.5 h-3.5 text-[#FF6B35]" />
+                <LinkIcon className="w-3.5 h-3.5 text-[var(--color-accent)]" />
                 URL Slug
               </label>
               <input
@@ -339,7 +339,7 @@ export default function CreateBlogModal({ isOpen, onClose, postToEdit, onSaved }
                   setIsSlugManuallyEdited(true);
                 }}
                 placeholder="master-playwright-api-automation"
-                className="w-full px-4 py-2.5 rounded-xl bg-white/[0.05] border border-white/15 text-xs font-mono text-amber-300 placeholder:text-white/30 focus:border-[#FF6B35] focus:outline-none transition-colors"
+                className="w-full px-4 py-2.5 rounded-xl bg-white/[0.05] border border-white/15 text-xs font-mono text-amber-300 placeholder:text-white/30 focus:border-[var(--color-accent)] focus:outline-none transition-colors"
               />
             </div>
           </div>
@@ -349,13 +349,13 @@ export default function CreateBlogModal({ isOpen, onClose, postToEdit, onSaved }
             {/* Category */}
             <div className="space-y-1.5">
               <label className="text-xs font-mono text-[#D1D5DB] font-semibold flex items-center gap-1.5">
-                <Folder className="w-3.5 h-3.5 text-[#FF6B35]" />
-                Category <span className="text-[#FF6B35]">*</span>
+                <Folder className="w-3.5 h-3.5 text-[var(--color-accent)]" />
+                Category <span className="text-[var(--color-accent)]">*</span>
               </label>
               <select
                 value={category}
                 onChange={(e) => setCategory(e.target.value as BlogPost['category'])}
-                className="w-full px-3 py-2 rounded-xl bg-[#181C26] border border-white/15 text-xs text-white focus:border-[#FF6B35] focus:outline-none"
+                className="w-full px-3 py-2 rounded-xl bg-[#181C26] border border-white/15 text-xs text-white focus:border-[var(--color-accent)] focus:outline-none"
               >
                 {validCategories.map((cat) => (
                   <option key={cat} value={cat}>
@@ -368,7 +368,7 @@ export default function CreateBlogModal({ isOpen, onClose, postToEdit, onSaved }
             {/* Status */}
             <div className="space-y-1.5">
               <label className="text-xs font-mono text-[#D1D5DB] font-semibold flex items-center gap-1.5">
-                <Sparkles className="w-3.5 h-3.5 text-[#FF6B35]" />
+                <Sparkles className="w-3.5 h-3.5 text-[var(--color-accent)]" />
                 Status
               </label>
               <select
@@ -388,7 +388,7 @@ export default function CreateBlogModal({ isOpen, onClose, postToEdit, onSaved }
             {/* Publish Date */}
             <div className="space-y-1.5">
               <label className="text-xs font-mono text-[#D1D5DB] font-semibold flex items-center gap-1.5">
-                <Calendar className="w-3.5 h-3.5 text-[#FF6B35]" />
+                <Calendar className="w-3.5 h-3.5 text-[var(--color-accent)]" />
                 Publish Date
               </label>
               <input
@@ -396,7 +396,7 @@ export default function CreateBlogModal({ isOpen, onClose, postToEdit, onSaved }
                 value={publishDate}
                 onChange={(e) => setPublishDate(e.target.value)}
                 placeholder="August 4, 2026"
-                className="w-full px-3 py-2 rounded-xl bg-white/[0.05] border border-white/15 text-xs text-white placeholder:text-white/30 focus:border-[#FF6B35] focus:outline-none"
+                className="w-full px-3 py-2 rounded-xl bg-white/[0.05] border border-white/15 text-xs text-white placeholder:text-white/30 focus:border-[var(--color-accent)] focus:outline-none"
               />
             </div>
 
@@ -410,7 +410,7 @@ export default function CreateBlogModal({ isOpen, onClose, postToEdit, onSaved }
                   type="checkbox"
                   checked={featured}
                   onChange={(e) => setFeatured(e.target.checked)}
-                  className="w-4 h-4 rounded accent-[#FF6B35] cursor-pointer"
+                  className="w-4 h-4 rounded accent-[var(--color-accent)] cursor-pointer"
                 />
                 <span>Show in Hero Banner</span>
               </label>
@@ -420,8 +420,8 @@ export default function CreateBlogModal({ isOpen, onClose, postToEdit, onSaved }
           {/* Row 3: Short Description */}
           <div className="space-y-1.5">
             <label className="text-xs font-mono text-[#D1D5DB] font-semibold flex items-center gap-1.5">
-              <FileText className="w-3.5 h-3.5 text-[#FF6B35]" />
-              Short Description / Summary <span className="text-[#FF6B35]">*</span>
+              <FileText className="w-3.5 h-3.5 text-[var(--color-accent)]" />
+              Short Description / Summary <span className="text-[var(--color-accent)]">*</span>
             </label>
             <textarea
               value={description}
@@ -429,14 +429,14 @@ export default function CreateBlogModal({ isOpen, onClose, postToEdit, onSaved }
               rows={2}
               placeholder="Brief summary of the article for blog grid cards and search preview..."
               required
-              className="w-full px-4 py-2.5 rounded-xl bg-white/[0.05] border border-white/15 text-xs text-white placeholder:text-white/30 focus:border-[#FF6B35] focus:outline-none transition-colors"
+              className="w-full px-4 py-2.5 rounded-xl bg-white/[0.05] border border-white/15 text-xs text-white placeholder:text-white/30 focus:border-[var(--color-accent)] focus:outline-none transition-colors"
             />
           </div>
 
           {/* Row 4: Cover Image Selection */}
           <div className="space-y-2 bg-white/[0.02] p-4 rounded-2xl border border-white/10">
             <label className="text-xs font-mono text-[#D1D5DB] font-semibold flex items-center gap-1.5">
-              <ImageIcon className="w-3.5 h-3.5 text-[#FF6B35]" />
+              <ImageIcon className="w-3.5 h-3.5 text-[var(--color-accent)]" />
               Featured Cover Image URL
             </label>
             
@@ -446,7 +446,7 @@ export default function CreateBlogModal({ isOpen, onClose, postToEdit, onSaved }
                 value={coverImage}
                 onChange={(e) => setCoverImage(e.target.value)}
                 placeholder="https://images.unsplash.com/photo-..."
-                className="flex-1 px-4 py-2 rounded-xl bg-white/[0.05] border border-white/15 text-xs font-mono text-white placeholder:text-white/30 focus:border-[#FF6B35] focus:outline-none"
+                className="flex-1 px-4 py-2 rounded-xl bg-white/[0.05] border border-white/15 text-xs font-mono text-white placeholder:text-white/30 focus:border-[var(--color-accent)] focus:outline-none"
               />
               {coverImage && (
                 <div className="w-20 h-10 rounded-xl overflow-hidden border border-white/20 shrink-0 bg-black">
@@ -466,7 +466,7 @@ export default function CreateBlogModal({ isOpen, onClose, postToEdit, onSaved }
                     onClick={() => setCoverImage(preset.url)}
                     className={`px-2.5 py-1 rounded-lg text-[10px] font-mono transition-colors cursor-pointer border ${
                       coverImage === preset.url
-                        ? 'bg-[#FF6B35] text-white border-[#FF6B35] font-bold'
+                        ? 'bg-[var(--color-accent)] text-white border-[var(--color-accent)] font-bold'
                         : 'bg-white/5 hover:bg-white/10 text-[#D1D5DB] border-white/10'
                     }`}
                   >
@@ -480,7 +480,7 @@ export default function CreateBlogModal({ isOpen, onClose, postToEdit, onSaved }
           {/* Row 5: Tags Input */}
           <div className="space-y-1.5">
             <label className="text-xs font-mono text-[#D1D5DB] font-semibold flex items-center gap-1.5">
-              <TagIcon className="w-3.5 h-3.5 text-[#FF6B35]" />
+              <TagIcon className="w-3.5 h-3.5 text-[var(--color-accent)]" />
               Tags (comma separated)
             </label>
             <input
@@ -488,7 +488,7 @@ export default function CreateBlogModal({ isOpen, onClose, postToEdit, onSaved }
               value={tagsInput}
               onChange={(e) => setTagsInput(e.target.value)}
               placeholder="Playwright, API Testing, TypeScript, SQA, Automation"
-              className="w-full px-4 py-2 rounded-xl bg-white/[0.05] border border-white/15 text-xs text-white placeholder:text-white/30 focus:border-[#FF6B35] focus:outline-none"
+              className="w-full px-4 py-2 rounded-xl bg-white/[0.05] border border-white/15 text-xs text-white placeholder:text-white/30 focus:border-[var(--color-accent)] focus:outline-none"
             />
           </div>
 
@@ -496,8 +496,8 @@ export default function CreateBlogModal({ isOpen, onClose, postToEdit, onSaved }
           <div className="space-y-2 border-t border-white/10 pt-4">
             <div className="flex items-center justify-between">
               <label className="text-xs font-mono text-[#D1D5DB] font-semibold flex items-center gap-1.5">
-                <FileText className="w-3.5 h-3.5 text-[#FF6B35]" />
-                Article Content (Markdown Supported) <span className="text-[#FF6B35]">*</span>
+                <FileText className="w-3.5 h-3.5 text-[var(--color-accent)]" />
+                Article Content (Markdown Supported) <span className="text-[var(--color-accent)]">*</span>
               </label>
 
               {/* Editor View Toggle Tabs */}
@@ -506,7 +506,7 @@ export default function CreateBlogModal({ isOpen, onClose, postToEdit, onSaved }
                   type="button"
                   onClick={() => setActiveTab('write')}
                   className={`px-3 py-1 rounded-lg flex items-center space-x-1 transition-colors cursor-pointer ${
-                    activeTab === 'write' ? 'bg-[#FF6B35] text-white font-bold' : 'text-[#9CA3AF] hover:text-white'
+                    activeTab === 'write' ? 'bg-[var(--color-accent)] text-white font-bold' : 'text-[#9CA3AF] hover:text-white'
                   }`}
                 >
                   <Edit3 className="w-3.5 h-3.5" />
@@ -516,7 +516,7 @@ export default function CreateBlogModal({ isOpen, onClose, postToEdit, onSaved }
                   type="button"
                   onClick={() => setActiveTab('preview')}
                   className={`px-3 py-1 rounded-lg flex items-center space-x-1 transition-colors cursor-pointer ${
-                    activeTab === 'preview' ? 'bg-[#FF6B35] text-white font-bold' : 'text-[#9CA3AF] hover:text-white'
+                    activeTab === 'preview' ? 'bg-[var(--color-accent)] text-white font-bold' : 'text-[#9CA3AF] hover:text-white'
                   }`}
                 >
                   <Eye className="w-3.5 h-3.5" />
@@ -534,7 +534,7 @@ export default function CreateBlogModal({ isOpen, onClose, postToEdit, onSaved }
                   className="p-1.5 rounded hover:bg-white/10 hover:text-white"
                   title="Heading 2"
                 >
-                  <Heading className="w-3.5 h-3.5 text-[#FF6B35]" />
+                  <Heading className="w-3.5 h-3.5 text-[var(--color-accent)]" />
                 </button>
                 <button
                   type="button"
@@ -585,7 +585,7 @@ export default function CreateBlogModal({ isOpen, onClose, postToEdit, onSaved }
                   <Table className="w-3.5 h-3.5" />
                 </button>
                 <span className="ml-auto text-[10px] font-mono text-[#9CA3AF]">
-                  Auto-calculated reading time: <strong className="text-[#FF6B35]">{readingTime || '1 min read'}</strong>
+                  Auto-calculated reading time: <strong className="text-[var(--color-accent)]">{readingTime || '1 min read'}</strong>
                 </span>
               </div>
             )}
@@ -598,13 +598,13 @@ export default function CreateBlogModal({ isOpen, onClose, postToEdit, onSaved }
                 rows={12}
                 placeholder="# Article Title&#10;&#10;Write your technical blog post here in Markdown format..."
                 required
-                className="w-full p-4 rounded-xl bg-black/40 border border-white/15 text-xs sm:text-sm font-mono text-[#E5E7EB] placeholder:text-white/20 focus:border-[#FF6B35] focus:outline-none leading-relaxed"
+                className="w-full p-4 rounded-xl bg-black/40 border border-white/15 text-xs sm:text-sm font-mono text-[#E5E7EB] placeholder:text-white/20 focus:border-[var(--color-accent)] focus:outline-none leading-relaxed"
               />
             ) : (
               /* Live Preview Area */
               <div className="p-6 rounded-xl bg-[#090A0E] border border-white/15 min-h-[300px] max-h-[500px] overflow-y-auto space-y-4">
                 <div className="border-b border-white/10 pb-3 mb-4">
-                  <span className="text-[10px] font-mono px-2.5 py-0.5 rounded-full bg-[#FF6B35]/20 text-[#FF6B35] font-bold uppercase">
+                  <span className="text-[10px] font-mono px-2.5 py-0.5 rounded-full bg-[var(--color-accent)]/20 text-[var(--color-accent)] font-bold uppercase">
                     Preview Mode
                   </span>
                   <h2 className="font-display font-extrabold text-xl text-white mt-2">{title || 'Untitled Article'}</h2>
@@ -619,7 +619,7 @@ export default function CreateBlogModal({ isOpen, onClose, postToEdit, onSaved }
           {/* Row 7: Author Profile Customization (Collapsible / Compact) */}
           <div className="space-y-3 bg-white/[0.02] p-4 rounded-2xl border border-white/10">
             <label className="text-xs font-mono text-[#D1D5DB] font-semibold flex items-center gap-1.5">
-              <User className="w-3.5 h-3.5 text-[#FF6B35]" />
+              <User className="w-3.5 h-3.5 text-[var(--color-accent)]" />
               Author Details
             </label>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -628,14 +628,14 @@ export default function CreateBlogModal({ isOpen, onClose, postToEdit, onSaved }
                 value={authorName}
                 onChange={(e) => setAuthorName(e.target.value)}
                 placeholder="Author Name"
-                className="px-3 py-2 rounded-xl bg-white/[0.05] border border-white/15 text-xs text-white placeholder:text-white/30 focus:border-[#FF6B35] focus:outline-none"
+                className="px-3 py-2 rounded-xl bg-white/[0.05] border border-white/15 text-xs text-white placeholder:text-white/30 focus:border-[var(--color-accent)] focus:outline-none"
               />
               <input
                 type="text"
                 value={authorRole}
                 onChange={(e) => setAuthorRole(e.target.value)}
                 placeholder="Author Role"
-                className="px-3 py-2 rounded-xl bg-white/[0.05] border border-white/15 text-xs text-white placeholder:text-white/30 focus:border-[#FF6B35] focus:outline-none"
+                className="px-3 py-2 rounded-xl bg-white/[0.05] border border-white/15 text-xs text-white placeholder:text-white/30 focus:border-[var(--color-accent)] focus:outline-none"
               />
             </div>
           </div>
@@ -669,7 +669,7 @@ export default function CreateBlogModal({ isOpen, onClose, postToEdit, onSaved }
               type="button"
               onClick={handleSubmit}
               disabled={isSubmitting}
-              className="shimmer inline-flex items-center space-x-2 bg-[#FF6B35] hover:bg-[#FF814F] text-white font-mono text-xs font-bold px-6 py-2.5 rounded-full shadow-lg shadow-[#FF6B35]/25 transition-all hover:scale-105 cursor-pointer"
+              className="shimmer inline-flex items-center space-x-2 bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-white font-mono text-xs font-bold px-6 py-2.5 rounded-full shadow-lg shadow-[var(--color-accent)]/25 transition-all hover:scale-105 cursor-pointer"
             >
               <Save className="w-4 h-4" />
               <span>{isSubmitting ? 'Saving...' : postToEdit ? 'Update Post' : 'Publish Blog'}</span>

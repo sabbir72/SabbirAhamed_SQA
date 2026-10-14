@@ -281,7 +281,7 @@ WHERE t.transaction_ref = 'TXN-2026-8802'
     <section id="test-runner" className="py-24 bg-[#0B0D12] text-[#F3F4F6] px-4 sm:px-6 relative border-t border-white/10">
       <div className="max-w-7xl mx-auto relative z-10 space-y-12">
         <div className="text-center max-w-3xl mx-auto space-y-3">
-          <p className="text-xs font-mono font-bold text-[#FF6B35] tracking-widest uppercase mb-1">
+          <p className="text-xs font-mono font-bold text-[var(--color-accent)] tracking-widest uppercase mb-1">
             TEST SUITES & AUTOMATION
           </p>
           <h2 className="font-display font-extrabold text-3xl sm:text-4xl md:text-5xl text-white">
@@ -300,8 +300,8 @@ WHERE t.transaction_ref = 'TXN-2026-8802'
               onClick={() => setSelectedProjectId(project.id)}
               className={`px-4 py-2 rounded-full text-xs font-mono transition-all border cursor-pointer ${
                 selectedProjectId === project.id
-                  ? 'bg-[#FF6B35] text-white border-[#FF6B35] font-bold shadow-lg shadow-[#FF6B35]/20'
-                  : 'bg-[#12151C] border-white/10 text-[#D1D5DB] hover:border-[#FF6B35]/50 hover:text-white'
+                  ? 'bg-[var(--color-accent)] text-white border-[var(--color-accent)] font-bold shadow-lg shadow-[var(--color-accent)]/20'
+                  : 'bg-[#12151C] border-white/10 text-[#D1D5DB] hover:border-[var(--color-accent)]/50 hover:text-white'
               }`}
             >
               [{project.type.toUpperCase()}] {project.title.split(' ')[0]}
@@ -314,7 +314,7 @@ WHERE t.transaction_ref = 'TXN-2026-8802'
           <div className="lg:col-span-5 flex flex-col justify-between p-7 rounded-2xl glass-card border border-white/10">
             <div className="space-y-6">
               <div>
-                <span className="px-3 py-1 rounded-full text-[11px] font-mono font-bold tracking-wider bg-[#FF6B35]/10 text-[#FF6B35] border border-[#FF6B35]/20">
+                <span className="px-3 py-1 rounded-full text-[11px] font-mono font-bold tracking-wider bg-[var(--color-accent)]/10 text-[var(--color-accent)] border border-[var(--color-accent)]/20">
                   {selectedProject.type.toUpperCase()} TESTING SUITE
                 </span>
                 <h3 className="font-display font-bold text-xl sm:text-2xl text-white mt-4">
@@ -340,7 +340,7 @@ WHERE t.transaction_ref = 'TXN-2026-8802'
                   {selectedProject.metrics.map((metric) => (
                     <div key={metric.label} className="p-3 rounded-xl bg-white/[0.03] border border-white/10">
                       <p className="text-[10px] font-mono text-[#9CA3AF] uppercase tracking-wider">{metric.label}</p>
-                      <p className="text-xs font-bold font-mono text-[#FF6B35] mt-0.5">{metric.value}</p>
+                      <p className="text-xs font-bold font-mono text-[var(--color-accent)] mt-0.5">{metric.value}</p>
                     </div>
                   ))}
                 </div>
@@ -355,7 +355,7 @@ WHERE t.transaction_ref = 'TXN-2026-8802'
                 className={`flex-1 py-3.5 px-6 rounded-full font-semibold text-xs uppercase tracking-wider flex items-center justify-center space-x-2 transition-all ${
                   isRunning
                     ? 'bg-white/10 text-[#9CA3AF] cursor-not-allowed'
-                    : 'shimmer bg-[#FF6B35] hover:bg-[#FF814F] text-white shadow-lg shadow-[#FF6B35]/20'
+                    : 'shimmer bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-white shadow-lg shadow-[var(--color-accent)]/20'
                 }`}
               >
                 {isRunning ? (

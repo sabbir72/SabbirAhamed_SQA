@@ -598,13 +598,13 @@ ${PERSONAL_INFO.title}`;
       {/* Top Modal Header */}
       <div className="bg-[#12151C] border-b border-white/10 px-4 sm:px-6 py-3 flex items-center justify-between no-print z-20">
         <div className="flex items-center space-x-3">
-          <div className="bg-[#FF6B35]/15 p-2 rounded-xl border border-[#FF6B35]/30 text-[#FF6B35]">
+          <div className="bg-[var(--color-accent)]/15 p-2 rounded-xl border border-[var(--color-accent)]/30 text-[var(--color-accent)]">
             <Sparkles className="w-5 h-5 animate-pulse" />
           </div>
           <div>
             <h2 className="font-display font-bold text-base sm:text-lg text-white flex items-center gap-2">
               <span>AI Cover Letter Generator & ATS Matcher</span>
-              <span className="text-[10px] font-mono font-bold uppercase bg-[#FF6B35]/10 text-[#FF6B35] border border-[#FF6B35]/30 px-2 py-0.5 rounded-full">
+              <span className="text-[10px] font-mono font-bold uppercase bg-[var(--color-accent)]/10 text-[var(--color-accent)] border border-[var(--color-accent)]/30 px-2 py-0.5 rounded-full">
                 Auto-Synced
               </span>
             </h2>
@@ -620,7 +620,7 @@ ${PERSONAL_INFO.title}`;
             onClick={handleCopy}
             className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/15 text-white text-xs font-mono font-medium transition-colors cursor-pointer"
           >
-            {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5 text-[#FF6B35]" />}
+            {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5 text-[var(--color-accent)]" />}
             <span className="hidden sm:inline">{copied ? 'Copied!' : 'Copy Text'}</span>
           </button>
 
@@ -636,7 +636,7 @@ ${PERSONAL_INFO.title}`;
           <button
             onClick={handleDownloadPdf}
             disabled={isExportingPdf}
-            className="flex items-center space-x-1.5 px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg bg-[#FF6B35] hover:bg-[#FF814F] text-white text-xs font-mono font-bold shadow-lg shadow-[#FF6B35]/25 transition-all cursor-pointer disabled:opacity-50"
+            className="flex items-center space-x-1.5 px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-white text-xs font-mono font-bold shadow-lg shadow-[var(--color-accent)]/25 transition-all cursor-pointer disabled:opacity-50"
           >
             <Download className="w-3.5 h-3.5" />
             <span>{isExportingPdf ? 'Exporting...' : 'Download PDF'}</span>
@@ -661,25 +661,25 @@ ${PERSONAL_INFO.title}`;
           <div className="grid grid-cols-4 gap-1 p-1 bg-[#12151C] rounded-xl border border-white/10 text-xs font-mono">
             <button
               onClick={() => setActiveTab('preview')}
-              className={`py-2 rounded-lg text-center transition-colors cursor-pointer ${activeTab === 'preview' ? 'bg-[#FF6B35] text-white font-bold' : 'text-[#9CA3AF] hover:text-white'}`}
+              className={`py-2 rounded-lg text-center transition-colors cursor-pointer ${activeTab === 'preview' ? 'bg-[var(--color-accent)] text-white font-bold' : 'text-[#9CA3AF] hover:text-white'}`}
             >
               Preview
             </button>
             <button
               onClick={() => setActiveTab('editor')}
-              className={`py-2 rounded-lg text-center transition-colors cursor-pointer ${activeTab === 'editor' ? 'bg-[#FF6B35] text-white font-bold' : 'text-[#9CA3AF] hover:text-white'}`}
+              className={`py-2 rounded-lg text-center transition-colors cursor-pointer ${activeTab === 'editor' ? 'bg-[var(--color-accent)] text-white font-bold' : 'text-[#9CA3AF] hover:text-white'}`}
             >
               Inputs
             </button>
             <button
               onClick={() => setActiveTab('match-score')}
-              className={`py-2 rounded-lg text-center transition-colors cursor-pointer ${activeTab === 'match-score' ? 'bg-[#FF6B35] text-white font-bold' : 'text-[#9CA3AF] hover:text-white'}`}
+              className={`py-2 rounded-lg text-center transition-colors cursor-pointer ${activeTab === 'match-score' ? 'bg-[var(--color-accent)] text-white font-bold' : 'text-[#9CA3AF] hover:text-white'}`}
             >
               Match ({matchAnalysis.score}%)
             </button>
             <button
               onClick={() => setActiveTab('history')}
-              className={`py-2 rounded-lg text-center transition-colors cursor-pointer ${activeTab === 'history' ? 'bg-[#FF6B35] text-white font-bold' : 'text-[#9CA3AF] hover:text-white'}`}
+              className={`py-2 rounded-lg text-center transition-colors cursor-pointer ${activeTab === 'history' ? 'bg-[var(--color-accent)] text-white font-bold' : 'text-[#9CA3AF] hover:text-white'}`}
             >
               Saved ({savedLetters.length})
             </button>
@@ -698,7 +698,7 @@ ${PERSONAL_INFO.title}`;
 
             {/* Inputs Section */}
             <div className="space-y-3">
-              <label className="text-xs font-mono text-[#FF6B35] uppercase font-bold tracking-wider flex items-center gap-1.5">
+              <label className="text-xs font-mono text-[var(--color-accent)] uppercase font-bold tracking-wider flex items-center gap-1.5">
                 <Building2 className="w-3.5 h-3.5" />
                 <span>Target Job Details</span>
               </label>
@@ -706,28 +706,28 @@ ${PERSONAL_INFO.title}`;
               {/* Company Name (Required) */}
               <div>
                 <label className="text-[11px] text-[#D1D5DB] font-mono block mb-1">
-                  Company Name <span className="text-[#FF6B35]">*</span>
+                  Company Name <span className="text-[var(--color-accent)]">*</span>
                 </label>
                 <input
                   type="text"
                   value={companyName}
                   onChange={(e) => setCompanyName(e.target.value)}
                   placeholder="e.g. Google, Square Health, Meta"
-                  className="w-full px-3 py-2 rounded-xl bg-[#12151C] border border-white/10 text-white text-xs focus:border-[#FF6B35] focus:outline-none"
+                  className="w-full px-3 py-2 rounded-xl bg-[#12151C] border border-white/10 text-white text-xs focus:border-[var(--color-accent)] focus:outline-none"
                 />
               </div>
 
               {/* Position / Job Title (Required) */}
               <div>
                 <label className="text-[11px] text-[#D1D5DB] font-mono block mb-1">
-                  Position / Job Title <span className="text-[#FF6B35]">*</span>
+                  Position / Job Title <span className="text-[var(--color-accent)]">*</span>
                 </label>
                 <input
                   type="text"
                   value={jobTitle}
                   onChange={(e) => setJobTitle(e.target.value)}
                   placeholder="e.g. Software QA Engineer, Automation Lead"
-                  className="w-full px-3 py-2 rounded-xl bg-[#12151C] border border-white/10 text-white text-xs focus:border-[#FF6B35] focus:outline-none"
+                  className="w-full px-3 py-2 rounded-xl bg-[#12151C] border border-white/10 text-white text-xs focus:border-[var(--color-accent)] focus:outline-none"
                 />
               </div>
 
@@ -740,7 +740,7 @@ ${PERSONAL_INFO.title}`;
                     value={hiringManager}
                     onChange={(e) => setHiringManager(e.target.value)}
                     placeholder="e.g. John Doe"
-                    className="w-full px-3 py-2 rounded-xl bg-[#12151C] border border-white/10 text-white text-xs focus:border-[#FF6B35] focus:outline-none"
+                    className="w-full px-3 py-2 rounded-xl bg-[#12151C] border border-white/10 text-white text-xs focus:border-[var(--color-accent)] focus:outline-none"
                   />
                 </div>
                 <div>
@@ -749,7 +749,7 @@ ${PERSONAL_INFO.title}`;
                     type="text"
                     value={date}
                     onChange={(e) => setDate(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-[#12151C] border border-white/10 text-white text-xs focus:border-[#FF6B35] focus:outline-none"
+                    className="w-full px-3 py-2 rounded-xl bg-[#12151C] border border-white/10 text-white text-xs focus:border-[var(--color-accent)] focus:outline-none"
                   />
                 </div>
               </div>
@@ -763,7 +763,7 @@ ${PERSONAL_INFO.title}`;
                     value={companyLocation}
                     onChange={(e) => setCompanyLocation(e.target.value)}
                     placeholder="e.g. Remote / Dhaka"
-                    className="w-full px-3 py-2 rounded-xl bg-[#12151C] border border-white/10 text-white text-xs focus:border-[#FF6B35] focus:outline-none"
+                    className="w-full px-3 py-2 rounded-xl bg-[#12151C] border border-white/10 text-white text-xs focus:border-[var(--color-accent)] focus:outline-none"
                   />
                 </div>
                 <div>
@@ -773,7 +773,7 @@ ${PERSONAL_INFO.title}`;
                     value={companyWebsite}
                     onChange={(e) => setCompanyWebsite(e.target.value)}
                     placeholder="e.g. company.com"
-                    className="w-full px-3 py-2 rounded-xl bg-[#12151C] border border-white/10 text-white text-xs focus:border-[#FF6B35] focus:outline-none"
+                    className="w-full px-3 py-2 rounded-xl bg-[#12151C] border border-white/10 text-white text-xs focus:border-[var(--color-accent)] focus:outline-none"
                   />
                 </div>
               </div>
@@ -782,14 +782,14 @@ ${PERSONAL_INFO.title}`;
               <div>
                 <label className="text-[11px] text-[#D1D5DB] font-mono block mb-1 flex items-center justify-between">
                   <span>Job Description (Optional for AI Match Analysis)</span>
-                  <span className="text-[9px] text-[#FF6B35] font-normal">Auto Keyword Scan</span>
+                  <span className="text-[9px] text-[var(--color-accent)] font-normal">Auto Keyword Scan</span>
                 </label>
                 <textarea
                   rows={3}
                   value={jobDescription}
                   onChange={(e) => setJobDescription(e.target.value)}
                   placeholder="Paste job posting text here to calculate match score & highlight relevant skills..."
-                  className="w-full px-3 py-2 rounded-xl bg-[#12151C] border border-white/10 text-white text-xs focus:border-[#FF6B35] focus:outline-none resize-none font-sans"
+                  className="w-full px-3 py-2 rounded-xl bg-[#12151C] border border-white/10 text-white text-xs focus:border-[var(--color-accent)] focus:outline-none resize-none font-sans"
                 />
               </div>
 
@@ -797,7 +797,7 @@ ${PERSONAL_INFO.title}`;
 
             {/* AI Writing Style & Tone Selector */}
             <div className="space-y-2 pt-2 border-t border-white/10">
-              <label className="text-xs font-mono text-[#FF6B35] uppercase font-bold tracking-wider flex items-center gap-1.5">
+              <label className="text-xs font-mono text-[var(--color-accent)] uppercase font-bold tracking-wider flex items-center gap-1.5">
                 <Sparkles className="w-3.5 h-3.5" />
                 <span>AI Tone & Template</span>
               </label>
@@ -813,7 +813,7 @@ ${PERSONAL_INFO.title}`;
                     onClick={() => setTone(t.id as CoverLetterTone)}
                     className={`py-2 px-1 rounded-lg border text-center transition-all cursor-pointer ${
                       tone === t.id 
-                        ? 'bg-[#FF6B35] border-[#FF6B35] text-white font-bold' 
+                        ? 'bg-[var(--color-accent)] border-[var(--color-accent)] text-white font-bold' 
                         : 'bg-[#12151C] border-white/5 text-[#9CA3AF] hover:text-white'
                     }`}
                   >
@@ -847,7 +847,7 @@ ${PERSONAL_INFO.title}`;
             {/* Professional ATS Typography Selector */}
             <div className="space-y-2 pt-2 border-t border-white/10">
               <div className="flex items-center justify-between">
-                <label className="text-xs font-mono text-[#FF6B35] uppercase font-bold tracking-wider flex items-center gap-1.5">
+                <label className="text-xs font-mono text-[var(--color-accent)] uppercase font-bold tracking-wider flex items-center gap-1.5">
                   <Type className="w-3.5 h-3.5" />
                   <span>Professional Font</span>
                 </label>
@@ -865,7 +865,7 @@ ${PERSONAL_INFO.title}`;
                     onClick={() => setFontFamily(f.id as CoverLetterFontFamily)}
                     className={`p-2 rounded-xl border text-left transition-all cursor-pointer ${
                       fontFamily === f.id
-                        ? 'bg-[#FF6B35] border-[#FF6B35] text-white font-bold shadow-sm'
+                        ? 'bg-[var(--color-accent)] border-[var(--color-accent)] text-white font-bold shadow-sm'
                         : 'bg-[#12151C] border-white/10 text-[#9CA3AF] hover:text-white hover:border-white/20'
                     }`}
                   >
@@ -883,7 +883,7 @@ ${PERSONAL_INFO.title}`;
             <button
               onClick={handleGenerate}
               disabled={isGenerating || !companyName.trim() || !jobTitle.trim()}
-              className="w-full py-3.5 bg-[#FF6B35] hover:bg-[#FF814F] text-white font-bold text-xs font-mono rounded-xl flex items-center justify-center space-x-2 transition-all shadow-lg shadow-[#FF6B35]/25 cursor-pointer disabled:opacity-50 shimmer"
+              className="w-full py-3.5 bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-white font-bold text-xs font-mono rounded-xl flex items-center justify-center space-x-2 transition-all shadow-lg shadow-[var(--color-accent)]/25 cursor-pointer disabled:opacity-50 shimmer"
             >
               {isGenerating ? (
                 <>
@@ -924,13 +924,13 @@ ${PERSONAL_INFO.title}`;
                   <span className="text-[#9CA3AF]">Mode:</span>
                   <button
                     onClick={() => setIsEditing(false)}
-                    className={`px-3 py-1 rounded-lg transition-all cursor-pointer ${!isEditing ? 'bg-[#FF6B35] text-white font-bold' : 'text-[#9CA3AF] hover:text-white'}`}
+                    className={`px-3 py-1 rounded-lg transition-all cursor-pointer ${!isEditing ? 'bg-[var(--color-accent)] text-white font-bold' : 'text-[#9CA3AF] hover:text-white'}`}
                   >
                     A4 Visual Preview
                   </button>
                   <button
                     onClick={() => setIsEditing(true)}
-                    className={`px-3 py-1 rounded-lg transition-all cursor-pointer ${isEditing ? 'bg-[#FF6B35] text-white font-bold' : 'text-[#9CA3AF] hover:text-white'}`}
+                    className={`px-3 py-1 rounded-lg transition-all cursor-pointer ${isEditing ? 'bg-[var(--color-accent)] text-white font-bold' : 'text-[#9CA3AF] hover:text-white'}`}
                   >
                     Edit Text
                   </button>
@@ -963,7 +963,7 @@ ${PERSONAL_INFO.title}`;
                     </button>
                     <button
                       onClick={() => setIsEditing(false)}
-                      className="px-5 py-2 rounded-xl bg-[#FF6B35] hover:bg-[#FF814F] text-white text-xs font-mono font-bold transition-all cursor-pointer"
+                      className="px-5 py-2 rounded-xl bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-white text-xs font-mono font-bold transition-all cursor-pointer"
                     >
                       Done Editing
                     </button>
@@ -1163,14 +1163,14 @@ ${PERSONAL_INFO.title}`;
 
               {/* AI Improvement Suggestions */}
               <div className="space-y-3 pt-2 border-t border-white/10">
-                <h4 className="text-xs font-mono text-[#FF6B35] font-bold uppercase tracking-wider flex items-center gap-2">
-                  <Lightbulb className="w-4 h-4 text-[#FF6B35]" />
+                <h4 className="text-xs font-mono text-[var(--color-accent)] font-bold uppercase tracking-wider flex items-center gap-2">
+                  <Lightbulb className="w-4 h-4 text-[var(--color-accent)]" />
                   <span>Actionable AI Suggestions to Boost Selection Chance</span>
                 </h4>
                 <div className="space-y-2 text-xs text-[#D1D5DB]">
                   {matchAnalysis.suggestions.map((tip, idx) => (
                     <div key={idx} className="p-3 rounded-xl bg-white/[0.03] border border-white/5 flex items-start space-x-2">
-                      <ChevronRight className="w-4 h-4 text-[#FF6B35] shrink-0 mt-0.5" />
+                      <ChevronRight className="w-4 h-4 text-[var(--color-accent)] shrink-0 mt-0.5" />
                       <span className="leading-relaxed">{tip}</span>
                     </div>
                   ))}
@@ -1203,7 +1203,7 @@ ${PERSONAL_INFO.title}`;
                       <div className="flex justify-between items-start">
                         <div>
                           <h4 className="font-bold text-base text-white">{letter.companyName}</h4>
-                          <p className="text-xs font-mono text-[#FF6B35]">{letter.jobTitle}</p>
+                          <p className="text-xs font-mono text-[var(--color-accent)]">{letter.jobTitle}</p>
                           <p className="text-[10px] text-[#9CA3AF] font-mono mt-0.5">Saved on {letter.createdAt}</p>
                         </div>
                         <div className="flex items-center space-x-2">
@@ -1228,7 +1228,7 @@ ${PERSONAL_INFO.title}`;
                             setJobTitle(letter.jobTitle);
                             setActiveTab('preview');
                           }}
-                          className="px-4 py-1.5 rounded-lg bg-[#FF6B35] text-white font-mono text-xs font-bold cursor-pointer hover:bg-[#FF814F]"
+                          className="px-4 py-1.5 rounded-lg bg-[var(--color-accent)] text-white font-mono text-xs font-bold cursor-pointer hover:bg-[var(--color-accent-hover)]"
                         >
                           Load & Edit
                         </button>

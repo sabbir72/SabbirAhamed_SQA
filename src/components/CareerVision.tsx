@@ -13,15 +13,15 @@ export default function CareerVision() {
   return (
     <section id="career-vision" className="py-20 bg-[#0B0D12] text-white relative overflow-hidden">
       {/* Ambient background glow */}
-      <div className="absolute top-1/3 -left-40 w-80 h-80 bg-[#FF6B35]/10 rounded-full blur-[100px] pointer-events-none" />
+      <div className="absolute top-1/3 -left-40 w-80 h-80 bg-[var(--color-accent)]/10 rounded-full blur-[100px] pointer-events-none" />
       <div className="absolute bottom-10 -right-40 w-80 h-80 bg-blue-600/10 rounded-full blur-[100px] pointer-events-none" />
 
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10 space-y-12">
         
         {/* Section Header */}
         <div className="text-center space-y-3 max-w-2xl mx-auto">
-          <div className="inline-flex items-center space-x-2 px-3.5 py-1.5 rounded-full bg-[#FF6B35]/10 border border-[#FF6B35]/30 text-[#FF6B35] text-xs font-mono font-bold uppercase tracking-wider">
-            <Compass className="w-4 h-4 text-[#FF6B35]" />
+          <div className="inline-flex items-center space-x-2 px-3.5 py-1.5 rounded-full bg-[var(--color-accent)]/10 border border-[var(--color-accent)]/30 text-[var(--color-accent)] text-xs font-mono font-bold uppercase tracking-wider">
+            <Compass className="w-4 h-4 text-[var(--color-accent)]" />
             <span>Purpose & Direction</span>
           </div>
 
@@ -37,14 +37,14 @@ export default function CareerVision() {
         {/* Mission & Vision Side-by-Side Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* Mission Card */}
-          <div className="bg-[#12151C] border border-white/10 hover:border-[#FF6B35]/40 rounded-3xl p-8 space-y-5 transition-all duration-300 relative overflow-hidden group shadow-xl">
-            <div className="absolute top-0 right-0 w-40 h-40 bg-[#FF6B35]/5 rounded-full blur-2xl pointer-events-none" />
+          <div className="bg-[#12151C] border border-white/10 hover:border-[var(--color-accent)]/40 rounded-3xl p-8 space-y-5 transition-all duration-300 relative overflow-hidden group shadow-xl">
+            <div className="absolute top-0 right-0 w-40 h-40 bg-[var(--color-accent)]/5 rounded-full blur-2xl pointer-events-none" />
             
             <div className="flex items-center justify-between">
-              <div className="w-12 h-12 rounded-2xl bg-[#FF6B35]/10 border border-[#FF6B35]/30 flex items-center justify-center text-[#FF6B35]">
+              <div className="w-12 h-12 rounded-2xl bg-[var(--color-accent)]/10 border border-[var(--color-accent)]/30 flex items-center justify-center text-[var(--color-accent)]">
                 <Target className="w-6 h-6" />
               </div>
-              <span className="text-xs font-mono text-[#FF6B35] uppercase tracking-wider font-bold bg-[#FF6B35]/10 px-3 py-1 rounded-full border border-[#FF6B35]/20">
+              <span className="text-xs font-mono text-[var(--color-accent)] uppercase tracking-wider font-bold bg-[var(--color-accent)]/10 px-3 py-1 rounded-full border border-[var(--color-accent)]/20">
                 My Mission
               </span>
             </div>
@@ -60,11 +60,11 @@ export default function CareerVision() {
 
             <ul className="space-y-2 pt-2 text-xs text-[#9CA3AF] font-sans border-t border-white/5">
               <li className="flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-[#FF6B35] shrink-0" />
+                <CheckCircle2 className="w-4 h-4 text-[var(--color-accent)] shrink-0" />
                 <span>Maintain 100% test coverage for critical user journeys.</span>
               </li>
               <li className="flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-[#FF6B35] shrink-0" />
+                <CheckCircle2 className="w-4 h-4 text-[var(--color-accent)] shrink-0" />
                 <span>Integrate automated shift-left continuous testing in CI/CD pipelines.</span>
               </li>
             </ul>
@@ -109,7 +109,7 @@ export default function CareerVision() {
         <div className="bg-[#12151C]/60 border border-white/10 rounded-3xl p-6 sm:p-8 space-y-6">
           <div className="flex items-center justify-between border-b border-white/10 pb-4">
             <h3 className="text-lg font-bold text-white flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-[#FF6B35]" />
+              <Sparkles className="w-4 h-4 text-[var(--color-accent)]" />
               <span>Career Roadmap Flow</span>
             </h3>
             <span className="text-xs font-mono text-[#9CA3AF]">Long-Term Growth</span>
@@ -122,7 +122,7 @@ export default function CareerVision() {
 
               let cardStyle = 'bg-[#0B0D12]/70 border-white/10 text-gray-300';
               if (isActive) {
-                cardStyle = 'bg-[#181C26] border-[#FF6B35] text-white shadow-lg ring-1 ring-[#FF6B35]/50';
+                cardStyle = 'bg-[#181C26] border-[var(--color-accent)] text-white shadow-lg ring-1 ring-[var(--color-accent)]/50';
               } else if (isVision) {
                 cardStyle = 'bg-[#161224] border-purple-500/60 text-white shadow-lg ring-1 ring-purple-500/50';
               }
@@ -136,7 +136,7 @@ export default function CareerVision() {
                     <div className="flex items-center justify-between mb-3">
                       <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded ${
                         isActive 
-                          ? 'bg-[#FF6B35] text-white' 
+                          ? 'bg-[var(--color-accent)] text-white' 
                           : isVision 
                             ? 'bg-purple-600 text-white' 
                             : 'bg-white/10 text-gray-400'
@@ -146,7 +146,7 @@ export default function CareerVision() {
                       {item.badge && (
                         <span className={`text-[9px] font-mono uppercase px-1.5 py-0.5 rounded border font-bold ${
                           isActive 
-                            ? 'bg-[#FF6B35]/20 text-[#FF6B35] border-[#FF6B35]/30' 
+                            ? 'bg-[var(--color-accent)]/20 text-[var(--color-accent)] border-[var(--color-accent)]/30' 
                             : 'bg-purple-500/20 text-purple-300 border-purple-500/30'
                         }`}>
                           {item.badge}
@@ -158,7 +158,7 @@ export default function CareerVision() {
 
                   {idx < careerFlow.length - 1 && (
                     <div className="hidden lg:flex justify-end mt-4">
-                      <ArrowRight className={`w-3.5 h-3.5 ${isActive ? 'text-[#FF6B35]' : 'text-gray-600'}`} />
+                      <ArrowRight className={`w-3.5 h-3.5 ${isActive ? 'text-[var(--color-accent)]' : 'text-gray-600'}`} />
                     </div>
                   )}
                 </div>

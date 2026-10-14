@@ -79,14 +79,14 @@ export default function Contact({ onOpenResumeBuilder }: ContactProps) {
   return (
     <section id="contact" className="py-24 sm:py-28 bg-[#0B0D12] text-[#F3F4F6] border-t border-white/10 px-4 sm:px-6 lg:px-8 relative overflow-hidden">
       {/* Background Subtle Ambient Glows */}
-      <div className="absolute top-1/3 left-10 w-96 h-96 bg-[#FF6B35]/5 rounded-full blur-[140px] pointer-events-none" aria-hidden="true" />
+      <div className="absolute top-1/3 left-10 w-96 h-96 bg-[var(--color-accent)]/5 rounded-full blur-[140px] pointer-events-none" aria-hidden="true" />
       <div className="absolute bottom-10 right-10 w-80 h-80 bg-blue-600/5 rounded-full blur-[120px] pointer-events-none" aria-hidden="true" />
 
       <div className="max-w-7xl mx-auto relative z-10">
         
         {/* Section Header */}
         <div className="text-center max-w-3xl mx-auto mb-16 space-y-4">
-          <div className="inline-flex items-center space-x-2 px-4 py-1.5 rounded-full bg-[#FF6B35]/10 border border-[#FF6B35]/25 text-[#FF6B35] text-xs font-mono font-bold uppercase tracking-wider">
+          <div className="inline-flex items-center space-x-2 px-4 py-1.5 rounded-full bg-[var(--color-accent)]/10 border border-[var(--color-accent)]/25 text-[var(--color-accent)] text-xs font-mono font-bold uppercase tracking-wider">
             <Sparkles className="w-3.5 h-3.5" />
             <span>Get In Touch</span>
           </div>
@@ -120,7 +120,7 @@ export default function Contact({ onOpenResumeBuilder }: ContactProps) {
                 <h3 className="font-display font-extrabold text-2xl text-white tracking-tight">
                   {PERSONAL_INFO.name}
                 </h3>
-                <p className="text-xs font-mono font-semibold text-[#FF6B35] uppercase tracking-wider mt-1">
+                <p className="text-xs font-mono font-semibold text-[var(--color-accent)] uppercase tracking-wider mt-1">
                   {PERSONAL_INFO.title}
                 </p>
                 <p className="mt-3 text-xs sm:text-sm text-[#9CA3AF] font-light leading-relaxed">
@@ -132,14 +132,14 @@ export default function Contact({ onOpenResumeBuilder }: ContactProps) {
               <div className="space-y-3 font-mono text-xs text-[#F3F4F6] pt-2">
                 
                 {/* Email Item */}
-                <div className="flex items-center justify-between p-3.5 rounded-2xl bg-white/[0.03] border border-white/10 hover:border-[#FF6B35]/50 transition-all group">
+                <div className="flex items-center justify-between p-3.5 rounded-2xl bg-white/[0.03] border border-white/10 hover:border-[var(--color-accent)]/50 transition-all group">
                   <div className="flex items-center space-x-3 truncate mr-2">
-                    <div className="p-2 rounded-xl bg-[#FF6B35]/10 text-[#FF6B35]">
+                    <div className="p-2 rounded-xl bg-[var(--color-accent)]/10 text-[var(--color-accent)]">
                       <Mail className="w-4 h-4" />
                     </div>
                     <div className="truncate">
                       <span className="block text-[10px] text-[#9CA3AF] uppercase font-sans">Email Address</span>
-                      <a href={`mailto:${PERSONAL_INFO.email}`} className="text-white hover:text-[#FF6B35] transition-colors truncate font-mono text-xs font-medium">
+                      <a href={`mailto:${PERSONAL_INFO.email}`} className="text-white hover:text-[var(--color-accent)] transition-colors truncate font-mono text-xs font-medium">
                         {PERSONAL_INFO.email}
                       </a>
                     </div>
@@ -154,13 +154,13 @@ export default function Contact({ onOpenResumeBuilder }: ContactProps) {
                 </div>
 
                 {/* Phone Item */}
-                <div className="flex items-center space-x-3 p-3.5 rounded-2xl bg-white/[0.03] border border-white/10 hover:border-[#FF6B35]/50 transition-all">
-                  <div className="p-2 rounded-xl bg-[#FF6B35]/10 text-[#FF6B35]">
+                <div className="flex items-center space-x-3 p-3.5 rounded-2xl bg-white/[0.03] border border-white/10 hover:border-[var(--color-accent)]/50 transition-all">
+                  <div className="p-2 rounded-xl bg-[var(--color-accent)]/10 text-[var(--color-accent)]">
                     <Phone className="w-4 h-4" />
                   </div>
                   <div>
                     <span className="block text-[10px] text-[#9CA3AF] uppercase font-sans">Phone Number</span>
-                    <a href={`tel:${PERSONAL_INFO.phone}`} className="text-white hover:text-[#FF6B35] transition-colors font-mono text-xs font-medium">
+                    <a href={`tel:${PERSONAL_INFO.phone}`} className="text-white hover:text-[var(--color-accent)] transition-colors font-mono text-xs font-medium">
                       {PERSONAL_INFO.phone}
                     </a>
                   </div>
@@ -168,7 +168,7 @@ export default function Contact({ onOpenResumeBuilder }: ContactProps) {
 
                 {/* Location Item */}
                 <div className="flex items-center space-x-3 p-3.5 rounded-2xl bg-white/[0.03] border border-white/10">
-                  <div className="p-2 rounded-xl bg-[#FF6B35]/10 text-[#FF6B35]">
+                  <div className="p-2 rounded-xl bg-[var(--color-accent)]/10 text-[var(--color-accent)]">
                     <MapPin className="w-4 h-4" />
                   </div>
                   <div>
@@ -236,13 +236,13 @@ export default function Contact({ onOpenResumeBuilder }: ContactProps) {
                       <p className="text-white/90 font-sans">{serverError}</p>
 
                       <div className="pt-2 border-t border-rose-500/20 space-y-1.5 text-[11px] text-rose-300">
-                        <p className="font-bold uppercase tracking-wider text-[#FF6B35]">How to resolve in Brevo Dashboard:</p>
+                        <p className="font-bold uppercase tracking-wider text-[var(--color-accent)]">How to resolve in Brevo Dashboard:</p>
                         <ul className="list-disc list-inside space-y-1 text-white/80 font-sans">
                           <li>
                             <strong>Authorised IPs:</strong> Open <a href="https://app.brevo.com/security/authorised_ips" target="_blank" rel="noreferrer" className="underline text-blue-400 hover:text-blue-300">Brevo Security Settings</a> and disable IP restrictions so Cloud Run/Vercel can connect.
                           </li>
                           <li>
-                            <strong>API Key:</strong> Ensure <code className="bg-black/40 px-1 py-0.5 rounded text-[#FF6B35]">BREVO_API_KEY</code> in <code className="bg-black/40 px-1 py-0.5 rounded">.env</code> is a fresh, active v3 key from <a href="https://app.brevo.com/settings/keys/api" target="_blank" rel="noreferrer" className="underline text-blue-400 hover:text-blue-300">Brevo API Keys</a>.
+                            <strong>API Key:</strong> Ensure <code className="bg-black/40 px-1 py-0.5 rounded text-[var(--color-accent)]">BREVO_API_KEY</code> in <code className="bg-black/40 px-1 py-0.5 rounded">.env</code> is a fresh, active v3 key from <a href="https://app.brevo.com/settings/keys/api" target="_blank" rel="noreferrer" className="underline text-blue-400 hover:text-blue-300">Brevo API Keys</a>.
                           </li>
                           <li>
                             <strong>Verified Sender:</strong> Ensure <code className="bg-black/40 px-1 py-0.5 rounded">sabbircse72@gmail.com</code> is verified in <a href="https://app.brevo.com/senders" target="_blank" rel="noreferrer" className="underline text-blue-400 hover:text-blue-300">Brevo Senders</a>.
@@ -256,14 +256,14 @@ export default function Contact({ onOpenResumeBuilder }: ContactProps) {
                     {/* Full Name */}
                     <div className="space-y-1.5">
                       <label className="text-xs font-mono text-[#D1D5DB] font-medium block">
-                        Full Name <span className="text-[#FF6B35]">*</span>
+                        Full Name <span className="text-[var(--color-accent)]">*</span>
                       </label>
                       <input
                         type="text"
                         required
                         value={formData.name}
                         onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                        className="w-full px-4 py-3 rounded-xl bg-white/[0.04] border border-white/10 text-white text-sm focus:border-[#FF6B35] focus:bg-white/[0.06] focus:outline-none transition-all placeholder:text-[#9CA3AF]/50 font-sans"
+                        className="w-full px-4 py-3 rounded-xl bg-white/[0.04] border border-white/10 text-white text-sm focus:border-[var(--color-accent)] focus:bg-white/[0.06] focus:outline-none transition-all placeholder:text-[#9CA3AF]/50 font-sans"
                         placeholder="Your Name"
                       />
                       {errors.name && <p className="text-[11px] font-mono text-rose-400 pt-0.5">{errors.name}</p>}
@@ -272,14 +272,14 @@ export default function Contact({ onOpenResumeBuilder }: ContactProps) {
                     {/* Email Address */}
                     <div className="space-y-1.5">
                       <label className="text-xs font-mono text-[#D1D5DB] font-medium block">
-                        Email Address <span className="text-[#FF6B35]">*</span>
+                        Email Address <span className="text-[var(--color-accent)]">*</span>
                       </label>
                       <input
                         type="email"
                         required
                         value={formData.email}
                         onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                        className="w-full px-4 py-3 rounded-xl bg-white/[0.04] border border-white/10 text-white text-sm focus:border-[#FF6B35] focus:bg-white/[0.06] focus:outline-none transition-all placeholder:text-[#9CA3AF]/50 font-sans"
+                        className="w-full px-4 py-3 rounded-xl bg-white/[0.04] border border-white/10 text-white text-sm focus:border-[var(--color-accent)] focus:bg-white/[0.06] focus:outline-none transition-all placeholder:text-[#9CA3AF]/50 font-sans"
                         placeholder="Your Email Address"
                       />
                       {errors.email && <p className="text-[11px] font-mono text-rose-400 pt-0.5">{errors.email}</p>}
@@ -289,14 +289,14 @@ export default function Contact({ onOpenResumeBuilder }: ContactProps) {
                   {/* Subject */}
                   <div className="space-y-1.5">
                     <label className="text-xs font-mono text-[#D1D5DB] font-medium block">
-                      Subject <span className="text-[#FF6B35]">*</span>
+                      Subject <span className="text-[var(--color-accent)]">*</span>
                     </label>
                     <input
                       type="text"
                       required
                       value={formData.subject}
                       onChange={(e) => setFormData({ ...formData, subject: e.target.value })}
-                      className="w-full px-4 py-3 rounded-xl bg-white/[0.04] border border-white/10 text-white text-sm focus:border-[#FF6B35] focus:bg-white/[0.06] focus:outline-none transition-all placeholder:text-[#9CA3AF]/50 font-sans"
+                      className="w-full px-4 py-3 rounded-xl bg-white/[0.04] border border-white/10 text-white text-sm focus:border-[var(--color-accent)] focus:bg-white/[0.06] focus:outline-none transition-all placeholder:text-[#9CA3AF]/50 font-sans"
                       placeholder="Subject (e.g. SQA Engineer Position Opportunity)"
                     />
                     {errors.subject && <p className="text-[11px] font-mono text-rose-400 pt-0.5">{errors.subject}</p>}
@@ -305,14 +305,14 @@ export default function Contact({ onOpenResumeBuilder }: ContactProps) {
                   {/* Message */}
                   <div className="space-y-1.5">
                     <label className="text-xs font-mono text-[#D1D5DB] font-medium block">
-                      Message <span className="text-[#FF6B35]">*</span>
+                      Message <span className="text-[var(--color-accent)]">*</span>
                     </label>
                     <textarea
                       required
                       rows={5}
                       value={formData.message}
                       onChange={(e) => setFormData({ ...formData, message: e.target.value })}
-                      className="w-full px-4 py-3.5 rounded-2xl bg-white/[0.04] border border-white/10 text-white text-sm focus:border-[#FF6B35] focus:bg-white/[0.06] focus:outline-none transition-all resize-none placeholder:text-[#9CA3AF]/50 font-sans leading-relaxed"
+                      className="w-full px-4 py-3.5 rounded-2xl bg-white/[0.04] border border-white/10 text-white text-sm focus:border-[var(--color-accent)] focus:bg-white/[0.06] focus:outline-none transition-all resize-none placeholder:text-[#9CA3AF]/50 font-sans leading-relaxed"
                       placeholder="Tell me about the opportunity or project..."
                     />
                     {errors.message && <p className="text-[11px] font-mono text-rose-400 pt-0.5">{errors.message}</p>}
@@ -323,7 +323,7 @@ export default function Contact({ onOpenResumeBuilder }: ContactProps) {
                     <button
                       type="submit"
                       disabled={status === 'sending'}
-                      className="w-full py-4 bg-[#FF6B35] hover:bg-[#FF814F] text-white font-bold text-sm rounded-2xl flex items-center justify-center space-x-2.5 transition-all shadow-xl shadow-[#FF6B35]/25 hover:shadow-[#FF6B35]/40 active:scale-[0.99] cursor-pointer shimmer disabled:opacity-50"
+                      className="w-full py-4 bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-white font-bold text-sm rounded-2xl flex items-center justify-center space-x-2.5 transition-all shadow-xl shadow-[var(--color-accent)]/25 hover:shadow-[var(--color-accent)]/40 active:scale-[0.99] cursor-pointer shimmer disabled:opacity-50"
                     >
                       {status === 'sending' ? (
                         <span className="flex items-center space-x-2 font-mono">
@@ -342,7 +342,7 @@ export default function Contact({ onOpenResumeBuilder }: ContactProps) {
                       href={`mailto:${PERSONAL_INFO.email}?subject=${encodeURIComponent(formData.subject || 'Portfolio Inquiry')}&body=${encodeURIComponent(`Hi Sabbir,\n\n${formData.message || ''}\n\nFrom: ${formData.name || ''} (${formData.email || ''})`)}`}
                       className="w-full py-3 bg-white/[0.05] hover:bg-white/[0.10] text-[#D1D5DB] hover:text-white border border-white/10 font-mono text-xs rounded-2xl flex items-center justify-center space-x-2 transition-all cursor-pointer"
                     >
-                      <Mail className="w-3.5 h-3.5 text-[#FF6B35]" />
+                      <Mail className="w-3.5 h-3.5 text-[var(--color-accent)]" />
                       <span>Or Open directly in Gmail / Mail App</span>
                       <ExternalLink className="w-3 h-3 text-[#9CA3AF]" />
                     </a>

@@ -60,27 +60,56 @@ export interface PortfolioData {
   lastModified?: string;
 }
 
+const CANDIDATE_STORAGE_KEYS = [
+  STORAGE_KEY_PORTFOLIO,
+  'sabbir_portfolio_data',
+  'sabbir_portfolio_data_v1',
+  'sabbir_portfolio_cms'
+];
+
 /**
- * Loads portfolio dataset from localStorage, fallback to default seed data
+ * Loads portfolio dataset from localStorage non-destructively, preserving any live data on Vercel
  */
 export function getStoredPortfolioData(): PortfolioData {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY_PORTFOLIO);
-    if (raw) {
-      const parsed: Partial<PortfolioData> = JSON.parse(raw);
-      return {
-        projects: Array.isArray(parsed.projects) && parsed.projects.length > 0 ? parsed.projects : [...DEFAULT_PROJECTS],
-        experiences: Array.isArray(parsed.experiences) && parsed.experiences.length > 0 ? parsed.experiences : [...DEFAULT_EXPERIENCE],
-        skills: Array.isArray(parsed.skills) && parsed.skills.length > 0 ? parsed.skills : [...DEFAULT_SKILLS],
-        profile: parsed.profile ? { ...DEFAULT_PROFILE, ...parsed.profile } : { ...DEFAULT_PROFILE },
-        lastModified: parsed.lastModified || new Date().toISOString(),
-      };
+    for (const key of CANDIDATE_STORAGE_KEYS) {
+      const raw = localStorage.getItem(key);
+      if (raw) {
+        const parsed: Partial<PortfolioData> = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object') {
+          const loadedData: PortfolioData = {
+            projects: Array.isArray(parsed.projects) && parsed.projects.length > 0 
+              ? parsed.projects 
+              : [...DEFAULT_PROJECTS],
+            experiences: Array.isArray(parsed.experiences) && parsed.experiences.length > 0 
+              ? parsed.experiences 
+              : [...DEFAULT_EXPERIENCE],
+            skills: Array.isArray(parsed.skills) && parsed.skills.length > 0 
+              ? parsed.skills 
+              : [...DEFAULT_SKILLS],
+            profile: parsed.profile 
+              ? { ...DEFAULT_PROFILE, ...parsed.profile } 
+              : { ...DEFAULT_PROFILE },
+            lastModified: parsed.lastModified || new Date().toISOString(),
+          };
+
+          // Ensure primary key is synchronized without deleting data
+          if (key !== STORAGE_KEY_PORTFOLIO) {
+            try {
+              localStorage.setItem(STORAGE_KEY_PORTFOLIO, JSON.stringify(loadedData));
+            } catch (e) {
+              // ignore
+            }
+          }
+          return loadedData;
+        }
+      }
     }
   } catch (err) {
     console.error('Error reading portfolio data from localStorage:', err);
   }
 
-  // Initial seed
+  // Initial seed if truly no prior data exists
   const initialData: PortfolioData = {
     projects: [...DEFAULT_PROJECTS],
     experiences: [...DEFAULT_EXPERIENCE],
@@ -91,6 +120,7 @@ export function getStoredPortfolioData(): PortfolioData {
 
   try {
     localStorage.setItem(STORAGE_KEY_PORTFOLIO, JSON.stringify(initialData));
+    localStorage.setItem('sabbir_portfolio_data', JSON.stringify(initialData));
   } catch (e) {
     // ignore
   }
@@ -109,6 +139,7 @@ export function savePortfolioData(data: PortfolioData): void {
 
   try {
     localStorage.setItem(STORAGE_KEY_PORTFOLIO, JSON.stringify(updatedData));
+    localStorage.setItem('sabbir_portfolio_data', JSON.stringify(updatedData));
   } catch (err) {
     console.error('Error saving portfolio data to localStorage:', err);
   }

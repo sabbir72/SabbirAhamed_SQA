@@ -86,7 +86,7 @@ export default function AdminQuickAccess({
       >
         <button
           onClick={handleOpenAdmin}
-          className="group flex items-center justify-center w-9 h-9 rounded-full bg-[#12151C]/80 hover:bg-[#12151C] border border-white/10 hover:border-[#FF6B35]/50 text-[#6B7280] hover:text-[#FF6B35] shadow-xl backdrop-blur-md transition-all duration-300 hover:scale-110 cursor-pointer"
+          className="group flex items-center justify-center w-9 h-9 rounded-full bg-[#12151C]/80 hover:bg-[#12151C] border border-white/10 hover:border-[var(--color-accent)]/50 text-[#6B7280] hover:text-[var(--color-accent)] shadow-xl backdrop-blur-md transition-all duration-300 hover:scale-110 cursor-pointer"
           title="Admin Access Login (Passcode Protected)"
           aria-label="Admin Login"
         >

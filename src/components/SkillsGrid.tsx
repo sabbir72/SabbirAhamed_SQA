@@ -32,17 +32,17 @@ export default function SkillsGrid() {
   const getCategoryIcon = (category: string) => {
     switch (category) {
       case 'Manual Testing':
-        return <ClipboardList className="w-5 h-5 text-[#FF6B35]" />;
+        return <ClipboardList className="w-5 h-5 text-[var(--color-accent)]" />;
       case 'Automation Testing':
-        return <Play className="w-5 h-5 text-[#FF6B35]" />;
+        return <Play className="w-5 h-5 text-[var(--color-accent)]" />;
       case 'API Testing Tools':
-        return <Layers className="w-5 h-5 text-[#FF6B35]" />;
+        return <Layers className="w-5 h-5 text-[var(--color-accent)]" />;
       case 'Performance Testing':
-        return <Activity className="w-5 h-5 text-[#FF6B35]" />;
+        return <Activity className="w-5 h-5 text-[var(--color-accent)]" />;
       case 'Tools & Databases':
-        return <Database className="w-5 h-5 text-[#FF6B35]" />;
+        return <Database className="w-5 h-5 text-[var(--color-accent)]" />;
       default:
-        return <Sparkles className="w-5 h-5 text-[#FF6B35]" />;
+        return <Sparkles className="w-5 h-5 text-[var(--color-accent)]" />;
     }
   };
 
@@ -52,7 +52,7 @@ export default function SkillsGrid() {
       <div className="max-w-7xl mx-auto relative z-10 space-y-12">
         {/* Section Header */}
         <div className="text-center max-w-3xl mx-auto space-y-3">
-          <p className="text-xs font-mono font-bold text-[#FF6B35] tracking-widest uppercase mb-1">
+          <p className="text-xs font-mono font-bold text-[var(--color-accent)] tracking-widest uppercase mb-1">
             CORE SKILLS & CAPABILITIES
           </p>
           <h2 className="font-display font-extrabold text-3xl sm:text-4xl md:text-5xl text-white">
@@ -84,8 +84,8 @@ export default function SkillsGrid() {
               onClick={() => setSelectedCategory(cat)}
               className={`px-4 py-2 rounded-full text-xs font-mono transition-all border ${
                 selectedCategory === cat
-                  ? 'bg-[#FF6B35] text-white border-[#FF6B35] font-bold shadow-lg shadow-[#FF6B35]/20'
-                  : 'bg-[#12151C] border-white/10 text-[#D1D5DB] hover:border-[#FF6B35]/50 hover:text-white'
+                  ? 'bg-[var(--color-accent)] text-white border-[var(--color-accent)] font-bold shadow-lg shadow-[var(--color-accent)]/20'
+                  : 'bg-[#12151C] border-white/10 text-[#D1D5DB] hover:border-[var(--color-accent)]/50 hover:text-white'
               }`}
             >
               {cat}
@@ -106,7 +106,7 @@ export default function SkillsGrid() {
 
               {/* Category Header */}
               <div className="flex items-center space-x-3.5 pb-4 mb-5 border-b border-white/10">
-                <div className="w-11 h-11 flex items-center justify-center bg-[#FF6B35]/10 rounded-xl border border-[#FF6B35]/20 group-hover:border-[#FF6B35] transition-colors">
+                <div className="w-11 h-11 flex items-center justify-center bg-[var(--color-accent)]/10 rounded-xl border border-[var(--color-accent)]/20 group-hover:border-[var(--color-accent)] transition-colors">
                   {getCategoryIcon(cat.category)}
                 </div>
                 <div>
@@ -123,7 +123,7 @@ export default function SkillsGrid() {
               <ul className="space-y-3">
                 {cat.items.map((item) => (
                   <li key={item} className="flex items-center space-x-2.5 text-xs text-[#F3F4F6]">
-                    <CheckCircle2 className="w-3.5 h-3.5 text-[#FF6B35] shrink-0" />
+                    <CheckCircle2 className="w-3.5 h-3.5 text-[var(--color-accent)] shrink-0" />
                     <span className="leading-relaxed font-medium">{item}</span>
                   </li>
                 ))}

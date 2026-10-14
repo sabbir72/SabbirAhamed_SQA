@@ -33,7 +33,7 @@ export default function Projects() {
   const getTypeBadgeStyle = (type: string) => {
     switch (type) {
       case 'Automation':
-        return 'bg-[#FF6B35]/10 text-[#FF6B35] border-[#FF6B35]/30';
+        return 'bg-[var(--color-accent)]/10 text-[var(--color-accent)] border-[var(--color-accent)]/30';
       case 'API':
         return 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30';
       case 'Performance':
@@ -48,7 +48,7 @@ export default function Projects() {
   const getTypeIcon = (type: string) => {
     switch (type) {
       case 'Automation':
-        return <Code className="w-3.5 h-3.5 text-[#FF6B35]" />;
+        return <Code className="w-3.5 h-3.5 text-[var(--color-accent)]" />;
       case 'API':
         return <Terminal className="w-3.5 h-3.5 text-emerald-400" />;
       case 'Performance':
@@ -66,8 +66,8 @@ export default function Projects() {
         
         {/* Section Header */}
         <div className="text-center max-w-3xl mx-auto space-y-3">
-          <p className="text-xs font-mono font-bold text-[#FF6B35] tracking-widest uppercase mb-1 flex items-center justify-center gap-1.5">
-            <Layers className="w-4 h-4 text-[#FF6B35]" />
+          <p className="text-xs font-mono font-bold text-[var(--color-accent)] tracking-widest uppercase mb-1 flex items-center justify-center gap-1.5">
+            <Layers className="w-4 h-4 text-[var(--color-accent)]" />
             <span>SQA PORTFOLIO PROJECTS</span>
           </p>
           <h2 className="font-display font-extrabold text-3xl sm:text-4xl md:text-5xl text-white tracking-tight">
@@ -87,8 +87,8 @@ export default function Projects() {
                 onClick={() => setSelectedType(cat)}
                 className={`px-4 py-2 rounded-full text-xs font-mono transition-all border flex items-center gap-1.5 cursor-pointer ${
                   selectedType === cat
-                    ? 'bg-[#FF6B35] text-white border-[#FF6B35] font-bold shadow-lg shadow-[#FF6B35]/20'
-                    : 'bg-[#12151C] border-white/10 text-[#D1D5DB] hover:border-[#FF6B35]/50 hover:text-white'
+                    ? 'bg-[var(--color-accent)] text-white border-[var(--color-accent)] font-bold shadow-lg shadow-[var(--color-accent)]/20'
+                    : 'bg-[#12151C] border-white/10 text-[#D1D5DB] hover:border-[var(--color-accent)]/50 hover:text-white'
                 }`}
               >
                 {cat !== 'All' && getTypeIcon(cat)}
@@ -115,7 +115,7 @@ export default function Projects() {
           {filteredProjects.map((project) => (
             <div
               key={project.id}
-              className="glass-card glass-card-hover rounded-2xl p-6 border border-white/10 flex flex-col justify-between space-y-5 relative group transition-all duration-300 hover:border-[#FF6B35]/50 hover:shadow-xl hover:shadow-[#FF6B35]/10"
+              className="glass-card glass-card-hover rounded-2xl p-6 border border-white/10 flex flex-col justify-between space-y-5 relative group transition-all duration-300 hover:border-[var(--color-accent)]/50 hover:shadow-xl hover:shadow-[var(--color-accent)]/10"
             >
               <div className="space-y-4">
                 {/* Header: Type Badge & Action Link */}
@@ -130,7 +130,7 @@ export default function Projects() {
                       href={project.link}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="p-2 rounded-xl bg-white/[0.04] hover:bg-[#FF6B35]/20 border border-white/10 hover:border-[#FF6B35]/40 text-[#9CA3AF] hover:text-[#FF6B35] transition-all"
+                      className="p-2 rounded-xl bg-white/[0.04] hover:bg-[var(--color-accent)]/20 border border-white/10 hover:border-[var(--color-accent)]/40 text-[#9CA3AF] hover:text-[var(--color-accent)] transition-all"
                       title="View Project Link / Repository"
                     >
                       <ExternalLink className="w-4 h-4" />
@@ -139,7 +139,7 @@ export default function Projects() {
                 </div>
 
                 {/* Project Title */}
-                <h3 className="font-display font-extrabold text-lg sm:text-xl text-white group-hover:text-[#FF6B35] transition-colors leading-snug">
+                <h3 className="font-display font-extrabold text-lg sm:text-xl text-white group-hover:text-[var(--color-accent)] transition-colors leading-snug">
                   {project.title}
                 </h3>
 
@@ -167,13 +167,13 @@ export default function Projects() {
                 <div className="space-y-1.5">
                   <p className="text-[10px] font-mono uppercase tracking-widest text-[#9CA3AF] flex items-center justify-between">
                     <span>Key Tools Used</span>
-                    <span className="text-[9px] text-[#FF6B35]">{project.tags.length} Tools</span>
+                    <span className="text-[9px] text-[var(--color-accent)]">{project.tags.length} Tools</span>
                   </p>
                   <div className="flex flex-wrap gap-1.5">
                     {project.tags.map((tool) => (
                       <span
                         key={tool}
-                        className="px-2 py-0.5 rounded text-[10px] font-mono font-semibold bg-white/[0.04] border border-white/10 text-[#D1D5DB] group-hover:border-[#FF6B35]/30 transition-colors"
+                        className="px-2 py-0.5 rounded text-[10px] font-mono font-semibold bg-white/[0.04] border border-white/10 text-[#D1D5DB] group-hover:border-[var(--color-accent)]/30 transition-colors"
                       >
                         {tool}
                       </span>
@@ -185,7 +185,7 @@ export default function Projects() {
                 <div className="flex items-center justify-between pt-2">
                   <button
                     onClick={() => setActiveModalProject(project)}
-                    className="text-xs font-mono text-[#FF6B35] hover:text-[#FF814F] font-bold flex items-center gap-1 group/btn"
+                    className="text-xs font-mono text-[var(--color-accent)] hover:text-[var(--color-accent-hover)] font-bold flex items-center gap-1 group/btn"
                   >
                     <span>Inspect Test Results</span>
                     <span className="group-hover/btn:translate-x-1 transition-transform">→</span>
@@ -245,7 +245,7 @@ export default function Projects() {
                 <h5 className="text-xs font-mono font-bold text-[#9CA3AF] uppercase tracking-wider">Testing Stack & Tools</h5>
                 <div className="flex flex-wrap gap-2">
                   {activeModalProject.tags.map((t) => (
-                    <span key={t} className="px-3 py-1 rounded-full text-xs font-mono bg-[#FF6B35]/10 text-[#FF6B35] border border-[#FF6B35]/30 font-semibold">
+                    <span key={t} className="px-3 py-1 rounded-full text-xs font-mono bg-[var(--color-accent)]/10 text-[var(--color-accent)] border border-[var(--color-accent)]/30 font-semibold">
                       {t}
                     </span>
                   ))}
@@ -254,7 +254,7 @@ export default function Projects() {
 
               {/* Assertions / Test Cases */}
               <div className="space-y-3 p-4 bg-white/[0.03] rounded-2xl border border-white/10">
-                <h5 className="text-xs font-mono font-bold text-[#FF6B35] uppercase tracking-wider flex items-center justify-between">
+                <h5 className="text-xs font-mono font-bold text-[var(--color-accent)] uppercase tracking-wider flex items-center justify-between">
                   <span>Automated Assertion Log</span>
                   <span className="text-[10px] text-emerald-400">
                     {activeModalProject.assertions.filter(a => a.status === 'PASS').length} / {activeModalProject.assertions.length} Passed
@@ -287,7 +287,7 @@ export default function Projects() {
                     href={activeModalProject.link}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="px-5 py-2.5 rounded-full bg-[#FF6B35] hover:bg-[#FF814F] text-white text-xs font-mono font-bold flex items-center space-x-2 transition-all shadow-lg shadow-[#FF6B35]/20"
+                    className="px-5 py-2.5 rounded-full bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-white text-xs font-mono font-bold flex items-center space-x-2 transition-all shadow-lg shadow-[var(--color-accent)]/20"
                   >
                     <span>View Repository & Specs</span>
                     <ExternalLink className="w-3.5 h-3.5" />

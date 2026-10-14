@@ -19,8 +19,10 @@ import {
   Cpu, FileCode, CheckCircle2, ChevronRight, Eye, Code, FileText, Sparkles,
   Info, Tag, Activity, Database, ClipboardList, Play, Save, BookOpen, User,
   Globe, Mail, Phone, MapPin, Linkedin, Github, Unlock, Printer, Sliders,
-  CheckSquare, Square, Building2, Send, Bookmark, Award, Target, EyeOff
+  CheckSquare, Square, Building2, Send, Bookmark, Award, Target, EyeOff, Clock, Palette
 } from 'lucide-react';
+import ThemeSelectorModal from './ThemeSelectorModal';
+import { COLOR_THEMES, getSavedThemeId, setAndApplyTheme } from '../utils/themeStore';
 import { Project, Experience, Skill, TestLog } from '../types';
 import { 
   getStoredProjects, addStoredProject, updateStoredProject, deleteStoredProject, reorderStoredProjects,
@@ -36,7 +38,14 @@ import {
   generateSlug, calculateReadingTime, BLOGS_UPDATED_EVENT 
 } from '../utils/blogStore';
 import { BlogPost } from '../data/blogs';
-import { isAdminAuthenticated, verifyAdminPasscode, logoutAdmin } from '../utils/adminAuth';
+import { 
+  isAdminAuthenticated, 
+  verifyAdminPasscode, 
+  logoutAdmin,
+  recordAdminActivity,
+  getAdminSessionRemainingSeconds,
+  ADMIN_SESSION_EXPIRED_EVENT
+} from '../utils/adminAuth';
 import { 
   getSystemLocks, 
   updateSystemLocks, 
@@ -74,11 +83,14 @@ export default function AdminPortal({
 }: AdminPortalProps) {
   // Authentication State
   const [isAdmin, setIsAdmin] = useState<boolean>(() => isAdminAuthenticated());
+  const [sessionRemaining, setSessionRemaining] = useState<number>(() => getAdminSessionRemainingSeconds());
   const [passcode, setPasscode] = useState('');
   const [showPasscode, setShowPasscode] = useState(false);
   const [authError, setAuthError] = useState('');
   const [isVerifying, setIsVerifying] = useState(false);
   const [showMasterPass, setShowMasterPass] = useState(false);
+  const [isThemeModalOpen, setIsThemeModalOpen] = useState(false);
+  const [currentThemeId, setCurrentThemeId] = useState<string>(() => getSavedThemeId());
 
   // Active Tab
   const [activeTab, setActiveTab] = useState<AdminTab>(initialTab);
@@ -189,6 +201,63 @@ export default function AdminPortal({
     };
   }, []);
 
+  // Strict 2-Minute Inactivity Auto-Logout Timer & Interaction Tracker
+  useEffect(() => {
+    if (!isAdmin) return;
+
+    // Reset countdown immediately on login
+    setSessionRemaining(getAdminSessionRemainingSeconds());
+
+    // Tick every 1 second
+    const timerInterval = setInterval(() => {
+      const remaining = getAdminSessionRemainingSeconds();
+      setSessionRemaining(remaining);
+      if (remaining <= 0 || !isAdminAuthenticated()) {
+        setIsAdmin(false);
+        showToast('Admin session expired after 2 minutes of inactivity.');
+      }
+    }, 1000);
+
+    // Track user activity to refresh session during active usage
+    let lastRecorded = Date.now();
+    const handleActivity = () => {
+      const now = Date.now();
+      if (now - lastRecorded > 2000) {
+        lastRecorded = now;
+        recordAdminActivity();
+        setSessionRemaining(getAdminSessionRemainingSeconds());
+      }
+    };
+
+    const handleSessionExpired = () => {
+      setIsAdmin(false);
+      showToast('Admin session expired after 2 minutes. Logged out.');
+    };
+
+    window.addEventListener('mousemove', handleActivity, { passive: true });
+    window.addEventListener('keydown', handleActivity, { passive: true });
+    window.addEventListener('click', handleActivity, { passive: true });
+    window.addEventListener('scroll', handleActivity, { passive: true });
+    window.addEventListener('touchstart', handleActivity, { passive: true });
+    window.addEventListener(ADMIN_SESSION_EXPIRED_EVENT, handleSessionExpired);
+
+    return () => {
+      clearInterval(timerInterval);
+      window.removeEventListener('mousemove', handleActivity);
+      window.removeEventListener('keydown', handleActivity);
+      window.removeEventListener('click', handleActivity);
+      window.removeEventListener('scroll', handleActivity);
+      window.removeEventListener('touchstart', handleActivity);
+      window.removeEventListener(ADMIN_SESSION_EXPIRED_EVENT, handleSessionExpired);
+    };
+  }, [isAdmin]);
+
+  const formatTimer = (seconds: number) => {
+    const mins = Math.floor(Math.max(0, seconds) / 60);
+    const secs = Math.max(0, seconds) % 60;
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
+
   // Passcode form submission
   const handlePasscodeLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -201,7 +270,8 @@ export default function AdminPortal({
       if (success) {
         setIsAdmin(true);
         setPasscode('');
-        showToast('Admin session unlocked successfully!');
+        setSessionRemaining(120);
+        showToast('Admin session unlocked! (Auto-logout in 2 min of inactivity)');
       } else {
         setAuthError('Invalid Admin Passcode! Please enter the correct common passcode.');
       }
@@ -603,9 +673,9 @@ ${profile.title || PERSONAL_INFO.title}`;
   if (!isAdmin) {
     return (
       <div className="min-h-screen bg-[#0B0D12] text-white flex flex-col items-center justify-center p-4 relative font-sans">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_var(--tw-gradient-stops))] from-[#FF6B35]/15 via-transparent to-transparent pointer-events-none" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_var(--tw-gradient-stops))] from-[var(--color-accent)]/15 via-transparent to-transparent pointer-events-none" />
 
-        <div className="w-full max-w-md bg-[#12151C] border border-[#FF6B35]/30 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6 relative z-10 animate-fadeIn">
+        <div className="w-full max-w-md bg-[#12151C] border border-[var(--color-accent)]/30 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6 relative z-10 animate-fadeIn">
           <button
             onClick={onBack}
             className="flex items-center space-x-1.5 text-xs font-mono text-[#9CA3AF] hover:text-white transition-colors cursor-pointer"
@@ -615,7 +685,7 @@ ${profile.title || PERSONAL_INFO.title}`;
           </button>
 
           <div className="text-center space-y-3 pt-2">
-            <div className="inline-flex p-3.5 rounded-2xl bg-[#FF6B35]/15 border border-[#FF6B35]/30 text-[#FF6B35]">
+            <div className="inline-flex p-3.5 rounded-2xl bg-[var(--color-accent)]/15 border border-[var(--color-accent)]/30 text-[var(--color-accent)]">
               <Lock className="w-8 h-8" />
             </div>
             <h1 className="font-display font-extrabold text-2xl text-white">
@@ -637,11 +707,11 @@ ${profile.title || PERSONAL_INFO.title}`;
             <div className="space-y-1.5">
               <label className="text-xs font-mono text-[#D1D5DB] font-semibold flex items-center justify-between">
                 <span className="flex items-center gap-1.5">
-                  <KeyRound className="w-3.5 h-3.5 text-[#FF6B35]" />
+                  <KeyRound className="w-3.5 h-3.5 text-[var(--color-accent)]" />
                   Common Admin Passcode
                 </span>
                 <span className="text-[10px] text-[#9CA3AF] font-mono bg-white/5 px-2 py-0.5 rounded border border-white/10 flex items-center gap-1">
-                  <Lock className="w-3 h-3 text-[#FF6B35]" />
+                  <Lock className="w-3 h-3 text-[var(--color-accent)]" />
                   <span>Security Protected</span>
                 </span>
               </label>
@@ -654,7 +724,7 @@ ${profile.title || PERSONAL_INFO.title}`;
                   autoFocus
                   required
                   disabled={isVerifying}
-                  className="w-full pl-4 pr-12 py-3 rounded-xl bg-white/[0.05] border border-white/20 text-sm font-mono text-white placeholder:text-white/30 focus:border-[#FF6B35] focus:outline-none transition-all"
+                  className="w-full pl-4 pr-12 py-3 rounded-xl bg-white/[0.05] border border-white/20 text-sm font-mono text-white placeholder:text-white/30 focus:border-[var(--color-accent)] focus:outline-none transition-all"
                 />
                 <button
                   type="button"
@@ -662,7 +732,7 @@ ${profile.title || PERSONAL_INFO.title}`;
                   className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 text-[#9CA3AF] hover:text-white transition-colors cursor-pointer"
                   title={showPasscode ? "Hide Passcode" : "Show Passcode"}
                 >
-                  {showPasscode ? <Eye className="w-4 h-4 text-[#FF6B35]" /> : <Lock className="w-4 h-4" />}
+                  {showPasscode ? <Eye className="w-4 h-4 text-[var(--color-accent)]" /> : <Lock className="w-4 h-4" />}
                 </button>
               </div>
             </div>
@@ -670,7 +740,7 @@ ${profile.title || PERSONAL_INFO.title}`;
             <button
               type="submit"
               disabled={isVerifying}
-              className="shimmer w-full py-3.5 rounded-xl bg-[#FF6B35] hover:bg-[#FF814F] text-white font-mono text-xs font-bold shadow-lg shadow-[#FF6B35]/25 cursor-pointer flex items-center justify-center space-x-2 transition-all disabled:opacity-50"
+              className="shimmer w-full py-3.5 rounded-xl bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-white font-mono text-xs font-bold shadow-lg shadow-[var(--color-accent)]/25 cursor-pointer flex items-center justify-center space-x-2 transition-all disabled:opacity-50"
             >
               {isVerifying ? (
                 <span>Verifying Passcode...</span>
@@ -698,11 +768,11 @@ ${profile.title || PERSONAL_INFO.title}`;
   // ============================================================================
 
   return (
-    <div className="min-h-screen bg-[#0B0D12] text-[#F3F4F6] flex flex-col font-sans selection:bg-[#FF6B35] selection:text-white pt-20 pb-24">
+    <div className="min-h-screen bg-[#0B0D12] text-[#F3F4F6] flex flex-col font-sans selection:bg-[var(--color-accent)] selection:text-white pt-20 pb-24">
       {/* Toast banner */}
       {toastMessage && (
-        <div className="fixed top-24 right-6 z-50 bg-[#12151C] border border-[#FF6B35] text-white px-4 py-3 rounded-2xl shadow-2xl flex items-center space-x-2 font-mono text-xs animate-slideIn">
-          <CheckCircle2 className="w-4 h-4 text-[#FF6B35]" />
+        <div className="fixed top-24 right-6 z-50 bg-[#12151C] border border-[var(--color-accent)] text-white px-4 py-3 rounded-2xl shadow-2xl flex items-center space-x-2 font-mono text-xs animate-slideIn">
+          <CheckCircle2 className="w-4 h-4 text-[var(--color-accent)]" />
           <span>{toastMessage}</span>
         </div>
       )}
@@ -749,7 +819,7 @@ ${profile.title || PERSONAL_INFO.title}`;
               onClick={onBack}
               className="inline-flex items-center space-x-1.5 px-3.5 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-[#D1D5DB] hover:text-white border border-white/10 text-xs font-mono transition-colors cursor-pointer"
             >
-              <Eye className="w-3.5 h-3.5 text-[#FF6B35]" />
+              <Eye className="w-3.5 h-3.5 text-[var(--color-accent)]" />
               <span>View Portfolio</span>
             </button>
 
@@ -781,6 +851,27 @@ ${profile.title || PERSONAL_INFO.title}`;
             </button>
 
             <button
+              onClick={() => setIsThemeModalOpen(true)}
+              className="inline-flex items-center space-x-1.5 px-3.5 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-[#D1D5DB] hover:text-[var(--color-accent)] border border-white/10 text-xs font-mono transition-colors cursor-pointer"
+              title="Open Color View Studio to change site theme"
+            >
+              <Palette className="w-3.5 h-3.5 text-[var(--color-accent)]" />
+              <span>Color View</span>
+            </button>
+
+            <div 
+              className={`inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl border text-xs font-mono transition-colors ${
+                sessionRemaining <= 30
+                  ? 'bg-rose-500/15 border-rose-500/40 text-rose-300 animate-pulse'
+                  : 'bg-amber-500/10 border-amber-500/30 text-amber-300'
+              }`}
+              title="Admin CMS automatically logs out after 2 minutes of inactivity. Any interaction resets the countdown."
+            >
+              <Clock className="w-3.5 h-3.5 text-amber-400" />
+              <span>Auto-Logout: <strong className="font-bold">{formatTimer(sessionRemaining)}</strong></span>
+            </div>
+
+            <button
               onClick={handleLogout}
               className="inline-flex items-center space-x-1.5 px-3.5 py-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 text-xs font-mono transition-colors cursor-pointer"
               title="Logout and Hide Portfolio Admin Management System"
@@ -797,18 +888,18 @@ ${profile.title || PERSONAL_INFO.title}`;
             onClick={() => setActiveTab('projects')}
             className={`p-3.5 rounded-2xl border transition-all cursor-pointer ${
               activeTab === 'projects' 
-                ? 'bg-[#FF6B35]/15 border-[#FF6B35] shadow-lg shadow-[#FF6B35]/10' 
+                ? 'bg-[var(--color-accent)]/15 border-[var(--color-accent)] shadow-lg shadow-[var(--color-accent)]/10' 
                 : 'bg-[#12151C] border-white/10 hover:border-white/20'
             }`}
           >
             <div className="flex items-center justify-between text-[11px] font-mono text-[#9CA3AF]">
               <span>PROJECTS</span>
-              <Layers className="w-3.5 h-3.5 text-[#FF6B35]" />
+              <Layers className="w-3.5 h-3.5 text-[var(--color-accent)]" />
             </div>
             <div className="text-xl font-display font-extrabold text-white mt-1">
               {projects.length}
             </div>
-            <div className="text-[10px] font-mono text-[#FF6B35] mt-0.5 truncate">
+            <div className="text-[10px] font-mono text-[var(--color-accent)] mt-0.5 truncate">
               {systemLocks.projectsLocked ? '🔒 Locked' : 'Showcases'}
             </div>
           </div>
@@ -960,7 +1051,7 @@ ${profile.title || PERSONAL_INFO.title}`;
             onClick={() => setActiveTab('projects')}
             className={`px-4 py-2.5 rounded-xl font-mono text-xs font-bold transition-all flex items-center space-x-2 shrink-0 cursor-pointer ${
               activeTab === 'projects'
-                ? 'bg-[#FF6B35] text-white shadow-md shadow-[#FF6B35]/25'
+                ? 'bg-[var(--color-accent)] text-white shadow-md shadow-[var(--color-accent)]/25'
                 : 'bg-white/5 text-[#D1D5DB] hover:bg-white/10 hover:text-white'
             }`}
           >
@@ -1078,7 +1169,7 @@ ${profile.title || PERSONAL_INFO.title}`;
                     value={projectSearch}
                     onChange={(e) => setProjectSearch(e.target.value)}
                     placeholder="Search projects..."
-                    className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-[#12151C] border border-white/10 text-xs font-mono text-white placeholder:text-white/30 focus:border-[#FF6B35] focus:outline-none"
+                    className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-[#12151C] border border-white/10 text-xs font-mono text-white placeholder:text-white/30 focus:border-[var(--color-accent)] focus:outline-none"
                   />
                   {projectSearch && (
                     <button
@@ -1111,7 +1202,7 @@ ${profile.title || PERSONAL_INFO.title}`;
               {/* Add Project CTA */}
               <button
                 onClick={handleOpenAddProject}
-                className="shimmer inline-flex items-center space-x-2 px-5 py-2.5 rounded-xl bg-[#FF6B35] hover:bg-[#FF814F] text-white font-mono text-xs font-bold shadow-lg shadow-[#FF6B35]/20 transition-all hover:scale-105 cursor-pointer shrink-0"
+                className="shimmer inline-flex items-center space-x-2 px-5 py-2.5 rounded-xl bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-white font-mono text-xs font-bold shadow-lg shadow-[var(--color-accent)]/20 transition-all hover:scale-105 cursor-pointer shrink-0"
               >
                 <Plus className="w-4 h-4" />
                 <span>Add New Project</span>
@@ -1128,7 +1219,7 @@ ${profile.title || PERSONAL_INFO.title}`;
                 </p>
                 <button
                   onClick={handleOpenAddProject}
-                  className="inline-flex items-center space-x-1.5 text-xs font-mono text-[#FF6B35] hover:underline pt-2 cursor-pointer"
+                  className="inline-flex items-center space-x-1.5 text-xs font-mono text-[var(--color-accent)] hover:underline pt-2 cursor-pointer"
                 >
                   <Plus className="w-3.5 h-3.5" />
                   <span>Create Project</span>
@@ -1157,7 +1248,7 @@ ${profile.title || PERSONAL_INFO.title}`;
                             }`}>
                               {project.type}
                             </span>
-                            <h3 className="font-display font-bold text-lg text-white group-hover:text-[#FF6B35] transition-colors">
+                            <h3 className="font-display font-bold text-lg text-white group-hover:text-[var(--color-accent)] transition-colors">
                               {project.title}
                             </h3>
                           </div>
@@ -1229,7 +1320,7 @@ ${profile.title || PERSONAL_INFO.title}`;
                             href={project.link}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="inline-flex items-center space-x-1 text-[11px] font-mono text-[#FF6B35] hover:underline ml-2"
+                            className="inline-flex items-center space-x-1 text-[11px] font-mono text-[var(--color-accent)] hover:underline ml-2"
                           >
                             <ExternalLink className="w-3 h-3" />
                             <span>Repository</span>
@@ -1280,7 +1371,7 @@ ${profile.title || PERSONAL_INFO.title}`;
                         <span className="font-display font-bold text-base text-white">
                           {exp.role}
                         </span>
-                        <span className="text-xs font-mono text-[#FF6B35]">
+                        <span className="text-xs font-mono text-[var(--color-accent)]">
                           @ {exp.company}
                         </span>
                       </div>
@@ -1332,7 +1423,7 @@ ${profile.title || PERSONAL_INFO.title}`;
                   <ul className="space-y-1.5 pt-2 border-t border-white/[0.06]">
                     {exp.highlights.map((h, hIdx) => (
                       <li key={hIdx} className="text-xs text-[#D1D5DB] flex items-start space-x-2">
-                        <span className="text-[#FF6B35] font-bold mt-0.5">•</span>
+                        <span className="text-[var(--color-accent)] font-bold mt-0.5">•</span>
                         <span>{h}</span>
                       </li>
                     ))}
@@ -1408,7 +1499,7 @@ ${profile.title || PERSONAL_INFO.title}`;
                       {cat.items.map((item, itemIdx) => (
                         <span
                           key={itemIdx}
-                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/5 border border-white/10 text-xs font-mono text-[#D1D5DB] group hover:border-[#FF6B35]/50 transition-colors"
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/5 border border-white/10 text-xs font-mono text-[#D1D5DB] group hover:border-[var(--color-accent)]/50 transition-colors"
                         >
                           <span>{item}</span>
                           <button
@@ -1927,7 +2018,7 @@ ${profile.title || PERSONAL_INFO.title}`;
                   </div>
                   <div className="p-4 rounded-2xl bg-black/40 border border-white/10 space-y-2 text-xs">
                     <p className="text-base font-bold text-white font-display">{profile.name || PERSONAL_INFO.name}</p>
-                    <p className="text-[#FF6B35] font-semibold">{profile.title || PERSONAL_INFO.title}</p>
+                    <p className="text-[var(--color-accent)] font-semibold">{profile.title || PERSONAL_INFO.title}</p>
                     <p className="text-[#9CA3AF] text-[11px]">
                       {profile.email || PERSONAL_INFO.email} • {profile.phone || PERSONAL_INFO.phone}
                     </p>
@@ -2410,6 +2501,98 @@ ${profile.title || PERSONAL_INFO.title}`;
         {/* ==================================================================== */}
         {activeTab === 'security' && (
           <div className="space-y-6 animate-fadeIn">
+            {/* EXECUTIVE COLOR VIEW & THEME STUDIO (EXCLUSIVE ADMIN CMS) */}
+            <div className="bg-[#12151C] border border-white/10 rounded-3xl p-6 sm:p-8 space-y-6 shadow-xl">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-white/10">
+                <div className="flex items-start space-x-4">
+                  <div 
+                    className="p-3.5 rounded-2xl border text-[var(--color-accent)]"
+                    style={{
+                      backgroundColor: 'rgba(var(--color-accent-rgb, 0, 210, 255), 0.15)',
+                      borderColor: 'rgba(var(--color-accent-rgb, 0, 210, 255), 0.3)'
+                    }}
+                  >
+                    <Palette className="w-7 h-7" />
+                  </div>
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2.5">
+                      <h3 className="font-display font-bold text-xl sm:text-2xl text-white">
+                        Portfolio Theme & Color Look Studio
+                      </h3>
+                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-white/10 text-white border border-white/20">
+                        Admin CMS Only
+                      </span>
+                    </div>
+                    <p className="text-xs font-mono text-[#9CA3AF] max-w-2xl leading-relaxed">
+                      Control the global portfolio look & feel. Changes apply live to all visitors across buttons, glows, borders, and navigation.
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => setIsThemeModalOpen(true)}
+                  className="shimmer inline-flex items-center space-x-2 px-4 py-2.5 rounded-xl font-mono text-xs font-bold text-black shadow-lg cursor-pointer shrink-0"
+                  style={{
+                    backgroundColor: 'var(--color-accent)',
+                    boxShadow: '0 8px 20px -5px var(--color-accent-glow)'
+                  }}
+                >
+                  <Sparkles className="w-4 h-4" />
+                  <span>Open Full Palette Modal</span>
+                </button>
+              </div>
+
+              {/* Theme Quick Selector Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5">
+                {Object.values(COLOR_THEMES).map((theme) => {
+                  const isSelected = currentThemeId === theme.id;
+                  return (
+                    <button
+                      key={theme.id}
+                      onClick={() => {
+                        setCurrentThemeId(theme.id);
+                        setAndApplyTheme(theme.id);
+                        showToast(`Theme updated to ${theme.name}!`);
+                      }}
+                      className={`group p-4 rounded-2xl text-left border transition-all cursor-pointer flex flex-col justify-between ${
+                        isSelected 
+                          ? 'bg-white/[0.08] shadow-lg' 
+                          : 'bg-white/[0.02] hover:bg-white/[0.05] border-white/10 hover:border-white/20'
+                      }`}
+                      style={{
+                        borderColor: isSelected ? theme.primary : undefined,
+                        boxShadow: isSelected ? `0 10px 25px -5px ${theme.glow}` : undefined
+                      }}
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center space-x-2">
+                          <span 
+                            className="w-4 h-4 rounded-full border border-white/40 shadow-sm transition-transform group-hover:scale-110"
+                            style={{
+                              background: `linear-gradient(135deg, ${theme.primary}, ${theme.hover})`
+                            }}
+                          />
+                          <span className="font-display font-bold text-xs text-white">
+                            {theme.name}
+                          </span>
+                        </div>
+                        {isSelected && (
+                          <Check className="w-3.5 h-3.5 text-emerald-400 font-bold" />
+                        )}
+                      </div>
+                      <p className="text-[10px] text-[#9CA3AF] font-sans leading-tight mt-1 line-clamp-2">
+                        {theme.subtitle}
+                      </p>
+                      <div className="mt-3 pt-2 border-t border-white/[0.06] flex items-center justify-between text-[10px] font-mono">
+                        <span className="text-[#6B7280]">Hex:</span>
+                        <span style={{ color: theme.primary }} className="font-bold">{theme.primary}</span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
             {/* Master Lock Banner & 1-Click Operations */}
             <div className="bg-[#12151C] border border-amber-500/30 rounded-3xl p-6 sm:p-8 space-y-6 shadow-xl">
               <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 pb-6 border-b border-white/10">
@@ -2754,7 +2937,7 @@ ${profile.title || PERSONAL_INFO.title}`;
               <div className="p-5 rounded-2xl bg-white/[0.03] border border-white/10 space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="text-xs font-mono text-[#D1D5DB] font-semibold flex items-center gap-2">
-                    <KeyRound className="w-3.5 h-3.5 text-[#FF6B35]" />
+                    <KeyRound className="w-3.5 h-3.5 text-[var(--color-accent)]" />
                     <span>Common Administrator Passcode (Hidden by Default)</span>
                   </div>
                   <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center gap-1">
@@ -2763,7 +2946,7 @@ ${profile.title || PERSONAL_INFO.title}`;
                   </span>
                 </div>
                 <div className="flex items-center justify-between p-3.5 rounded-xl bg-black/40 border border-white/10 font-mono text-sm text-[#D1D5DB]">
-                  <span className="tracking-widest font-bold text-[#FF6B35]">
+                  <span className="tracking-widest font-bold text-[var(--color-accent)]">
                     {showMasterPass ? 'sabbir@sqa2026' : '••••••••••••••'}
                   </span>
                   <div className="flex items-center space-x-2">
@@ -2781,7 +2964,7 @@ ${profile.title || PERSONAL_INFO.title}`;
                         navigator.clipboard.writeText('sabbir@sqa2026');
                         showToast('Admin Passcode copied to clipboard!');
                       }}
-                      className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-xs text-white hover:text-[#FF6B35] transition-colors cursor-pointer border border-white/10"
+                      className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-xs text-white hover:text-[var(--color-accent)] transition-colors cursor-pointer border border-white/10"
                     >
                       <Copy className="w-3.5 h-3.5" />
                       <span>Copy</span>
@@ -2984,6 +3167,14 @@ ${profile.title || PERSONAL_INFO.title}`;
         </div>
       )}
 
+      {/* Theme / Color View Selector Modal */}
+      {isThemeModalOpen && (
+        <ThemeSelectorModal
+          isOpen={isThemeModalOpen}
+          onClose={() => setIsThemeModalOpen(false)}
+        />
+      )}
+
     </div>
   );
 }
@@ -3050,7 +3241,7 @@ function ProjectModal({ isOpen, initialProject, onClose, onSave }: ProjectModalP
         {/* Header */}
         <div className="flex items-center justify-between border-b border-white/10 pb-4">
           <div className="flex items-center space-x-2.5">
-            <div className="p-2 rounded-xl bg-[#FF6B35]/15 border border-[#FF6B35]/30 text-[#FF6B35]">
+            <div className="p-2 rounded-xl bg-[var(--color-accent)]/15 border border-[var(--color-accent)]/30 text-[var(--color-accent)]">
               <Layers className="w-5 h-5" />
             </div>
             <div>
@@ -3082,7 +3273,7 @@ function ProjectModal({ isOpen, initialProject, onClose, onSave }: ProjectModalP
                 onChange={(e) => setTitle(e.target.value)}
                 placeholder="e.g. Playwright Python API Automation Framework"
                 required
-                className="w-full px-4 py-2.5 rounded-xl bg-white/[0.05] border border-white/15 text-sm font-mono text-white placeholder:text-white/30 focus:border-[#FF6B35] focus:outline-none"
+                className="w-full px-4 py-2.5 rounded-xl bg-white/[0.05] border border-white/15 text-sm font-mono text-white placeholder:text-white/30 focus:border-[var(--color-accent)] focus:outline-none"
               />
             </div>
 
@@ -3093,7 +3284,7 @@ function ProjectModal({ isOpen, initialProject, onClose, onSave }: ProjectModalP
               <select
                 value={type}
                 onChange={(e) => setType(e.target.value as Project['type'])}
-                className="w-full px-3 py-2.5 rounded-xl bg-[#1A1F2C] border border-white/15 text-sm font-mono text-white focus:border-[#FF6B35] focus:outline-none"
+                className="w-full px-3 py-2.5 rounded-xl bg-[#1A1F2C] border border-white/15 text-sm font-mono text-white focus:border-[var(--color-accent)] focus:outline-none"
               >
                 <option value="Automation">Automation</option>
                 <option value="API">API</option>
@@ -3105,7 +3296,7 @@ function ProjectModal({ isOpen, initialProject, onClose, onSave }: ProjectModalP
 
           <div className="space-y-1.5">
             <label className="text-xs font-mono text-[#D1D5DB] font-semibold flex items-center gap-1.5">
-              <ExternalLink className="w-3.5 h-3.5 text-[#FF6B35]" />
+              <ExternalLink className="w-3.5 h-3.5 text-[var(--color-accent)]" />
               GitHub or Live Documentation Link
             </label>
             <input
@@ -3113,7 +3304,7 @@ function ProjectModal({ isOpen, initialProject, onClose, onSave }: ProjectModalP
               value={link}
               onChange={(e) => setLink(e.target.value)}
               placeholder="https://github.com/sabbir72/Playwright_API_Framework"
-              className="w-full px-4 py-2.5 rounded-xl bg-white/[0.05] border border-white/15 text-xs font-mono text-white placeholder:text-white/30 focus:border-[#FF6B35] focus:outline-none"
+              className="w-full px-4 py-2.5 rounded-xl bg-white/[0.05] border border-white/15 text-xs font-mono text-white placeholder:text-white/30 focus:border-[var(--color-accent)] focus:outline-none"
             />
           </div>
 
@@ -3126,7 +3317,7 @@ function ProjectModal({ isOpen, initialProject, onClose, onSave }: ProjectModalP
               onChange={(e) => setDescription(e.target.value)}
               rows={3}
               placeholder="Brief description of the test architecture, tools used, coverage, and outcomes..."
-              className="w-full px-4 py-2.5 rounded-xl bg-white/[0.05] border border-white/15 text-xs font-sans text-white placeholder:text-white/30 focus:border-[#FF6B35] focus:outline-none leading-relaxed"
+              className="w-full px-4 py-2.5 rounded-xl bg-white/[0.05] border border-white/15 text-xs font-sans text-white placeholder:text-white/30 focus:border-[var(--color-accent)] focus:outline-none leading-relaxed"
             />
           </div>
 
@@ -3145,7 +3336,7 @@ function ProjectModal({ isOpen, initialProject, onClose, onSave }: ProjectModalP
                         setTagsString(prev => prev ? `${prev}, ${quickTag}` : quickTag);
                       }
                     }}
-                    className="text-[10px] font-mono px-2 py-0.5 rounded bg-white/5 hover:bg-white/10 text-[#FF6B35] cursor-pointer"
+                    className="text-[10px] font-mono px-2 py-0.5 rounded bg-white/5 hover:bg-white/10 text-[var(--color-accent)] cursor-pointer"
                   >
                     +{quickTag}
                   </button>
@@ -3157,7 +3348,7 @@ function ProjectModal({ isOpen, initialProject, onClose, onSave }: ProjectModalP
               value={tagsString}
               onChange={(e) => setTagsString(e.target.value)}
               placeholder="Playwright, Python, Pytest, Allure Reports, REST API"
-              className="w-full px-4 py-2 rounded-xl bg-white/[0.05] border border-white/15 text-xs font-mono text-white placeholder:text-white/30 focus:border-[#FF6B35] focus:outline-none"
+              className="w-full px-4 py-2 rounded-xl bg-white/[0.05] border border-white/15 text-xs font-mono text-white placeholder:text-white/30 focus:border-[var(--color-accent)] focus:outline-none"
             />
           </div>
 
@@ -3170,7 +3361,7 @@ function ProjectModal({ isOpen, initialProject, onClose, onSave }: ProjectModalP
               <button
                 type="button"
                 onClick={() => setMetrics([...metrics, { label: 'Metric', value: 'Value' }])}
-                className="text-xs font-mono text-[#FF6B35] hover:underline flex items-center gap-1 cursor-pointer"
+                className="text-xs font-mono text-[var(--color-accent)] hover:underline flex items-center gap-1 cursor-pointer"
               >
                 <Plus className="w-3.5 h-3.5" />
                 <span>Add Metric</span>
@@ -3200,7 +3391,7 @@ function ProjectModal({ isOpen, initialProject, onClose, onSave }: ProjectModalP
                       setMetrics(updated);
                     }}
                     placeholder="Value (e.g. Pytest)"
-                    className="w-1/2 px-2.5 py-1 rounded-lg bg-white/5 text-xs font-mono text-[#FF6B35] border border-white/10"
+                    className="w-1/2 px-2.5 py-1 rounded-lg bg-white/5 text-xs font-mono text-[var(--color-accent)] border border-white/10"
                   />
                   <button
                     type="button"
@@ -3224,7 +3415,7 @@ function ProjectModal({ isOpen, initialProject, onClose, onSave }: ProjectModalP
             </button>
             <button
               type="submit"
-              className="px-6 py-2.5 rounded-xl bg-[#FF6B35] hover:bg-[#FF814F] text-white font-mono text-xs font-bold shadow-lg shadow-[#FF6B35]/20"
+              className="px-6 py-2.5 rounded-xl bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-white font-mono text-xs font-bold shadow-lg shadow-[var(--color-accent)]/20"
             >
               Save Project
             </button>
