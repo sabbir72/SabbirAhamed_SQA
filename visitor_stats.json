@@ -1,19 +1,22 @@
 {
-  "totalVisitors": 2,
-  "totalPageViews": 6,
+  "totalVisitors": 3,
+  "totalPageViews": 8,
   "todayDate": "2026-10-19",
-  "todayVisitors": 2,
+  "todayVisitors": 3,
   "sessions": [
     "sess_1792377694118_2oal3bh",
     "sess_1792380962266_tp90yh0",
-    "sess_1792380983807_yen253e"
+    "sess_1792380983807_yen253e",
+    "sess_1792381742394_0mc934z"
   ],
   "uniqueVisitors": [
     "usr_1792377694118_wdngcls03",
-    "usr_1792380962266_mrfnpqif3"
+    "usr_1792380962266_mrfnpqif3",
+    "usr_1792381742394_umuy12d9w"
   ],
   "todayVisitorsList": [
     "usr_1792377694118_wdngcls03",
-    "usr_1792380962266_mrfnpqif3"
+    "usr_1792380962266_mrfnpqif3",
+    "usr_1792381742394_umuy12d9w"
   ]
 }
