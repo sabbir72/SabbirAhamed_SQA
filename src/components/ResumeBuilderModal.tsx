@@ -5,8 +5,9 @@ import {
   RotateCcw, ShieldCheck, Mail, Phone, MapPin, Globe, Target,
   Type, ExternalLink, User, Lock
 } from 'lucide-react';
-import { PERSONAL_INFO, EDUCATION_HISTORY, BUG_REPORTS, PROFESSIONAL_REFERENCES } from '../data';
-import { getStoredProjects, getStoredExperiences, getStoredSkills, PORTFOLIO_UPDATED_EVENT } from '../utils/portfolioStore';
+import { PERSONAL_INFO, EDUCATION_HISTORY, BUG_REPORTS } from '../data';
+import { getStoredProjects, getStoredExperiences, getStoredSkills, getStoredReferences, PORTFOLIO_UPDATED_EVENT } from '../utils/portfolioStore';
+import { Reference } from '../types';
 import { isAdminAuthenticated } from '../utils/adminAuth';
 import AdminPasscodeModal from './AdminPasscodeModal';
 import html2pdf from 'html2pdf.js'; 
@@ -58,12 +59,14 @@ export default function ResumeBuilderModal({ isOpen, onClose, onOpenCoverLetter 
   const [portfolioProjects, setPortfolioProjects] = useState(() => getStoredProjects());
   const [portfolioExperiences, setPortfolioExperiences] = useState(() => getStoredExperiences());
   const [portfolioSkills, setPortfolioSkills] = useState(() => getStoredSkills());
+  const [portfolioReferences, setPortfolioReferences] = useState<Reference[]>(() => getStoredReferences());
 
   useEffect(() => {
     const handleSync = () => {
       setPortfolioProjects(getStoredProjects());
       setPortfolioExperiences(getStoredExperiences());
       setPortfolioSkills(getStoredSkills());
+      setPortfolioReferences(getStoredReferences());
     };
     window.addEventListener(PORTFOLIO_UPDATED_EVENT, handleSync);
     return () => window.removeEventListener(PORTFOLIO_UPDATED_EVENT, handleSync);
@@ -669,10 +672,10 @@ export default function ResumeBuilderModal({ isOpen, onClose, onOpenCoverLetter 
   `).join('')}
 
   <!-- Professional References -->
-  ${PROFESSIONAL_REFERENCES && PROFESSIONAL_REFERENCES.length > 0 ? `
+  ${portfolioReferences.length > 0 ? `
     <div class="section-title">PROFESSIONAL REFERENCES</div>
     <table class="data-table" border="0" cellpadding="0" cellspacing="0">
-      ${PROFESSIONAL_REFERENCES.map(ref => `
+      ${portfolioReferences.map(ref => `
         <tr>
           <td class="left-col" style="padding-bottom: 4pt;">
             <b>${ref.name}</b><br>
@@ -1514,8 +1517,8 @@ Software Quality Assurance Engineer`;
                 {/* References */}
                 <div className="mb-2">
                   <h2 className="text-xs font-bold uppercase border-b border-black pb-1 mb-2 text-black tracking-wider">Professional References</h2>
-                  {PROFESSIONAL_REFERENCES.map((ref, i) => (
-                    <p key={i} className="text-[11px] text-black mb-1">
+                  {portfolioReferences.map((ref) => (
+                    <p key={ref.id} className="text-[11px] text-black mb-1">
                       <span className="font-bold text-black">{ref.name}</span> — {ref.role}, {ref.company} | Email: {ref.email} | Phone: {ref.phone}
                     </p>
                   ))}

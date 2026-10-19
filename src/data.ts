@@ -9,7 +9,7 @@
  * -----------------------------------------
  */
 
-import { Skill, Experience, Education, Project, BugReport, Reference } from './types';
+import { Skill, Experience, Education, Project, BugReport, Reference, CareerRoadmapItem } from './types';
 /**
  * Personal profile details and contact links
  */
@@ -581,10 +581,21 @@ export const BUG_REPORTS: BugReport[] = [
  */
 export const PROFESSIONAL_REFERENCES: Reference[] = [
   {
+    id: 'reference-etu-mahmuda-era',
     name: 'Etu Mahmuda Era',
     role: 'Senior SQA Engineer',
     company: 'I-Farmer',
     email: 'etumahmuda@gmail.com',
-    phone: '01956891550'
+    phone: '01956891550',
+    endorsement: 'Sabbir possesses robust attention to detail, strong grasp over STLC principles, and handles manual and automated testing routines with extreme consistency.'
   }
+];
+
+export const CAREER_ROADMAP: CareerRoadmapItem[] = [
+  { id: 'roadmap-junior-sqa', title: 'Junior SQA Engineer', status: 'completed' },
+  { id: 'roadmap-sqa-engineer', title: 'SQA Engineer (Present)', status: 'active', badge: 'Active' },
+  { id: 'roadmap-senior-sqa', title: 'Senior SQA Engineer', status: 'future' },
+  { id: 'roadmap-quality-specialist', title: 'Quality Engineering Specialist', status: 'future' },
+  { id: 'roadmap-qa-lead', title: 'QA Technical Lead / Mentor', status: 'future' },
+  { id: 'roadmap-platform-founder', title: 'QA Platform Founder', status: 'vision', badge: 'Ultimate Goal' },
 ];

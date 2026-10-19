@@ -87,7 +87,7 @@ export default function Navbar({
             </div>
             <div>
               <span className="font-display font-extrabold text-lg tracking-tight text-white whitespace-nowrap">
-                Sabbir<span className="text-[var(--color-accent)]">.QA</span>
+                Sabbir<span className="text-[var(--color-accent)]">.SQAE</span>
               </span>
             </div>
           </a>

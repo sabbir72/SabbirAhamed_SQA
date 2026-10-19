@@ -1,11 +1,18 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { GraduationCap, Award, User, Mail, Phone, Building2, Copy, Check } from 'lucide-react';
-import { EDUCATION_HISTORY, PROFESSIONAL_REFERENCES } from '../data';
+import { EDUCATION_HISTORY } from '../data';
+import { Reference } from '../types';
+import { getStoredReferences, PORTFOLIO_UPDATED_EVENT } from '../utils/portfolioStore';
 
 export default function EducationAndReferences() {
   const [copiedField, setCopiedField] = useState<string | null>(null);
+  const [references, setReferences] = useState<Reference[]>(() => getStoredReferences());
 
-  const ref = PROFESSIONAL_REFERENCES[0];
+  useEffect(() => {
+    const syncReferences = () => setReferences(getStoredReferences());
+    window.addEventListener(PORTFOLIO_UPDATED_EVENT, syncReferences);
+    return () => window.removeEventListener(PORTFOLIO_UPDATED_EVENT, syncReferences);
+  }, []);
 
   const handleCopy = (text: string, field: string) => {
     navigator.clipboard.writeText(text);
@@ -80,7 +87,8 @@ export default function EducationAndReferences() {
               </h2>
             </div>
 
-            <div className="glass-card glass-card-hover p-7 sm:p-8 rounded-2xl border border-white/10 relative overflow-hidden group">
+            {references.map((ref) => (
+            <div key={ref.id} className="glass-card glass-card-hover p-7 sm:p-8 rounded-2xl border border-white/10 relative overflow-hidden group">
               {/* Decorative background icon */}
               <Building2 className="absolute right-4 bottom-4 w-36 h-36 text-white/5 pointer-events-none" />
 
@@ -98,9 +106,11 @@ export default function EducationAndReferences() {
                   </p>
                 </div>
 
-                <p className="text-[#D1D5DB] text-xs sm:text-sm leading-relaxed italic font-light">
-                  "Sabbir possesses robust attention to detail, strong grasp over STLC principles, and handles manual and automated testing routines with extreme consistency."
-                </p>
+                {ref.endorsement && (
+                  <p className="text-[#D1D5DB] text-xs sm:text-sm leading-relaxed italic font-light">
+                    "{ref.endorsement}"
+                  </p>
+                )}
 
                 {/* Contact details with quick copy */}
                 <div className="space-y-3 pt-4 border-t border-white/10">
@@ -111,11 +121,11 @@ export default function EducationAndReferences() {
                       <span className="text-[#F3F4F6] truncate font-mono select-all">{ref.email}</span>
                     </div>
                     <button
-                      onClick={() => handleCopy(ref.email, 'email')}
+                      onClick={() => handleCopy(ref.email, `${ref.id}-email`)}
                       className="p-1.5 text-[#9CA3AF] hover:text-[var(--color-accent)] hover:bg-white/10 rounded-lg transition-colors shrink-0"
                       title="Copy email to clipboard"
                     >
-                      {copiedField === 'email' ? (
+                      {copiedField === `${ref.id}-email` ? (
                         <Check className="w-3.5 h-3.5 text-emerald-400" />
                       ) : (
                         <Copy className="w-3.5 h-3.5" />
@@ -130,11 +140,11 @@ export default function EducationAndReferences() {
                       <span className="text-[#F3F4F6] truncate font-mono select-all">{ref.phone}</span>
                     </div>
                     <button
-                      onClick={() => handleCopy(ref.phone, 'phone')}
+                      onClick={() => handleCopy(ref.phone, `${ref.id}-phone`)}
                       className="p-1.5 text-[#9CA3AF] hover:text-[var(--color-accent)] hover:bg-white/10 rounded-lg transition-colors shrink-0"
                       title="Copy phone to clipboard"
                     >
-                      {copiedField === 'phone' ? (
+                      {copiedField === `${ref.id}-phone` ? (
                         <Check className="w-3.5 h-3.5 text-emerald-400" />
                       ) : (
                         <Copy className="w-3.5 h-3.5" />
@@ -144,6 +154,10 @@ export default function EducationAndReferences() {
                 </div>
               </div>
             </div>
+            ))}
+            {references.length === 0 && (
+              <p className="text-sm text-[#9CA3AF]">No professional references have been added yet.</p>
+            )}
           </div>
           
         </div>
@@ -151,5 +165,3 @@ export default function EducationAndReferences() {
     </section>
   );
 }
-
-

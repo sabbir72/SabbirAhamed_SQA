@@ -91,9 +91,18 @@ export interface BugReport {
  * Interface representing professional reference contacts
  */
 export interface Reference {
+  id: string;
   name: string;
   role: string;
   company: string;
   email: string;
   phone: string;
+  endorsement: string;
+}
+
+export interface CareerRoadmapItem {
+  id: string;
+  title: string;
+  status: 'completed' | 'active' | 'future' | 'vision';
+  badge?: string;
 }

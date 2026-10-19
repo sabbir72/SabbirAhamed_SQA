@@ -1,14 +1,16 @@
+import { useEffect, useState } from 'react';
 import { Target, Compass, Sparkles, Rocket, CheckCircle2, ArrowRight } from 'lucide-react';
+import { CareerRoadmapItem } from '../types';
+import { getStoredCareerRoadmap, PORTFOLIO_UPDATED_EVENT } from '../utils/portfolioStore';
 
 export default function CareerVision() {
-  const careerFlow = [
-    { step: '01', title: 'Junior SQA Engineer', type: 'completed' },
-    { step: '02', title: 'SQA Engineer (Present)', type: 'active', badge: 'Active' },
-    { step: '03', title: 'Senior SQA Engineer', type: 'future' },
-    { step: '04', title: 'Quality Engineering Specialist', type: 'future' },
-    { step: '05', title: 'QA Technical Lead / Mentor', type: 'future' },
-    { step: '06', title: 'QA Platform Founder', type: 'vision', badge: 'Ultimate Goal' },
-  ];
+  const [careerFlow, setCareerFlow] = useState<CareerRoadmapItem[]>(() => getStoredCareerRoadmap());
+
+  useEffect(() => {
+    const syncCareerRoadmap = () => setCareerFlow(getStoredCareerRoadmap());
+    window.addEventListener(PORTFOLIO_UPDATED_EVENT, syncCareerRoadmap);
+    return () => window.removeEventListener(PORTFOLIO_UPDATED_EVENT, syncCareerRoadmap);
+  }, []);
 
   return (
     <section id="career-vision" className="py-20 bg-[#0B0D12] text-white relative overflow-hidden">
@@ -117,8 +119,8 @@ export default function CareerVision() {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3">
             {careerFlow.map((item, idx) => {
-              const isActive = item.type === 'active';
-              const isVision = item.type === 'vision';
+              const isActive = item.status === 'active';
+              const isVision = item.status === 'vision';
 
               let cardStyle = 'bg-[#0B0D12]/70 border-white/10 text-gray-300';
               if (isActive) {
@@ -129,7 +131,7 @@ export default function CareerVision() {
 
               return (
                 <div 
-                  key={idx} 
+                  key={item.id}
                   className={`p-4 rounded-2xl border text-left flex flex-col justify-between transition-all ${cardStyle}`}
                 >
                   <div>
@@ -141,15 +143,15 @@ export default function CareerVision() {
                             ? 'bg-purple-600 text-white' 
                             : 'bg-white/10 text-gray-400'
                       }`}>
-                        {item.step}
+                        {String(idx + 1).padStart(2, '0')}
                       </span>
-                      {item.badge && (
+                      {(item.badge || isActive || isVision) && (
                         <span className={`text-[9px] font-mono uppercase px-1.5 py-0.5 rounded border font-bold ${
                           isActive 
                             ? 'bg-[var(--color-accent)]/20 text-[var(--color-accent)] border-[var(--color-accent)]/30' 
                             : 'bg-purple-500/20 text-purple-300 border-purple-500/30'
                         }`}>
-                          {item.badge}
+                          {item.badge || (isActive ? 'Active' : 'Ultimate Goal')}
                         </span>
                       )}
                     </div>

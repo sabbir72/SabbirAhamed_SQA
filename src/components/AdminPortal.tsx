@@ -23,13 +23,15 @@ import {
 } from 'lucide-react';
 import ThemeSelectorModal from './ThemeSelectorModal';
 import { COLOR_THEMES, getSavedThemeId, setAndApplyTheme } from '../utils/themeStore';
-import { Project, Experience, Skill, TestLog } from '../types';
+import { Project, Experience, Skill, TestLog, Reference, CareerRoadmapItem } from '../types';
 import { 
   getStoredProjects, addStoredProject, updateStoredProject, deleteStoredProject, reorderStoredProjects,
   getStoredExperiences, addStoredExperience, updateStoredExperience, deleteStoredExperience, reorderStoredExperiences,
   getStoredSkills, saveStoredSkills, addStoredSkillCategory, updateStoredSkillCategory, deleteStoredSkillCategory,
   addSkillItemToCategory, removeSkillItemFromCategory,
   getStoredProfile, updateStoredProfile, ProfileData,
+  getStoredReferences, addStoredReference, updateStoredReference, deleteStoredReference,
+  getStoredCareerRoadmap, addStoredCareerRoadmapItem, updateStoredCareerRoadmapItem, deleteStoredCareerRoadmapItem,
   resetPortfolioToDefault, exportPortfolioDataJson, importPortfolioDataJson,
   PORTFOLIO_UPDATED_EVENT
 } from '../utils/portfolioStore';
@@ -66,7 +68,7 @@ import {
 } from './ResumeBuilderModal';
 import { CoverLetterTone, CoverLetterTemplate } from './CoverLetterGeneratorModal';
 
-export type AdminTab = 'projects' | 'experience' | 'skills' | 'blogs' | 'resume' | 'cover-letter' | 'profile' | 'security';
+export type AdminTab = 'projects' | 'experience' | 'references' | 'roadmap' | 'skills' | 'blogs' | 'resume' | 'cover-letter' | 'profile' | 'security';
 
 interface AdminPortalProps {
   onBack: () => void;
@@ -105,6 +107,8 @@ export default function AdminPortal({
   const [projects, setProjects] = useState<Project[]>(() => getStoredProjects());
   const [experiences, setExperiences] = useState<Experience[]>(() => getStoredExperiences());
   const [skills, setSkills] = useState<Skill[]>(() => getStoredSkills());
+  const [references, setReferences] = useState<Reference[]>(() => getStoredReferences());
+  const [careerRoadmap, setCareerRoadmap] = useState<CareerRoadmapItem[]>(() => getStoredCareerRoadmap());
   const [blogs, setBlogs] = useState<BlogPost[]>(() => getStoredBlogPosts());
   const [profile, setProfile] = useState<ProfileData>(() => getStoredProfile());
 
@@ -139,6 +143,17 @@ export default function AdminPortal({
   const [isExperienceModalOpen, setIsExperienceModalOpen] = useState(false);
   const [editingExperience, setEditingExperience] = useState<Experience | null>(null);
 
+  const [referenceFormOpen, setReferenceFormOpen] = useState(false);
+  const [editingReference, setEditingReference] = useState<Reference | null>(null);
+  const [referenceForm, setReferenceForm] = useState<Omit<Reference, 'id'>>({
+    name: '', role: '', company: '', email: '', phone: '', endorsement: '',
+  });
+  const [roadmapFormOpen, setRoadmapFormOpen] = useState(false);
+  const [editingRoadmapItem, setEditingRoadmapItem] = useState<CareerRoadmapItem | null>(null);
+  const [roadmapForm, setRoadmapForm] = useState<Omit<CareerRoadmapItem, 'id'>>({
+    title: '', status: 'future', badge: '',
+  });
+
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
   const [editingCategoryIndex, setEditingCategoryIndex] = useState<number | null>(null);
   const [categoryNameInput, setCategoryNameInput] = useState('');
@@ -152,7 +167,7 @@ export default function AdminPortal({
 
   // Confirmation Modals
   const [confirmDelete, setConfirmDelete] = useState<{
-    type: 'project' | 'experience' | 'skillCategory' | 'blog' | 'reset';
+    type: 'project' | 'experience' | 'reference' | 'roadmap' | 'skillCategory' | 'blog' | 'reset';
     id?: string;
     index?: number;
     title: string;
@@ -173,6 +188,8 @@ export default function AdminPortal({
       setProjects(getStoredProjects());
       setExperiences(getStoredExperiences());
       setSkills(getStoredSkills());
+      setReferences(getStoredReferences());
+      setCareerRoadmap(getStoredCareerRoadmap());
       setProfile(getStoredProfile());
     };
 
@@ -396,6 +413,65 @@ export default function AdminPortal({
     showToast('Experience milestone reordered.');
   };
 
+  const handleSaveReference = (e: React.FormEvent) => {
+    e.preventDefault();
+    const referenceData = {
+      ...referenceForm,
+      name: referenceForm.name.trim(),
+      role: referenceForm.role.trim(),
+      company: referenceForm.company.trim(),
+      email: referenceForm.email.trim(),
+      phone: referenceForm.phone.trim(),
+      endorsement: referenceForm.endorsement.trim(),
+    };
+    if (editingReference) {
+      updateStoredReference(editingReference.id, referenceData);
+      showToast(`Reference for "${referenceData.name}" updated.`);
+    } else {
+      addStoredReference(referenceData);
+      showToast(`Reference for "${referenceData.name}" added.`);
+    }
+    setReferenceFormOpen(false);
+    setEditingReference(null);
+  };
+
+  const handleEditReference = (reference: Reference) => {
+    setEditingReference(reference);
+    setReferenceForm({
+      name: reference.name,
+      role: reference.role,
+      company: reference.company,
+      email: reference.email,
+      phone: reference.phone,
+      endorsement: reference.endorsement,
+    });
+    setReferenceFormOpen(true);
+  };
+
+  const handleSaveRoadmapItem = (e: React.FormEvent) => {
+    e.preventDefault();
+    const itemData = {
+      ...roadmapForm,
+      title: roadmapForm.title.trim(),
+      badge: roadmapForm.badge?.trim() || undefined,
+    };
+    if (editingRoadmapItem) {
+      updateStoredCareerRoadmapItem(editingRoadmapItem.id, itemData);
+      showToast(`Roadmap step "${itemData.title}" updated.`);
+    } else {
+      addStoredCareerRoadmapItem(itemData);
+      showToast(`Roadmap step "${itemData.title}" added.`);
+    }
+    setRoadmapFormOpen(false);
+    setEditingRoadmapItem(null);
+  };
+
+  const handleEditRoadmapItem = (item: CareerRoadmapItem) => {
+    setEditingRoadmapItem(item);
+    setRoadmapForm({ title: item.title, status: item.status, badge: item.badge || '' });
+    setRoadmapFormOpen(true);
+  };
+
   // --------------------------------------------------------------------------
   // SKILL CRUD ACTIONS
   // --------------------------------------------------------------------------
@@ -609,6 +685,12 @@ ${profile.title || PERSONAL_INFO.title}`;
     } else if (confirmDelete.type === 'experience' && confirmDelete.id) {
       deleteStoredExperience(confirmDelete.id);
       showToast(`Experience milestone deleted.`);
+    } else if (confirmDelete.type === 'reference' && confirmDelete.id) {
+      deleteStoredReference(confirmDelete.id);
+      showToast('Professional reference deleted.');
+    } else if (confirmDelete.type === 'roadmap' && confirmDelete.id) {
+      deleteStoredCareerRoadmapItem(confirmDelete.id);
+      showToast('Career roadmap step deleted.');
     } else if (confirmDelete.type === 'skillCategory' && confirmDelete.index !== undefined) {
       deleteStoredSkillCategory(confirmDelete.index);
       showToast(`Skill category "${confirmDelete.title}" deleted.`);
@@ -1074,6 +1156,30 @@ ${profile.title || PERSONAL_INFO.title}`;
           </button>
 
           <button
+            onClick={() => setActiveTab('references')}
+            className={`px-4 py-2.5 rounded-xl font-mono text-xs font-bold transition-all flex items-center space-x-2 shrink-0 cursor-pointer ${
+              activeTab === 'references'
+                ? 'bg-cyan-600 text-white shadow-md shadow-cyan-600/25'
+                : 'bg-white/5 text-[#D1D5DB] hover:bg-white/10 hover:text-white'
+            }`}
+          >
+            <User className="w-4 h-4" />
+            <span>References ({references.length})</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('roadmap')}
+            className={`px-4 py-2.5 rounded-xl font-mono text-xs font-bold transition-all flex items-center space-x-2 shrink-0 cursor-pointer ${
+              activeTab === 'roadmap'
+                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/25'
+                : 'bg-white/5 text-[#D1D5DB] hover:bg-white/10 hover:text-white'
+            }`}
+          >
+            <Target className="w-4 h-4" />
+            <span>Career Roadmap ({careerRoadmap.length})</span>
+          </button>
+
+          <button
             onClick={() => setActiveTab('skills')}
             className={`px-4 py-2.5 rounded-xl font-mono text-xs font-bold transition-all flex items-center space-x-2 shrink-0 cursor-pointer ${
               activeTab === 'skills'
@@ -1430,6 +1536,191 @@ ${profile.title || PERSONAL_INFO.title}`;
                   </ul>
                 </div>
               ))}
+            </div>
+          </div>
+        )}
+
+        {/* ==================================================================== */}
+        {/* PROFESSIONAL REFERENCES MANAGEMENT (CRUD) */}
+        {/* ==================================================================== */}
+        {activeTab === 'references' && (
+          <div className="space-y-6 animate-fadeIn">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <h3 className="font-display font-bold text-lg text-white">
+                  Professional References ({references.length})
+                </h3>
+                <p className="text-xs font-mono text-[#9CA3AF]">
+                  Manage endorsement text and reference contact details shown on the portfolio and resume.
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  setEditingReference(null);
+                  setReferenceForm({ name: '', role: '', company: '', email: '', phone: '', endorsement: '' });
+                  setReferenceFormOpen(true);
+                }}
+                className="inline-flex items-center space-x-2 px-5 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-mono text-xs font-bold transition-all cursor-pointer"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Add Reference</span>
+              </button>
+            </div>
+
+            {referenceFormOpen && (
+              <form onSubmit={handleSaveReference} className="bg-[#12151C] border border-cyan-500/30 rounded-2xl p-5 space-y-4">
+                <h4 className="font-display font-bold text-white">{editingReference ? 'Edit Reference' : 'New Reference'}</h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {([
+                    ['name', 'Name'],
+                    ['role', 'Role / Title'],
+                    ['company', 'Company'],
+                    ['email', 'Email'],
+                    ['phone', 'Phone'],
+                  ] as const).map(([field, label]) => (
+                    <label key={field} className="space-y-1.5 text-xs font-mono text-[#9CA3AF]">
+                      <span>{label}</span>
+                      <input
+                        required
+                        type={field === 'email' ? 'email' : 'text'}
+                        value={referenceForm[field]}
+                        onChange={e => setReferenceForm(current => ({ ...current, [field]: e.target.value }))}
+                        className="w-full bg-[#0B0D12] border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-cyan-500"
+                      />
+                    </label>
+                  ))}
+                  <label className="space-y-1.5 text-xs font-mono text-[#9CA3AF] sm:col-span-2">
+                    <span>Endorsement</span>
+                    <textarea
+                      value={referenceForm.endorsement}
+                      onChange={e => setReferenceForm(current => ({ ...current, endorsement: e.target.value }))}
+                      rows={3}
+                      className="w-full bg-[#0B0D12] border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-cyan-500 resize-y"
+                    />
+                  </label>
+                </div>
+                <div className="flex justify-end gap-2">
+                  <button type="button" onClick={() => setReferenceFormOpen(false)} className="px-4 py-2 rounded-lg bg-white/5 text-[#D1D5DB] text-xs font-mono hover:bg-white/10">Cancel</button>
+                  <button type="submit" className="px-4 py-2 rounded-lg bg-cyan-600 text-white text-xs font-mono font-bold hover:bg-cyan-500">Save Reference</button>
+                </div>
+              </form>
+            )}
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              {references.map(reference => (
+                <article key={reference.id} className="bg-[#12151C] border border-white/10 rounded-2xl p-5 space-y-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h4 className="font-display font-bold text-white">{reference.name}</h4>
+                      <p className="text-sm text-cyan-400">{reference.role} · {reference.company}</p>
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={() => handleEditReference(reference)} title="Edit reference" className="p-2 rounded-lg bg-cyan-500/10 text-cyan-400 hover:bg-cyan-500/20"><Edit2 className="w-4 h-4" /></button>
+                      <button onClick={() => setConfirmDelete({ type: 'reference', id: reference.id, title: reference.name })} title="Delete reference" className="p-2 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20"><Trash2 className="w-4 h-4" /></button>
+                    </div>
+                  </div>
+                  <p className="text-xs font-mono text-[#9CA3AF]">{reference.email} · {reference.phone}</p>
+                  {reference.endorsement && <p className="text-sm text-[#D1D5DB] italic">{reference.endorsement}</p>}
+                </article>
+              ))}
+              {references.length === 0 && !referenceFormOpen && (
+                <p className="text-sm text-[#9CA3AF]">No references yet. Use Add Reference to create one.</p>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ==================================================================== */}
+        {/* CAREER ROADMAP MANAGEMENT (CRUD + ACTIVE STEP SELECTION) */}
+        {/* ==================================================================== */}
+        {activeTab === 'roadmap' && (
+          <div className="space-y-6 animate-fadeIn">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <h3 className="font-display font-bold text-lg text-white">
+                  Career Roadmap Flow ({careerRoadmap.length})
+                </h3>
+                <p className="text-xs font-mono text-[#9CA3AF]">
+                  Edit or remove milestones and select which step is currently active on the public portfolio.
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  setEditingRoadmapItem(null);
+                  setRoadmapForm({ title: '', status: 'future', badge: '' });
+                  setRoadmapFormOpen(true);
+                }}
+                className="inline-flex items-center space-x-2 px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-mono text-xs font-bold transition-all cursor-pointer"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Add Roadmap Step</span>
+              </button>
+            </div>
+
+            {roadmapFormOpen && (
+              <form onSubmit={handleSaveRoadmapItem} className="bg-[#12151C] border border-indigo-500/30 rounded-2xl p-5 space-y-4">
+                <h4 className="font-display font-bold text-white">{editingRoadmapItem ? 'Edit Roadmap Step' : 'New Roadmap Step'}</h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <label className="space-y-1.5 text-xs font-mono text-[#9CA3AF]">
+                    <span>Career step</span>
+                    <input
+                      required
+                      value={roadmapForm.title}
+                      onChange={e => setRoadmapForm(current => ({ ...current, title: e.target.value }))}
+                      className="w-full bg-[#0B0D12] border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-indigo-500"
+                    />
+                  </label>
+                  <label className="space-y-1.5 text-xs font-mono text-[#9CA3AF]">
+                    <span>Status</span>
+                    <select
+                      value={roadmapForm.status}
+                      onChange={e => setRoadmapForm(current => ({ ...current, status: e.target.value as CareerRoadmapItem['status'] }))}
+                      className="w-full bg-[#0B0D12] border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-indigo-500"
+                    >
+                      <option value="completed">Completed</option>
+                      <option value="active">Active — selected current step</option>
+                      <option value="future">Future</option>
+                      <option value="vision">Ultimate vision</option>
+                    </select>
+                  </label>
+                  <label className="space-y-1.5 text-xs font-mono text-[#9CA3AF] sm:col-span-2">
+                    <span>Badge (optional)</span>
+                    <input
+                      value={roadmapForm.badge || ''}
+                      onChange={e => setRoadmapForm(current => ({ ...current, badge: e.target.value }))}
+                      placeholder="For example: Active or Ultimate Goal"
+                      className="w-full bg-[#0B0D12] border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-indigo-500"
+                    />
+                  </label>
+                </div>
+                <div className="flex justify-end gap-2">
+                  <button type="button" onClick={() => setRoadmapFormOpen(false)} className="px-4 py-2 rounded-lg bg-white/5 text-[#D1D5DB] text-xs font-mono hover:bg-white/10">Cancel</button>
+                  <button type="submit" className="px-4 py-2 rounded-lg bg-indigo-600 text-white text-xs font-mono font-bold hover:bg-indigo-500">Save Step</button>
+                </div>
+              </form>
+            )}
+
+            <div className="space-y-3">
+              {careerRoadmap.map((item, index) => (
+                <article key={item.id} className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#12151C] border rounded-2xl p-4 ${item.status === 'active' ? 'border-[var(--color-accent)]/50' : 'border-white/10'}`}>
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs font-mono font-bold text-[#9CA3AF]">{String(index + 1).padStart(2, '0')}</span>
+                    <div>
+                      <h4 className="font-display font-bold text-white">{item.title}</h4>
+                      <p className={`text-[10px] font-mono uppercase tracking-wider ${item.status === 'active' ? 'text-[var(--color-accent)]' : 'text-[#9CA3AF]'}`}>
+                        {item.status}{item.badge ? ` · ${item.badge}` : ''}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex gap-2 self-end sm:self-auto">
+                    <button onClick={() => handleEditRoadmapItem(item)} title="Edit roadmap step / select active status" className="p-2 rounded-lg bg-indigo-500/10 text-indigo-400 hover:bg-indigo-500/20"><Edit2 className="w-4 h-4" /></button>
+                    <button onClick={() => setConfirmDelete({ type: 'roadmap', id: item.id, title: item.title })} title="Delete roadmap step" className="p-2 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20"><Trash2 className="w-4 h-4" /></button>
+                  </div>
+                </article>
+              ))}
+              {careerRoadmap.length === 0 && !roadmapFormOpen && (
+                <p className="text-sm text-[#9CA3AF]">No roadmap steps yet. Use Add Roadmap Step to create one.</p>
+              )}
             </div>
           </div>
         )}

@@ -12,7 +12,7 @@ export type AppRoute =
   | { type: 'home'; sectionHash?: string }
   | { type: 'blog-list' }
   | { type: 'blog-post'; slug: string }
-  | { type: 'admin'; initialTab?: 'projects' | 'experience' | 'skills' | 'blogs' | 'profile' | 'security' };
+  | { type: 'admin'; initialTab?: 'projects' | 'experience' | 'references' | 'roadmap' | 'skills' | 'blogs' | 'profile' | 'security' };
 
 /**
  * Parses current window location pathname into structured AppRoute state

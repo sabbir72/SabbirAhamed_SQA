@@ -11,8 +11,8 @@
  * -----------------------------------------
  */
 
-import { Project, Experience, Skill, TestLog } from '../types';
-import { PROJECTS as DEFAULT_PROJECTS, WORK_EXPERIENCE as DEFAULT_EXPERIENCE, SKILL_CATEGORIES as DEFAULT_SKILLS, PERSONAL_INFO } from '../data';
+import { Project, Experience, Skill, TestLog, Reference, CareerRoadmapItem } from '../types';
+import { PROJECTS as DEFAULT_PROJECTS, WORK_EXPERIENCE as DEFAULT_EXPERIENCE, SKILL_CATEGORIES as DEFAULT_SKILLS, PERSONAL_INFO, PROFESSIONAL_REFERENCES as DEFAULT_REFERENCES, CAREER_ROADMAP as DEFAULT_CAREER_ROADMAP } from '../data';
 import { getAdminToken } from './adminAuth';
 
 const STORAGE_KEY_PORTFOLIO = 'sabbir_portfolio_data_v2';
@@ -56,6 +56,8 @@ export interface PortfolioData {
   projects: Project[];
   experiences: Experience[];
   skills: Skill[];
+  references: Reference[];
+  careerRoadmap: CareerRoadmapItem[];
   profile?: ProfileData;
   lastModified?: string;
 }
@@ -87,6 +89,12 @@ export function getStoredPortfolioData(): PortfolioData {
             skills: Array.isArray(parsed.skills) && parsed.skills.length > 0 
               ? parsed.skills 
               : [...DEFAULT_SKILLS],
+            references: Array.isArray(parsed.references)
+              ? parsed.references
+              : [...DEFAULT_REFERENCES],
+            careerRoadmap: Array.isArray(parsed.careerRoadmap)
+              ? parsed.careerRoadmap
+              : [...DEFAULT_CAREER_ROADMAP],
             profile: parsed.profile 
               ? { ...DEFAULT_PROFILE, ...parsed.profile } 
               : { ...DEFAULT_PROFILE },
@@ -114,6 +122,8 @@ export function getStoredPortfolioData(): PortfolioData {
     projects: [...DEFAULT_PROJECTS],
     experiences: [...DEFAULT_EXPERIENCE],
     skills: [...DEFAULT_SKILLS],
+    references: [...DEFAULT_REFERENCES],
+    careerRoadmap: [...DEFAULT_CAREER_ROADMAP],
     profile: { ...DEFAULT_PROFILE },
     lastModified: new Date().toISOString(),
   };
@@ -320,6 +330,89 @@ export function reorderStoredExperiences(startIndex: number, endIndex: number): 
 }
 
 // ----------------------------------------------------------------------
+// PROFESSIONAL REFERENCES CRUD
+// ----------------------------------------------------------------------
+
+export function getStoredReferences(): Reference[] {
+  return getStoredPortfolioData().references;
+}
+
+export function addStoredReference(reference: Omit<Reference, 'id'>): Reference {
+  const current = getStoredPortfolioData();
+  const created: Reference = {
+    ...reference,
+    id: `reference-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+  };
+  savePortfolioData({ ...current, references: [...current.references, created] });
+  return created;
+}
+
+export function updateStoredReference(id: string, updatedFields: Omit<Reference, 'id'>): boolean {
+  const current = getStoredPortfolioData();
+  const index = current.references.findIndex(reference => reference.id === id);
+  if (index === -1) return false;
+  const references = [...current.references];
+  references[index] = { ...references[index], ...updatedFields };
+  savePortfolioData({ ...current, references });
+  return true;
+}
+
+export function deleteStoredReference(id: string): boolean {
+  const current = getStoredPortfolioData();
+  const references = current.references.filter(reference => reference.id !== id);
+  if (references.length === current.references.length) return false;
+  savePortfolioData({ ...current, references });
+  return true;
+}
+
+// ----------------------------------------------------------------------
+// CAREER ROADMAP CRUD
+// ----------------------------------------------------------------------
+
+export function getStoredCareerRoadmap(): CareerRoadmapItem[] {
+  return getStoredPortfolioData().careerRoadmap;
+}
+
+export function addStoredCareerRoadmapItem(item: Omit<CareerRoadmapItem, 'id'>): CareerRoadmapItem {
+  const current = getStoredPortfolioData();
+  const created: CareerRoadmapItem = {
+    ...item,
+    id: `roadmap-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+  };
+  const careerRoadmap = created.status === 'active'
+    ? [...current.careerRoadmap.map(existing => existing.status === 'active' ? { ...existing, status: 'completed' as const } : existing), created]
+    : [...current.careerRoadmap, created];
+  savePortfolioData({ ...current, careerRoadmap });
+  return created;
+}
+
+export function updateStoredCareerRoadmapItem(
+  id: string,
+  updatedFields: Omit<CareerRoadmapItem, 'id'>
+): boolean {
+  const current = getStoredPortfolioData();
+  const index = current.careerRoadmap.findIndex(item => item.id === id);
+  if (index === -1) return false;
+  const careerRoadmap = current.careerRoadmap.map((item, itemIndex) => {
+    if (itemIndex === index) return { ...item, ...updatedFields };
+    if (updatedFields.status === 'active' && item.status === 'active') {
+      return { ...item, status: 'completed' as const };
+    }
+    return item;
+  });
+  savePortfolioData({ ...current, careerRoadmap });
+  return true;
+}
+
+export function deleteStoredCareerRoadmapItem(id: string): boolean {
+  const current = getStoredPortfolioData();
+  const careerRoadmap = current.careerRoadmap.filter(item => item.id !== id);
+  if (careerRoadmap.length === current.careerRoadmap.length) return false;
+  savePortfolioData({ ...current, careerRoadmap });
+  return true;
+}
+
+// ----------------------------------------------------------------------
 // SKILLS CRUD
 // ----------------------------------------------------------------------
 
@@ -412,6 +505,8 @@ export function resetPortfolioToDefault(): void {
     projects: [...DEFAULT_PROJECTS],
     experiences: [...DEFAULT_EXPERIENCE],
     skills: [...DEFAULT_SKILLS],
+    references: [...DEFAULT_REFERENCES],
+    careerRoadmap: [...DEFAULT_CAREER_ROADMAP],
     profile: { ...DEFAULT_PROFILE },
     lastModified: new Date().toISOString(),
   };
@@ -437,7 +532,13 @@ export function importPortfolioDataJson(jsonString: string): boolean {
   try {
     const parsed = JSON.parse(jsonString);
     if (!parsed || typeof parsed !== 'object') return false;
-    if (!Array.isArray(parsed.projects) && !Array.isArray(parsed.experiences) && !Array.isArray(parsed.skills)) {
+    if (
+      !Array.isArray(parsed.projects) &&
+      !Array.isArray(parsed.experiences) &&
+      !Array.isArray(parsed.skills) &&
+      !Array.isArray(parsed.references) &&
+      !Array.isArray(parsed.careerRoadmap)
+    ) {
       return false;
     }
 
@@ -446,6 +547,8 @@ export function importPortfolioDataJson(jsonString: string): boolean {
       projects: Array.isArray(parsed.projects) ? parsed.projects : current.projects,
       experiences: Array.isArray(parsed.experiences) ? parsed.experiences : current.experiences,
       skills: Array.isArray(parsed.skills) ? parsed.skills : current.skills,
+      references: Array.isArray(parsed.references) ? parsed.references : current.references,
+      careerRoadmap: Array.isArray(parsed.careerRoadmap) ? parsed.careerRoadmap : current.careerRoadmap,
       profile: parsed.profile ? { ...DEFAULT_PROFILE, ...parsed.profile } : current.profile || { ...DEFAULT_PROFILE },
       lastModified: new Date().toISOString(),
     };
