@@ -21,7 +21,7 @@ export default function EducationAndReferences() {
   };
 
   return (
-    <section id="education" className="py-24 bg-[#0B0D12] text-[#F3F4F6] px-4 sm:px-6 border-t border-white/10 relative">
+    <section id="education" className="py-24 bg-transparent text-[#F3F4F6] px-4 sm:px-6 border-t border-white/10 relative">
       <div className="max-w-7xl mx-auto relative z-10">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-start">
           

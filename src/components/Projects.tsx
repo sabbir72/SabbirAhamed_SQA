@@ -61,7 +61,7 @@ export default function Projects() {
   };
 
   return (
-    <section id="projects" className="py-24 bg-[#0B0D12] text-[#F3F4F6] border-t border-white/10 px-4 sm:px-6 relative">
+    <section id="projects" className="py-24 bg-transparent text-[#F3F4F6] border-t border-white/10 px-4 sm:px-6 relative">
       <div className="max-w-7xl mx-auto space-y-12 relative z-10">
         
         {/* Section Header */}
@@ -118,6 +118,20 @@ export default function Projects() {
               className="glass-card glass-card-hover rounded-2xl p-6 border border-white/10 flex flex-col justify-between space-y-5 relative group transition-all duration-300 hover:border-[var(--color-accent)]/50 hover:shadow-xl hover:shadow-[var(--color-accent)]/10"
             >
               <div className="space-y-4">
+                {project.image && (
+                  <div
+                    onClick={() => setActiveModalProject(project)}
+                    className="w-full h-44 rounded-xl overflow-hidden border border-white/10 bg-[#0A0E17] cursor-pointer relative"
+                  >
+                    <img
+                      src={project.image}
+                      alt={project.title}
+                      className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                      loading="lazy"
+                    />
+                  </div>
+                )}
+
                 {/* Header: Type Badge & Action Link */}
                 <div className="flex items-center justify-between">
                   <span className={`px-2.5 py-1 rounded-md text-[11px] font-mono font-bold border flex items-center gap-1.5 ${getTypeBadgeStyle(project.type)}`}>
@@ -233,6 +247,16 @@ export default function Projects() {
                   ✕
                 </button>
               </div>
+
+              {activeModalProject.image && (
+                <div className="w-full max-h-64 rounded-2xl overflow-hidden border border-white/10 bg-[#0A0E17]">
+                  <img
+                    src={activeModalProject.image}
+                    alt={activeModalProject.title}
+                    className="w-full max-h-64 object-cover"
+                  />
+                </div>
+              )}
 
               {/* Description */}
               <div className="space-y-2">

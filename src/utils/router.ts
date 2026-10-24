@@ -10,9 +10,10 @@
 
 export type AppRoute = 
   | { type: 'home'; sectionHash?: string }
+  | { type: 'vcard' }
   | { type: 'blog-list' }
   | { type: 'blog-post'; slug: string }
-  | { type: 'admin'; initialTab?: 'projects' | 'experience' | 'references' | 'roadmap' | 'skills' | 'blogs' | 'profile' | 'security' };
+  | { type: 'admin'; initialTab?: 'overview' | 'projects' | 'experience' | 'references' | 'roadmap' | 'skills' | 'blogs' | 'resume' | 'cover-letter' | 'profile' | 'vcard' | 'security' };
 
 /**
  * Parses current window location pathname into structured AppRoute state
@@ -21,8 +22,60 @@ export function getCurrentRoute(): AppRoute {
   const path = window.location.pathname.replace(/\/$/, '') || '/';
   const hash = window.location.hash.replace('#', '');
   
-  if (path === '/admin' || hash === 'admin') {
-    return { type: 'admin' };
+  const search = window.location.search.toLowerCase();
+  const lowerHash = hash.toLowerCase();
+
+  if (path === '/admin' || lowerHash === 'admin') {
+    const params = new URLSearchParams(window.location.search);
+    const tabParam = params.get('tab') as
+      | 'overview'
+      | 'projects'
+      | 'experience'
+      | 'references'
+      | 'roadmap'
+      | 'skills'
+      | 'blogs'
+      | 'resume'
+      | 'cover-letter'
+      | 'profile'
+      | 'vcard'
+      | 'security'
+      | null;
+    const validTabs = new Set([
+      'overview',
+      'projects',
+      'experience',
+      'references',
+      'roadmap',
+      'skills',
+      'blogs',
+      'resume',
+      'cover-letter',
+      'profile',
+      'vcard',
+      'security',
+    ]);
+    return {
+      type: 'admin',
+      initialTab: tabParam && validTabs.has(tabParam) ? tabParam : undefined,
+    };
+  }
+
+  // Detect any visiting card access (QR scan query parameter ?card=1, ?vcard, #vcard, /vcard, /card)
+  const isVCardRoute =
+    path === '/vcard' || 
+    path === '/card' || 
+    path.startsWith('/card/') ||
+    path.startsWith('/vcard/') ||
+    lowerHash === 'vcard' || 
+    lowerHash === 'card' || 
+    lowerHash === 'visiting-card' ||
+    lowerHash.includes('card') ||
+    search.includes('card') ||
+    search.includes('vcard');
+
+  if (isVCardRoute) {
+    return { type: 'vcard' };
   }
 
   if (path === '/blog') {
@@ -45,7 +98,8 @@ export function getCurrentRoute(): AppRoute {
  * Navigates to target path programmatically using HTML5 pushState
  */
 export function navigateTo(path: string, options: { scrollToTop?: boolean } = { scrollToTop: true }) {
-  if (window.location.pathname !== path) {
+  const currentUrl = `${window.location.pathname}${window.location.search}`;
+  if (currentUrl !== path) {
     window.history.pushState({}, '', path);
     // Dispatch popstate so custom route listeners trigger re-render
     window.dispatchEvent(new PopStateEvent('popstate'));

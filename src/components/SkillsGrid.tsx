@@ -47,7 +47,7 @@ export default function SkillsGrid() {
   };
 
   return (
-    <section id="skills" className="py-24 bg-[#0B0D12] text-[#F3F4F6] px-4 sm:px-6 border-t border-white/10 relative">
+    <section id="skills" className="py-24 bg-transparent text-[#F3F4F6] px-4 sm:px-6 border-t border-white/10 relative">
       <div id="competencies" className="absolute -top-20" />
       <div className="max-w-7xl mx-auto relative z-10 space-y-12">
         {/* Section Header */}

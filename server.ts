@@ -21,6 +21,74 @@ import { createServer as createViteServer } from 'vite';
  */
 const STATS_FILE = path.join(process.cwd(), 'visitor_stats.json');
 const PORTFOLIO_FILE = path.join(process.cwd(), 'portfolio_custom_data.json');
+const ADMIN_AUTH_FILE = path.join(process.cwd(), 'admin_security.json');
+const UPLOADS_DIR = path.join(process.cwd(), 'uploads');
+
+if (!fs.existsSync(UPLOADS_DIR)) {
+  try {
+    fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+  } catch (err) {
+    console.error('Error creating uploads directory:', err);
+  }
+}
+
+interface StoredAdminSecurity {
+  salt: string;
+  passwordHash: string;
+  updatedAt: string;
+}
+
+function loadAdminSecurity(): StoredAdminSecurity | null {
+  try {
+    if (fs.existsSync(ADMIN_AUTH_FILE)) {
+      const raw = fs.readFileSync(ADMIN_AUTH_FILE, 'utf-8');
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed.salt === 'string' && typeof parsed.passwordHash === 'string') {
+        return parsed as StoredAdminSecurity;
+      }
+    }
+  } catch (err) {
+    console.error('Error reading admin security config:', err);
+  }
+  return null;
+}
+
+function saveAdminSecurity(newPasscode: string): void {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const passwordHash = crypto.scryptSync(newPasscode, salt, 64).toString('hex');
+  const payload: StoredAdminSecurity = {
+    salt,
+    passwordHash,
+    updatedAt: new Date().toISOString(),
+  };
+  fs.writeFileSync(ADMIN_AUTH_FILE, JSON.stringify(payload, null, 2), 'utf-8');
+}
+
+function verifyPasscodeOnServer(inputRaw: string): boolean {
+  const inputPasscode = inputRaw.trim();
+  if (!inputPasscode) return false;
+
+  const customSecurity = loadAdminSecurity();
+  if (customSecurity) {
+    const candidateHash = crypto.scryptSync(inputPasscode, customSecurity.salt, 64).toString('hex');
+    const b1 = Buffer.from(customSecurity.passwordHash, 'hex');
+    const b2 = Buffer.from(candidateHash, 'hex');
+    return b1.length === b2.length && crypto.timingSafeEqual(b1, b2);
+  }
+
+  const expectedPasscode = (process.env.ADMIN_PASSCODE || 'sabbir@sqa2026').trim();
+  const isMatch = (expected: string, input: string) => {
+    const b1 = Buffer.from(expected);
+    const b2 = Buffer.from(input);
+    return b1.length === b2.length && crypto.timingSafeEqual(b1, b2);
+  };
+
+  return (
+    isMatch(expectedPasscode, inputPasscode) ||
+    isMatch('sabbir@sqa2026', inputPasscode) ||
+    isMatch('sabbir2026', inputPasscode)
+  );
+}
 
 interface VisitorStats {
   totalVisitors: number;
@@ -89,8 +157,9 @@ async function startServer(): Promise<void> {
   // Parse server port from environment or fallback to container port 3000
   const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
-  // Middleware for parsing JSON request bodies
-  app.use(express.json());
+  // Middleware for parsing JSON request bodies (expanded limit for local image uploads)
+  app.use(express.json({ limit: '25mb' }));
+  app.use('/uploads', express.static(UPLOADS_DIR));
 
   /**
    * API Route: /api/contact
@@ -220,32 +289,20 @@ async function startServer(): Promise<void> {
 
   /**
    * API Route: /api/admin/verify
-   * Secure backend authentication endpoint for Admin Passcode validation.
-   * Passcode is strictly checked server-side without leaking secret keys to frontend.
+   * Secure backend authentication endpoint for the single Main Security Lock.
+   * Uses scrypt hash verification against persisted owner password.
    */
   app.post('/api/admin/verify', (req: Request, res: Response) => {
     try {
       const { passcode } = req.body;
 
       if (!passcode || typeof passcode !== 'string') {
-        return res.status(400).json({ success: false, error: 'Passcode is required.' });
+        return res.status(400).json({ success: false, error: 'Password is required.' });
       }
 
-      // Retrieve expected passcode strictly from environment variable or default fallback on server
-      const expectedPasscode = (process.env.ADMIN_PASSCODE || 'sabbir@sqa2026').trim();
-      const inputPasscode = passcode.trim();
-
-      // Timing-safe string buffer comparison or secondary fallback
-      const isMatch = (expected: string, input: string) => {
-        const b1 = Buffer.from(expected);
-        const b2 = Buffer.from(input);
-        return b1.length === b2.length && crypto.timingSafeEqual(b1, b2);
-      };
-
-      const isValid = isMatch(expectedPasscode, inputPasscode) || isMatch('sabbir@sqa2026', inputPasscode) || isMatch('sabbir2026', inputPasscode);
+      const isValid = verifyPasscodeOnServer(passcode);
 
       if (isValid) {
-        // Generate secure random session token
         const token = `sabbir_sqa_admin_${crypto.randomBytes(16).toString('hex')}`;
         validOwnerTokens.add(token);
 
@@ -259,11 +316,119 @@ async function startServer(): Promise<void> {
 
       return res.status(401).json({
         success: false,
-        error: 'Invalid Admin Passcode.',
+        error: 'Incorrect password. Access denied.',
       });
     } catch (err) {
       console.error('[ADMIN AUTH API ERROR]', err);
       return res.status(500).json({ success: false, error: 'Internal server error.' });
+    }
+  });
+
+  /**
+   * API Route: POST /api/admin/update-passcode
+   * Allows the owner to change the single Main Security System password.
+   */
+  app.post('/api/admin/update-passcode', (req: Request, res: Response) => {
+    try {
+      const { currentPasscode, newPasscode } = req.body;
+
+      if (!currentPasscode || typeof currentPasscode !== 'string') {
+        return res.status(400).json({ success: false, error: 'Current password is required.' });
+      }
+
+      if (!newPasscode || typeof newPasscode !== 'string' || newPasscode.trim().length < 4) {
+        return res.status(400).json({
+          success: false,
+          error: 'New password must be at least 4 characters long.',
+        });
+      }
+
+      if (!verifyPasscodeOnServer(currentPasscode)) {
+        return res.status(401).json({
+          success: false,
+          error: 'Current password is incorrect.',
+        });
+      }
+
+      saveAdminSecurity(newPasscode.trim());
+      validOwnerTokens.clear();
+
+      const token = `sabbir_sqa_admin_${crypto.randomBytes(16).toString('hex')}`;
+      validOwnerTokens.add(token);
+
+      return res.status(200).json({
+        success: true,
+        message: 'Main security password updated successfully.',
+        token,
+        ownerId: 'sabbir_ahamed_owner',
+      });
+    } catch (err) {
+      console.error('[ADMIN UPDATE PASSCODE ERROR]', err);
+      return res.status(500).json({ success: false, error: 'Failed to update password.' });
+    }
+  });
+
+  /**
+   * API Route: POST /api/upload-image
+   * Persists local file uploads to /uploads and returns a clean static URL.
+   */
+  app.post('/api/upload-image', (req: Request, res: Response) => {
+    try {
+      const { dataUrl, fileName } = req.body || {};
+
+      if (!dataUrl || typeof dataUrl !== 'string') {
+        return res.status(400).json({ success: false, error: 'Image data is required.' });
+      }
+
+      const match = dataUrl.match(/^data:image\/([a-zA-Z0-9+.-]+);base64,(.+)$/);
+      if (!match) {
+        return res.status(400).json({ success: false, error: 'Invalid image data format.' });
+      }
+
+      const rawSubtype = match[1].toLowerCase();
+      const base64Payload = match[2];
+
+      const extMap: Record<string, string> = {
+        jpeg: 'jpg',
+        jpg: 'jpg',
+        png: 'png',
+        webp: 'webp',
+        gif: 'gif',
+        'svg+xml': 'svg',
+      };
+
+      const ext = extMap[rawSubtype];
+      if (!ext) {
+        return res.status(400).json({ success: false, error: 'Unsupported image type.' });
+      }
+
+      const buffer = Buffer.from(base64Payload, 'base64');
+      if (buffer.length > 20 * 1024 * 1024) {
+        return res.status(413).json({ success: false, error: 'Image exceeds 20MB limit.' });
+      }
+
+      if (!fs.existsSync(UPLOADS_DIR)) {
+        fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+      }
+
+      const baseSlug = (typeof fileName === 'string' ? fileName : 'portfolio-image')
+        .replace(/\.[^/.]+$/, '')
+        .toLowerCase()
+        .replace(/[^a-z0-9_-]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, 40) || 'image';
+
+      const uniqueName = `${baseSlug}-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.${ext}`;
+      const targetPath = path.join(UPLOADS_DIR, uniqueName);
+      fs.writeFileSync(targetPath, buffer);
+
+      return res.status(200).json({
+        success: true,
+        url: `/uploads/${uniqueName}`,
+      });
+    } catch (err) {
+      console.error('[IMAGE UPLOAD API ERROR]', err);
+      return res.status(500).json({ success: false, error: 'Failed to store uploaded image.' });
     }
   });
 

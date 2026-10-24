@@ -9,7 +9,7 @@
  * -----------------------------------------
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   X, 
   Sparkles, 
@@ -34,14 +34,16 @@ import {
   Link as LinkIcon,
   HelpCircle,
   Folder,
-  Lock,
-  ShieldAlert
+  Upload,
+  Plus
 } from 'lucide-react';
-import { BlogPost, BLOG_CATEGORIES } from '../data/blogs';
-import { upsertBlogPost, generateSlug, calculateReadingTime } from '../utils/blogStore';
+import { BlogPost } from '../data/blogs';
+import { upsertBlogPost, generateSlug, calculateReadingTime, getStoredBlogCategories, addBlogCategory } from '../utils/blogStore';
 import { isAdminAuthenticated } from '../utils/adminAuth';
+import { getStoredProfile } from '../utils/portfolioStore';
 import { PERSONAL_INFO } from '../data';
 import ReactMarkdown from 'react-markdown';
+import ImageUploadField from './ImageUploadField';
 
 interface CreateBlogModalProps {
   isOpen: boolean;
@@ -64,7 +66,10 @@ export default function CreateBlogModal({ isOpen, onClose, postToEdit, onSaved }
   const [title, setTitle] = useState('');
   const [slug, setSlug] = useState('');
   const [isSlugManuallyEdited, setIsSlugManuallyEdited] = useState(false);
-  const [category, setCategory] = useState<BlogPost['category']>('Software Testing');
+  const [availableCategories, setAvailableCategories] = useState<string[]>(() => getStoredBlogCategories());
+  const [category, setCategory] = useState<string>('Software Testing');
+  const [isCreatingCategory, setIsCreatingCategory] = useState(false);
+  const [newCategoryInput, setNewCategoryInput] = useState('');
   const [description, setDescription] = useState('');
   const [content, setContent] = useState('');
   const [coverImage, setCoverImage] = useState(PRESET_COVER_IMAGES[0].url);
@@ -77,7 +82,7 @@ export default function CreateBlogModal({ isOpen, onClose, postToEdit, onSaved }
   // Author details
   const [authorName, setAuthorName] = useState(PERSONAL_INFO.name || 'Sabbir Ahamed');
   const [authorRole, setAuthorRole] = useState(PERSONAL_INFO.title || 'Software Quality Assurance Engineer');
-  const [authorAvatar, setAuthorAvatar] = useState(PERSONAL_INFO.avatar || '/sabbir_avatar.jpeg');
+  const [authorAvatar, setAuthorAvatar] = useState(() => getStoredProfile().avatar || PERSONAL_INFO.avatar || '/sabbir_avatar.jpeg');
   const [authorBio, setAuthorBio] = useState('SQA Engineer specializing in Manual & Automated Testing, API Validation, ERPNext QA, and CI/CD Quality Gates.');
 
   // UI state
@@ -89,6 +94,10 @@ export default function CreateBlogModal({ isOpen, onClose, postToEdit, onSaved }
   // Initialize form fields when opening or changing postToEdit
   useEffect(() => {
     if (isOpen) {
+      const storedCats = getStoredBlogCategories();
+      setAvailableCategories(storedCats);
+      setIsCreatingCategory(false);
+      setNewCategoryInput('');
       setErrorMsg('');
       setSuccessMsg('');
       setActiveTab('write');
@@ -106,16 +115,17 @@ export default function CreateBlogModal({ isOpen, onClose, postToEdit, onSaved }
         setPublishDate(postToEdit.publishDate);
         setReadingTime(postToEdit.readingTime);
         setTagsInput(postToEdit.tags ? postToEdit.tags.join(', ') : '');
-        setAuthorName(postToEdit.author?.name || PERSONAL_INFO.name);
-        setAuthorRole(postToEdit.author?.role || PERSONAL_INFO.title);
+        const liveProfile = getStoredProfile();
+        setAuthorName(postToEdit.author?.name || liveProfile.name || PERSONAL_INFO.name);
+        setAuthorRole(postToEdit.author?.role || liveProfile.title || PERSONAL_INFO.title);
         setAuthorAvatar(
           postToEdit.author?.name === PERSONAL_INFO.name || !postToEdit.author?.avatar || postToEdit.author?.avatar.includes('sabbir_avatar')
-            ? (PERSONAL_INFO.avatar || '/sabbir_avatar.jpeg')
+            ? (liveProfile.avatar || PERSONAL_INFO.avatar || '/sabbir_avatar.jpeg')
             : postToEdit.author.avatar
         );
         setAuthorBio(postToEdit.author?.bio || 'SQA Engineer specializing in Manual & Automated Testing.');
       } else {
-        // Defaults for new blog
+        const liveProfile = getStoredProfile();
         const todayFormatted = new Date().toLocaleDateString('en-US', {
           month: 'long',
           day: 'numeric',
@@ -133,9 +143,9 @@ export default function CreateBlogModal({ isOpen, onClose, postToEdit, onSaved }
         setPublishDate(todayFormatted);
         setReadingTime('');
         setTagsInput('Software Testing, SQA, Automation');
-        setAuthorName('Sabbir Ahamed');
-        setAuthorRole('Software Quality Assurance Engineer');
-        setAuthorAvatar('/sabbir_avatar.jpeg');
+        setAuthorName(liveProfile.name || 'Sabbir Ahamed');
+        setAuthorRole(liveProfile.title || 'Software Quality Assurance Engineer');
+        setAuthorAvatar(liveProfile.avatar || '/sabbir_avatar.jpeg');
         setAuthorBio('SQA Engineer specializing in Manual & Automated Testing, API Validation, ERPNext QA, and CI/CD Quality Gates.');
       }
     }
@@ -145,7 +155,7 @@ export default function CreateBlogModal({ isOpen, onClose, postToEdit, onSaved }
   const handleTitleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
     setTitle(val);
-    if (!isSlugManuallyEdited) {
+    if (!isSlugManuallyEdited && val.trim()) {
       setSlug(generateSlug(val));
     }
   };
@@ -157,12 +167,28 @@ export default function CreateBlogModal({ isOpen, onClose, postToEdit, onSaved }
     }
   }, [content]);
 
+
   // Formatting helper insertions into markdown content
   const insertFormatting = (prefix: string, suffix: string = '') => {
     setContent((prev) => prev + `\n${prefix} ${suffix}\n`);
   };
 
-  // Form submission handler
+  // Create and select a new custom category
+  const handleConfirmNewCategory = () => {
+    const trimmed = newCategoryInput.trim();
+    if (!trimmed) {
+      setIsCreatingCategory(false);
+      return;
+    }
+    const updated = addBlogCategory(trimmed);
+    const matched = updated.find((c) => c.toLowerCase() === trimmed.toLowerCase()) || trimmed;
+    setAvailableCategories(updated);
+    setCategory(matched);
+    setNewCategoryInput('');
+    setIsCreatingCategory(false);
+  };
+
+  // Form submission handler (All fields are non-mandatory)
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');
@@ -170,19 +196,6 @@ export default function CreateBlogModal({ isOpen, onClose, postToEdit, onSaved }
 
     if (!isAdminAuthenticated()) {
       setErrorMsg('Access Denied: Only authenticated Admin (Sabbir Ahamed) can create or update blog posts.');
-      return;
-    }
-
-    if (!title.trim()) {
-      setErrorMsg('Please enter a Blog Title.');
-      return;
-    }
-    if (!description.trim()) {
-      setErrorMsg('Please enter a Short Description.');
-      return;
-    }
-    if (!content.trim()) {
-      setErrorMsg('Please enter the Full Article Content in Markdown.');
       return;
     }
 
@@ -194,18 +207,28 @@ export default function CreateBlogModal({ isOpen, onClose, postToEdit, onSaved }
         .map((t) => t.trim())
         .filter((t) => t.length > 0);
 
+      const finalTitle = title.trim() || 'Untitled Article';
+      const finalSlug = slug.trim() ? generateSlug(slug) : generateSlug(finalTitle);
+      const finalCategory = (isCreatingCategory && newCategoryInput.trim())
+        ? newCategoryInput.trim()
+        : (category.trim() || 'Software Testing');
+
+      if (finalCategory) {
+        setAvailableCategories(addBlogCategory(finalCategory));
+      }
+
       const saved = upsertBlogPost({
         id: postToEdit ? postToEdit.id : undefined,
-        title: title.trim(),
-        slug: slug.trim() ? generateSlug(slug) : generateSlug(title),
-        category,
+        title: finalTitle,
+        slug: finalSlug,
+        category: finalCategory,
         description: description.trim(),
         content: content.trim(),
-        coverImage,
+        coverImage: coverImage.trim() || PRESET_COVER_IMAGES[0].url,
         status,
         featured,
         publishDate: publishDate.trim() || new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),
-        readingTime: readingTime || calculateReadingTime(content),
+        readingTime: readingTime || (content.trim() ? calculateReadingTime(content) : '3 min read'),
         tags: parsedTags.length > 0 ? parsedTags : ['SQA'],
         author: {
           name: authorName.trim() || 'Sabbir Ahamed',
@@ -232,35 +255,11 @@ export default function CreateBlogModal({ isOpen, onClose, postToEdit, onSaved }
     }
   };
 
-  if (!isOpen) return null;
+  if (!isOpen || !isAdminAuthenticated()) return null;
 
-  if (!isAdminAuthenticated()) {
-    return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-fadeIn">
-        <div className="relative w-full max-w-md bg-[#12151C] border border-red-500/40 rounded-3xl p-6 sm:p-8 shadow-2xl text-white space-y-6 text-center">
-          <div className="inline-flex p-3.5 rounded-2xl bg-red-500/10 border border-red-500/30 text-red-400 mx-auto">
-            <Lock className="w-8 h-8" />
-          </div>
-          <div className="space-y-2">
-            <h3 className="font-display font-extrabold text-xl text-white">
-              Admin Authentication Required
-            </h3>
-            <p className="text-xs font-mono text-[#9CA3AF] leading-relaxed">
-              Only the portfolio administrator (Sabbir Ahamed) has permission to create, edit, or publish articles.
-            </p>
-          </div>
-          <button
-            onClick={onClose}
-            className="w-full py-3 rounded-full bg-white/10 hover:bg-white/20 text-white font-mono text-xs font-bold transition-all cursor-pointer"
-          >
-            Close
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  const validCategories = BLOG_CATEGORIES.filter((c) => c !== 'All') as BlogPost['category'][];
+  const validCategories = availableCategories.includes(category)
+    ? availableCategories
+    : [category, ...availableCategories].filter(Boolean);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 overflow-y-auto bg-black/80 backdrop-blur-md animate-fadeIn">
@@ -312,24 +311,29 @@ export default function CreateBlogModal({ isOpen, onClose, postToEdit, onSaved }
           {/* Row 1: Title & Slug */}
           <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
             <div className="md:col-span-7 space-y-1.5">
-              <label className="text-xs font-mono text-[#D1D5DB] font-semibold flex items-center gap-1.5">
-                <FileText className="w-3.5 h-3.5 text-[var(--color-accent)]" />
-                Blog Title <span className="text-[var(--color-accent)]">*</span>
+              <label className="text-xs font-mono text-[#D1D5DB] font-semibold flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <FileText className="w-3.5 h-3.5 text-[var(--color-accent)]" />
+                  Blog Title
+                </span>
+                <span className="text-[10px] text-[#9CA3AF]">Optional</span>
               </label>
               <input
                 type="text"
                 value={title}
                 onChange={handleTitleChange}
                 placeholder="e.g. Master Playwright API Automation & JWT Authentication"
-                required
                 className="w-full px-4 py-2.5 rounded-xl bg-white/[0.05] border border-white/15 text-sm text-white placeholder:text-white/30 focus:border-[var(--color-accent)] focus:outline-none transition-colors"
               />
             </div>
 
             <div className="md:col-span-5 space-y-1.5">
-              <label className="text-xs font-mono text-[#D1D5DB] font-semibold flex items-center gap-1.5">
-                <LinkIcon className="w-3.5 h-3.5 text-[var(--color-accent)]" />
-                URL Slug
+              <label className="text-xs font-mono text-[#D1D5DB] font-semibold flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <LinkIcon className="w-3.5 h-3.5 text-[var(--color-accent)]" />
+                  URL Slug
+                </span>
+                <span className="text-[10px] text-[#9CA3AF]">Auto-generated</span>
               </label>
               <input
                 type="text"
@@ -346,23 +350,80 @@ export default function CreateBlogModal({ isOpen, onClose, postToEdit, onSaved }
 
           {/* Row 2: Category, Status, Featured, Publish Date */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 bg-white/[0.02] p-4 rounded-2xl border border-white/10">
-            {/* Category */}
+            {/* Category (Select or Create New) */}
             <div className="space-y-1.5">
-              <label className="text-xs font-mono text-[#D1D5DB] font-semibold flex items-center gap-1.5">
-                <Folder className="w-3.5 h-3.5 text-[var(--color-accent)]" />
-                Category <span className="text-[var(--color-accent)]">*</span>
-              </label>
-              <select
-                value={category}
-                onChange={(e) => setCategory(e.target.value as BlogPost['category'])}
-                className="w-full px-3 py-2 rounded-xl bg-[#181C26] border border-white/15 text-xs text-white focus:border-[var(--color-accent)] focus:outline-none"
-              >
-                {validCategories.map((cat) => (
-                  <option key={cat} value={cat}>
-                    {cat}
+              <div className="flex items-center justify-between gap-2">
+                <label className="text-xs font-mono text-[#D1D5DB] font-semibold flex items-center gap-1.5">
+                  <Folder className="w-3.5 h-3.5 text-[var(--color-accent)]" />
+                  Category
+                </label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsCreatingCategory((prev) => !prev);
+                    setNewCategoryInput('');
+                  }}
+                  className="text-[10px] font-mono text-[var(--color-accent)] hover:underline flex items-center gap-0.5 cursor-pointer"
+                >
+                  {isCreatingCategory ? (
+                    <span>Select Existing</span>
+                  ) : (
+                    <>
+                      <Plus className="w-3 h-3" />
+                      <span>New Category</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
+              {isCreatingCategory ? (
+                <div className="flex items-center gap-1.5">
+                  <input
+                    type="text"
+                    value={newCategoryInput}
+                    onChange={(e) => setNewCategoryInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleConfirmNewCategory();
+                      }
+                    }}
+                    placeholder="New category name..."
+                    autoFocus
+                    className="w-full px-3 py-2 rounded-xl bg-white/[0.06] border border-[var(--color-accent)]/50 text-xs text-white placeholder:text-white/30 focus:border-[var(--color-accent)] focus:outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleConfirmNewCategory}
+                    className="px-2.5 py-2 rounded-xl bg-[var(--color-accent)] text-black font-mono text-[11px] font-bold hover:opacity-90 transition-opacity cursor-pointer shrink-0"
+                    title="Create Category"
+                  >
+                    Add
+                  </button>
+                </div>
+              ) : (
+                <select
+                  value={category}
+                  onChange={(e) => {
+                    if (e.target.value === '__create_new__') {
+                      setIsCreatingCategory(true);
+                      setNewCategoryInput('');
+                    } else {
+                      setCategory(e.target.value);
+                    }
+                  }}
+                  className="w-full px-3 py-2 rounded-xl bg-[#181C26] border border-white/15 text-xs text-white focus:border-[var(--color-accent)] focus:outline-none"
+                >
+                  {validCategories.map((cat) => (
+                    <option key={cat} value={cat}>
+                      {cat}
+                    </option>
+                  ))}
+                  <option value="__create_new__" className="text-emerald-400 font-bold">
+                    + Create New Category...
                   </option>
-                ))}
-              </select>
+                </select>
+              )}
             </div>
 
             {/* Status */}
@@ -419,44 +480,35 @@ export default function CreateBlogModal({ isOpen, onClose, postToEdit, onSaved }
 
           {/* Row 3: Short Description */}
           <div className="space-y-1.5">
-            <label className="text-xs font-mono text-[#D1D5DB] font-semibold flex items-center gap-1.5">
-              <FileText className="w-3.5 h-3.5 text-[var(--color-accent)]" />
-              Short Description / Summary <span className="text-[var(--color-accent)]">*</span>
+            <label className="text-xs font-mono text-[#D1D5DB] font-semibold flex items-center justify-between">
+              <span className="flex items-center gap-1.5">
+                <FileText className="w-3.5 h-3.5 text-[var(--color-accent)]" />
+                Short Description / Summary
+              </span>
+              <span className="text-[10px] text-[#9CA3AF]">Optional</span>
             </label>
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               rows={2}
               placeholder="Brief summary of the article for blog grid cards and search preview..."
-              required
               className="w-full px-4 py-2.5 rounded-xl bg-white/[0.05] border border-white/15 text-xs text-white placeholder:text-white/30 focus:border-[var(--color-accent)] focus:outline-none transition-colors"
             />
           </div>
 
-          {/* Row 4: Cover Image Selection */}
-          <div className="space-y-2 bg-white/[0.02] p-4 rounded-2xl border border-white/10">
-            <label className="text-xs font-mono text-[#D1D5DB] font-semibold flex items-center gap-1.5">
-              <ImageIcon className="w-3.5 h-3.5 text-[var(--color-accent)]" />
-              Featured Cover Image URL
-            </label>
-            
-            <div className="flex flex-col sm:flex-row gap-3">
-              <input
-                type="text"
-                value={coverImage}
-                onChange={(e) => setCoverImage(e.target.value)}
-                placeholder="https://images.unsplash.com/photo-..."
-                className="flex-1 px-4 py-2 rounded-xl bg-white/[0.05] border border-white/15 text-xs font-mono text-white placeholder:text-white/30 focus:border-[var(--color-accent)] focus:outline-none"
-              />
-              {coverImage && (
-                <div className="w-20 h-10 rounded-xl overflow-hidden border border-white/20 shrink-0 bg-black">
-                  <img src={coverImage} alt="Cover preview" className="w-full h-full object-cover" />
-                </div>
-              )}
-            </div>
+          {/* Row 4: Cover Image Selection (Direct File Upload + Quick Presets) */}
+          <div className="space-y-3 bg-white/[0.02] p-4 rounded-2xl border border-white/10">
+            <ImageUploadField
+              label="Featured Cover Image"
+              value={coverImage}
+              onChange={setCoverImage}
+              shape="banner"
+              accentColor="cyan"
+              helperText="Upload a cover image directly from your device (JPG, PNG, WebP, GIF, SVG)"
+            />
 
             {/* Quick Pick Presets */}
-            <div className="pt-2">
+            <div className="pt-2 border-t border-white/5">
               <p className="text-[11px] font-mono text-[#9CA3AF] mb-1.5">Or choose a preset image:</p>
               <div className="flex flex-wrap gap-2">
                 {PRESET_COVER_IMAGES.map((preset) => (
@@ -479,9 +531,12 @@ export default function CreateBlogModal({ isOpen, onClose, postToEdit, onSaved }
 
           {/* Row 5: Tags Input */}
           <div className="space-y-1.5">
-            <label className="text-xs font-mono text-[#D1D5DB] font-semibold flex items-center gap-1.5">
-              <TagIcon className="w-3.5 h-3.5 text-[var(--color-accent)]" />
-              Tags (comma separated)
+            <label className="text-xs font-mono text-[#D1D5DB] font-semibold flex items-center justify-between">
+              <span className="flex items-center gap-1.5">
+                <TagIcon className="w-3.5 h-3.5 text-[var(--color-accent)]" />
+                Tags (comma separated)
+              </span>
+              <span className="text-[10px] text-[#9CA3AF]">Optional</span>
             </label>
             <input
               type="text"
@@ -495,9 +550,12 @@ export default function CreateBlogModal({ isOpen, onClose, postToEdit, onSaved }
           {/* Row 6: Markdown Content Editor & Live Preview */}
           <div className="space-y-2 border-t border-white/10 pt-4">
             <div className="flex items-center justify-between">
-              <label className="text-xs font-mono text-[#D1D5DB] font-semibold flex items-center gap-1.5">
-                <FileText className="w-3.5 h-3.5 text-[var(--color-accent)]" />
-                Article Content (Markdown Supported) <span className="text-[var(--color-accent)]">*</span>
+              <label className="text-xs font-mono text-[#D1D5DB] font-semibold flex items-center justify-between gap-1.5">
+                <span className="flex items-center gap-1.5">
+                  <FileText className="w-3.5 h-3.5 text-[var(--color-accent)]" />
+                  Article Content (Markdown Supported)
+                </span>
+                <span className="text-[10px] text-[#9CA3AF] ml-2">Optional</span>
               </label>
 
               {/* Editor View Toggle Tabs */}
@@ -531,7 +589,7 @@ export default function CreateBlogModal({ isOpen, onClose, postToEdit, onSaved }
                 <button
                   type="button"
                   onClick={() => insertFormatting('## ', 'Section Heading')}
-                  className="p-1.5 rounded hover:bg-white/10 hover:text-white"
+                  className="p-1.5 rounded hover:bg-white/10 hover:text-white cursor-pointer"
                   title="Heading 2"
                 >
                   <Heading className="w-3.5 h-3.5 text-[var(--color-accent)]" />
@@ -539,7 +597,7 @@ export default function CreateBlogModal({ isOpen, onClose, postToEdit, onSaved }
                 <button
                   type="button"
                   onClick={() => insertFormatting('**', 'Bold Text**')}
-                  className="p-1.5 rounded hover:bg-white/10 hover:text-white font-bold"
+                  className="p-1.5 rounded hover:bg-white/10 hover:text-white font-bold cursor-pointer"
                   title="Bold"
                 >
                   <Bold className="w-3.5 h-3.5" />
@@ -547,7 +605,7 @@ export default function CreateBlogModal({ isOpen, onClose, postToEdit, onSaved }
                 <button
                   type="button"
                   onClick={() => insertFormatting('*', 'Italic Text*')}
-                  className="p-1.5 rounded hover:bg-white/10 hover:text-white italic"
+                  className="p-1.5 rounded hover:bg-white/10 hover:text-white italic cursor-pointer"
                   title="Italic"
                 >
                   <Italic className="w-3.5 h-3.5" />
@@ -555,7 +613,7 @@ export default function CreateBlogModal({ isOpen, onClose, postToEdit, onSaved }
                 <button
                   type="button"
                   onClick={() => insertFormatting('- ', 'List item')}
-                  className="p-1.5 rounded hover:bg-white/10 hover:text-white"
+                  className="p-1.5 rounded hover:bg-white/10 hover:text-white cursor-pointer"
                   title="Bullet List"
                 >
                   <List className="w-3.5 h-3.5" />
@@ -563,7 +621,7 @@ export default function CreateBlogModal({ isOpen, onClose, postToEdit, onSaved }
                 <button
                   type="button"
                   onClick={() => insertFormatting('```typescript\n// Code snippet here\n```')}
-                  className="p-1.5 rounded hover:bg-white/10 hover:text-white"
+                  className="p-1.5 rounded hover:bg-white/10 hover:text-white cursor-pointer"
                   title="Code Block"
                 >
                   <Code className="w-3.5 h-3.5 text-emerald-400" />
@@ -571,7 +629,7 @@ export default function CreateBlogModal({ isOpen, onClose, postToEdit, onSaved }
                 <button
                   type="button"
                   onClick={() => insertFormatting('> ', 'Quote message')}
-                  className="p-1.5 rounded hover:bg-white/10 hover:text-white"
+                  className="p-1.5 rounded hover:bg-white/10 hover:text-white cursor-pointer"
                   title="Blockquote"
                 >
                   <Quote className="w-3.5 h-3.5" />
@@ -579,7 +637,7 @@ export default function CreateBlogModal({ isOpen, onClose, postToEdit, onSaved }
                 <button
                   type="button"
                   onClick={() => insertFormatting('| Header 1 | Header 2 |\n| --- | --- |\n| Cell 1 | Cell 2 |')}
-                  className="p-1.5 rounded hover:bg-white/10 hover:text-white"
+                  className="p-1.5 rounded hover:bg-white/10 hover:text-white cursor-pointer"
                   title="Insert Table"
                 >
                   <Table className="w-3.5 h-3.5" />
@@ -597,7 +655,6 @@ export default function CreateBlogModal({ isOpen, onClose, postToEdit, onSaved }
                 onChange={(e) => setContent(e.target.value)}
                 rows={12}
                 placeholder="# Article Title&#10;&#10;Write your technical blog post here in Markdown format..."
-                required
                 className="w-full p-4 rounded-xl bg-black/40 border border-white/15 text-xs sm:text-sm font-mono text-[#E5E7EB] placeholder:text-white/20 focus:border-[var(--color-accent)] focus:outline-none leading-relaxed"
               />
             ) : (

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Mail, Phone, MapPin, ArrowRight, Check, Copy, Code, BookOpen } from 'lucide-react';
+import { Mail, Phone, MapPin, ArrowRight, Check, Copy, Code, BookOpen, Nfc } from 'lucide-react';
 import { PERSONAL_INFO } from '../data';
 import { navigateTo } from '../utils/router';
 import { getStoredProfile, PORTFOLIO_UPDATED_EVENT } from '../utils/portfolioStore';
@@ -9,9 +9,10 @@ const FALLBACK_AVATAR = 'https://images.unsplash.com/photo-1534528741775-53994a6
 interface HeroProps {
   onOpenResumeBuilder?: () => void;
   onOpenCoverLetter?: () => void;
+  onOpenVisitingCard?: () => void;
 }
 
-export default function Hero({ onOpenResumeBuilder, onOpenCoverLetter }: HeroProps) {
+export default function Hero({ onOpenResumeBuilder, onOpenCoverLetter, onOpenVisitingCard }: HeroProps) {
   const [profile, setProfile] = useState(() => getStoredProfile());
   const [copiedEmail, setCopiedEmail] = useState(false);
 
@@ -40,7 +41,7 @@ export default function Hero({ onOpenResumeBuilder, onOpenCoverLetter }: HeroPro
   ];
 
   return (
-    <section id="about" className="relative min-h-screen pt-32 lg:pt-36 pb-20 flex flex-col justify-center bg-[var(--color-dark-bg,#080B11)] text-[#F3F4F6] overflow-hidden transition-colors duration-300">
+    <section id="about" className="relative min-h-screen pt-32 lg:pt-36 pb-20 flex flex-col justify-center bg-transparent text-[#F3F4F6] overflow-hidden transition-colors duration-300">
       {/* Glow Effects */}
       <div 
         className="absolute top-1/4 right-10 w-96 h-96 rounded-full blur-[140px] pointer-events-none transition-all duration-500" 
@@ -58,12 +59,14 @@ export default function Hero({ onOpenResumeBuilder, onOpenCoverLetter }: HeroPro
           
           {/* Left Content Column */}
           <div className="lg:col-span-7 flex flex-col space-y-6 sm:space-y-7">
+
+
             {/* Main Title Headlines */}
             <div className="space-y-3.5">
-              <h1 className="font-display font-extrabold text-3xl sm:text-5xl lg:text-6xl text-white tracking-tight leading-[1.08]">
+              <h1 className="font-display font-extrabold text-3xl sm:text-5xl lg:text-6xl text-white tracking-tight leading-[1.08] drop-shadow-[0_4px_16px_rgba(0,0,0,0.8)]">
                 Hi, I'm <span className="text-[var(--color-accent)]">{profile.name}</span>
               </h1>
-              <p className="font-display font-bold text-lg sm:text-2xl text-[#F3F4F6]">
+              <p className="font-display font-bold text-lg sm:text-2xl text-[#F3F4F6] drop-shadow-[0_2px_10px_rgba(0,0,0,0.7)]">
                 {profile.title}
               </p>
               <div className="flex flex-wrap items-center gap-2 pt-1.5">
@@ -181,6 +184,18 @@ export default function Hero({ onOpenResumeBuilder, onOpenCoverLetter }: HeroPro
                 <Code className="w-4 h-4 text-[var(--color-accent)]" />
                 <span>View Projects</span>
               </a>
+
+              {/* Digital Visiting Card (NFC & QR) */}
+              {onOpenVisitingCard && (
+                <button
+                  onClick={onOpenVisitingCard}
+                  className="inline-flex items-center space-x-2 bg-white/[0.05] hover:bg-white/10 text-white border border-[var(--color-accent)]/40 hover:border-[var(--color-accent)] font-semibold text-sm px-5 py-3.5 rounded-full transition-all hover:scale-[1.02] active:scale-95 shadow-md cursor-pointer group"
+                  title="Smart Virtual Visiting Card with NFC & QR"
+                >
+                  <Nfc className="w-4 h-4 text-[var(--color-accent)] group-hover:scale-110 transition-transform" />
+                  <span>Smart Card (NFC)</span>
+                </button>
+              )}
 
               {/* Tertiary: Read Blog */}
               <a

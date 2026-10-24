@@ -3,13 +3,11 @@ import {
   X, Printer, Download, Copy, Check, FileText, Settings, Sliders, Sparkles, 
   CheckSquare, Square, Filter, ChevronRight, Award, Briefcase, Eye, 
   RotateCcw, ShieldCheck, Mail, Phone, MapPin, Globe, Target,
-  Type, ExternalLink, User, Lock
+  Type, ExternalLink, User
 } from 'lucide-react';
 import { PERSONAL_INFO, EDUCATION_HISTORY, BUG_REPORTS } from '../data';
 import { getStoredProjects, getStoredExperiences, getStoredSkills, getStoredReferences, PORTFOLIO_UPDATED_EVENT } from '../utils/portfolioStore';
 import { Reference } from '../types';
-import { isAdminAuthenticated } from '../utils/adminAuth';
-import AdminPasscodeModal from './AdminPasscodeModal';
 import html2pdf from 'html2pdf.js'; 
 
 // Safe URL normalizer for links embedded inside text
@@ -46,8 +44,6 @@ export const ROLE_CAREER_OBJECTIVES: Record<TargetRoleType, string> = {
 };
 
 export default function ResumeBuilderModal({ isOpen, onClose, onOpenCoverLetter }: ResumeBuilderModalProps) {
-  const [isAdmin, setIsAdmin] = useState<boolean>(() => isAdminAuthenticated());
-  const [isPasscodeModalOpen, setIsPasscodeModalOpen] = useState<boolean>(false);
 
   // Selected Template & Role Presets
   const [template, setTemplate] = useState<TemplateType>('classic-ats');
@@ -203,10 +199,6 @@ export default function ResumeBuilderModal({ isOpen, onClose, onOpenCoverLetter 
 
   // PDF Export via html2pdf with strict size optimization (< 1MB) and guaranteed clickable hyperlinks
   const handleDownloadPDF = () => {
-    if (!isAdminAuthenticated()) {
-      setIsPasscodeModalOpen(true);
-      return;
-    }
     if (!resumeRef.current) return;
     setIsExportingPdf(true);
 
@@ -390,10 +382,6 @@ export default function ResumeBuilderModal({ isOpen, onClose, onOpenCoverLetter 
 
   // Browser Print trigger with dedicated isolated iframe for A4 print/PDF output
   const handlePrint = () => {
-    if (!isAdminAuthenticated()) {
-      setIsPasscodeModalOpen(true);
-      return;
-    }
     try {
       window.focus();
       const element = resumeRef.current;
@@ -694,10 +682,6 @@ export default function ResumeBuilderModal({ isOpen, onClose, onOpenCoverLetter 
 
   // Word Document (.doc / .docx compatible) Export trigger with 100% stable formatting
   const handleDownloadDOCX = () => {
-    if (!isAdminAuthenticated()) {
-      setIsPasscodeModalOpen(true);
-      return;
-    }
     const sourceHTML = generateWordResumeHtml();
     // Using UTF-8 BOM (\ufeff) so Word, LibreOffice, and Google Docs preserve bullet points & formatting flawlessly
     const blob = new Blob(['\ufeff' + sourceHTML], { type: 'application/msword;charset=utf-8' });
@@ -715,10 +699,6 @@ export default function ResumeBuilderModal({ isOpen, onClose, onOpenCoverLetter 
 
   // Plain Text Copying
   const handleCopyPlainText = () => {
-    if (!isAdminAuthenticated()) {
-      setIsPasscodeModalOpen(true);
-      return;
-    }
     let text = `${customInfo.name.toUpperCase()}\n${customInfo.title}\n`;
     text += `Email: ${customInfo.email} | Phone: ${customInfo.phone} | Location: ${customInfo.location}\n`;
     text += `LinkedIn: ${customInfo.linkedin} | GitHub: ${customInfo.github}\n\n`;
@@ -791,65 +771,7 @@ Software Quality Assurance Engineer`;
     setTimeout(() => setCopiedCover(false), 2000);
   };
 
-  useEffect(() => {
-    const handleAuth = () => {
-      setIsAdmin(isAdminAuthenticated());
-    };
-    window.addEventListener('admin_auth_changed', handleAuth);
-    return () => window.removeEventListener('admin_auth_changed', handleAuth);
-  }, []);
-
   if (!isOpen) return null;
-
-  if (!isAdmin) {
-    return (
-      <>
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-fadeIn">
-          <div className="relative w-full max-w-md bg-[#12151C] border border-amber-500/40 rounded-3xl p-6 sm:p-8 shadow-2xl text-white space-y-6 text-center">
-            <div className="inline-flex p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-400 mx-auto">
-              <Lock className="w-8 h-8" />
-            </div>
-            <div className="space-y-2">
-              <h3 className="font-display font-extrabold text-xl text-white">
-                Admin Authentication Required
-              </h3>
-              <p className="text-xs font-mono text-[#9CA3AF] leading-relaxed">
-                Only the verified portfolio administrator (Sabbir Ahamed) has permission to create, customize, or download ATS Resumes.
-              </p>
-            </div>
-            <div className="flex flex-col sm:flex-row gap-3 pt-2">
-              <button
-                onClick={onClose}
-                className="flex-1 py-3 rounded-full bg-white/10 hover:bg-white/20 text-white font-mono text-xs font-bold transition-all cursor-pointer"
-              >
-                Close
-              </button>
-              <button
-                onClick={() => setIsPasscodeModalOpen(true)}
-                className="flex-1 py-3 rounded-full bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-white font-mono text-xs font-bold shadow-lg shadow-[var(--color-accent)]/25 transition-all cursor-pointer flex items-center justify-center space-x-2"
-              >
-                <Lock className="w-3.5 h-3.5" />
-                <span>Admin Unlock</span>
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {isPasscodeModalOpen && (
-          <AdminPasscodeModal
-            isOpen={isPasscodeModalOpen}
-            onClose={() => setIsPasscodeModalOpen(false)}
-            onSuccess={() => {
-              setIsAdmin(true);
-              setIsPasscodeModalOpen(false);
-            }}
-            title="Resume Builder Admin Verification"
-            description="Enter your Admin Security Passcode to access, customize, and download ATS Resumes."
-          />
-        )}
-      </>
-    );
-  }
 
   return (
     <div className="fixed inset-0 z-50 overflow-hidden bg-black/80 backdrop-blur-md flex flex-col justify-between animate-fadeIn">

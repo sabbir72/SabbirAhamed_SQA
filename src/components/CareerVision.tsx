@@ -13,7 +13,7 @@ export default function CareerVision() {
   }, []);
 
   return (
-    <section id="career-vision" className="py-20 bg-[#0B0D12] text-white relative overflow-hidden">
+    <section id="career-vision" className="py-20 bg-transparent text-white relative overflow-hidden">
       {/* Ambient background glow */}
       <div className="absolute top-1/3 -left-40 w-80 h-80 bg-[var(--color-accent)]/10 rounded-full blur-[100px] pointer-events-none" />
       <div className="absolute bottom-10 -right-40 w-80 h-80 bg-blue-600/10 rounded-full blur-[100px] pointer-events-none" />

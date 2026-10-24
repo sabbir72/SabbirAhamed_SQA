@@ -1,15 +1,16 @@
 import { useState, FormEvent } from 'react';
 import { 
   Send, CheckCircle2, Mail, Phone, MapPin, Linkedin, Github, 
-  FileText, ArrowRight, Copy, Check, ExternalLink, Sparkles
+  FileText, ArrowRight, Copy, Check, ExternalLink, Sparkles, Nfc
 } from 'lucide-react';
 import { PERSONAL_INFO } from '../data';
 
 interface ContactProps {
   onOpenResumeBuilder?: () => void;
+  onOpenVisitingCard?: () => void;
 }
 
-export default function Contact({ onOpenResumeBuilder }: ContactProps) {
+export default function Contact({ onOpenResumeBuilder, onOpenVisitingCard }: ContactProps) {
   const [formData, setFormData] = useState({ name: '', email: '', subject: '', message: '' });
   const [status, setStatus] = useState<'idle' | 'sending' | 'success'>('idle');
   const [errors, setErrors] = useState<{ name?: string; email?: string; subject?: string; message?: string }>({});
@@ -77,7 +78,7 @@ export default function Contact({ onOpenResumeBuilder }: ContactProps) {
   };
 
   return (
-    <section id="contact" className="py-24 sm:py-28 bg-[#0B0D12] text-[#F3F4F6] border-t border-white/10 px-4 sm:px-6 lg:px-8 relative overflow-hidden">
+    <section id="contact" className="py-24 sm:py-28 bg-transparent text-[#F3F4F6] border-t border-white/10 px-4 sm:px-6 lg:px-8 relative overflow-hidden">
       {/* Background Subtle Ambient Glows */}
       <div className="absolute top-1/3 left-10 w-96 h-96 bg-[var(--color-accent)]/5 rounded-full blur-[140px] pointer-events-none" aria-hidden="true" />
       <div className="absolute bottom-10 right-10 w-80 h-80 bg-blue-600/5 rounded-full blur-[120px] pointer-events-none" aria-hidden="true" />
@@ -178,6 +179,29 @@ export default function Contact({ onOpenResumeBuilder }: ContactProps) {
                     </span>
                   </div>
                 </div>
+
+                {/* Smart Virtual Visiting Card Banner */}
+                {onOpenVisitingCard && (
+                  <button
+                    onClick={onOpenVisitingCard}
+                    className="w-full flex items-center justify-between p-3.5 rounded-2xl bg-gradient-to-r from-[var(--color-accent)]/15 via-white/[0.04] to-transparent border border-[var(--color-accent)]/30 hover:border-[var(--color-accent)] text-left transition-all group cursor-pointer shadow-lg hover:shadow-[0_0_25px_rgba(var(--color-accent-rgb),0.2)]"
+                  >
+                    <div className="flex items-center space-x-3">
+                      <div className="p-2.5 rounded-xl bg-[var(--color-accent)]/20 text-[var(--color-accent)] group-hover:scale-110 transition-transform">
+                        <Nfc className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <span className="block text-xs font-bold text-white group-hover:text-[var(--color-accent)] transition-colors">
+                          Virtual Visiting Card (NFC & QR)
+                        </span>
+                        <span className="block text-[11px] text-[#9CA3AF] font-mono">
+                          Tap, scan or save directly to phone contacts (.vcf)
+                        </span>
+                      </div>
+                    </div>
+                    <ArrowRight className="w-4 h-4 text-[var(--color-accent)] group-hover:translate-x-1 transition-transform shrink-0" />
+                  </button>
+                )}
               </div>
             </div>
 

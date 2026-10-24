@@ -22,15 +22,20 @@ import {
   X,
   Filter,
   CheckCircle2,
-  SlidersHorizontal
+  SlidersHorizontal,
+  Edit3
 } from 'lucide-react';
-import { BlogPost, BLOG_CATEGORIES } from '../data/blogs';
-import { getStoredBlogPosts, BLOGS_UPDATED_EVENT } from '../utils/blogStore';
+import { BlogPost } from '../data/blogs';
+import { getStoredBlogPosts, getAllBlogFilterCategories, BLOGS_UPDATED_EVENT } from '../utils/blogStore';
+import { isAdminAuthenticated } from '../utils/adminAuth';
+import { navigateTo } from '../utils/router';
+import { getStoredProfile, PORTFOLIO_UPDATED_EVENT } from '../utils/portfolioStore';
 import { PERSONAL_INFO } from '../data';
 
 const getAuthorAvatar = (author?: { name?: string; avatar?: string }) => {
+  const liveAvatar = getStoredProfile().avatar || PERSONAL_INFO.avatar || '/sabbir_avatar.jpeg';
   if (!author || !author.avatar || author.avatar.includes('sabbir_avatar') || author.name === PERSONAL_INFO.name) {
-    return PERSONAL_INFO.avatar || '/sabbir_avatar.jpeg';
+    return liveAvatar;
   }
   return author.avatar;
 };
@@ -41,19 +46,29 @@ interface BlogListProps {
 
 export default function BlogList({ onSelectPost }: BlogListProps) {
   const [posts, setPosts] = useState<BlogPost[]>(() => getStoredBlogPosts());
+  const [categories, setCategories] = useState<string[]>(() => getAllBlogFilterCategories());
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'title'>('newest');
+  const [isAdmin, setIsAdmin] = useState<boolean>(() => isAdminAuthenticated());
 
-  // Subscribe to blog store updates
+  // Subscribe to blog store and admin session updates
   useEffect(() => {
     const refreshPosts = () => {
       setPosts(getStoredBlogPosts());
+      setCategories(getAllBlogFilterCategories());
+    };
+    const syncAdmin = () => {
+      setIsAdmin(isAdminAuthenticated());
     };
 
     window.addEventListener(BLOGS_UPDATED_EVENT, refreshPosts);
+    window.addEventListener(PORTFOLIO_UPDATED_EVENT, refreshPosts);
+    window.addEventListener('admin_auth_changed', syncAdmin);
     return () => {
       window.removeEventListener(BLOGS_UPDATED_EVENT, refreshPosts);
+      window.removeEventListener(PORTFOLIO_UPDATED_EVENT, refreshPosts);
+      window.removeEventListener('admin_auth_changed', syncAdmin);
     };
   }, []);
 
@@ -63,9 +78,13 @@ export default function BlogList({ onSelectPost }: BlogListProps) {
     window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
   }, []);
 
-  // Public visitors only see published posts
+  // Public visitors only see published posts; authenticated CMS admin can also preview drafts
   const publishedPosts = useMemo(() => {
     return posts.filter((p) => p.status !== 'Draft');
+  }, [posts]);
+
+  const draftCount = useMemo(() => {
+    return posts.filter((p) => p.status === 'Draft').length;
   }, [posts]);
 
   // Filter & Sort blog posts dynamically
@@ -141,12 +160,22 @@ export default function BlogList({ onSelectPost }: BlogListProps) {
             </p>
           </div>
 
-          {/* Published Articles Metric Badge */}
-          <div className="flex items-center gap-3 shrink-0">
+          {/* Published Articles Metric & Admin CMS Shortcut */}
+          <div className="flex flex-wrap items-center gap-3 shrink-0">
             <div className="flex items-center space-x-2 px-4 py-2.5 rounded-full bg-white/5 border border-white/10 text-xs font-mono text-[#D1D5DB] shadow-sm">
               <BookOpen className="w-4 h-4 text-[var(--color-accent)]" />
               <span><strong>{totalPublishedCount}</strong> Technical Articles</span>
             </div>
+            {isAdmin && (
+              <button
+                type="button"
+                onClick={() => navigateTo('/admin?tab=blogs')}
+                className="inline-flex items-center space-x-2 px-4 py-2.5 rounded-full bg-indigo-600/20 hover:bg-indigo-600/35 border border-indigo-500/40 text-xs font-mono font-bold text-indigo-200 transition-colors cursor-pointer"
+              >
+                <Edit3 className="w-3.5 h-3.5" />
+                <span>Manage Articles{draftCount > 0 ? ` (${draftCount} Drafts)` : ''}</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -201,7 +230,7 @@ export default function BlogList({ onSelectPost }: BlogListProps) {
             <span className="text-xs font-mono text-[#9CA3AF] uppercase mr-1 flex items-center gap-1">
               <Filter className="w-3.5 h-3.5 text-[var(--color-accent)]" /> Category:
             </span>
-            {BLOG_CATEGORIES.map((cat) => {
+            {categories.map((cat) => {
               const isActive = selectedCategory === cat;
               return (
                 <button

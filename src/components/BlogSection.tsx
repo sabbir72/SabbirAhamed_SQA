@@ -20,11 +20,13 @@ import {
 } from 'lucide-react';
 import { BlogPost } from '../data/blogs';
 import { getStoredBlogPosts, BLOGS_UPDATED_EVENT } from '../utils/blogStore';
+import { getStoredProfile, PORTFOLIO_UPDATED_EVENT } from '../utils/portfolioStore';
 import { PERSONAL_INFO } from '../data';
 
 const getAuthorAvatar = (author?: { name?: string; avatar?: string }) => {
+  const liveAvatar = getStoredProfile().avatar || PERSONAL_INFO.avatar || '/sabbir_avatar.jpeg';
   if (!author || !author.avatar || author.avatar.includes('sabbir_avatar') || author.name === PERSONAL_INFO.name) {
-    return PERSONAL_INFO.avatar || '/sabbir_avatar.jpeg';
+    return liveAvatar;
   }
   return author.avatar;
 };
@@ -42,8 +44,10 @@ export default function BlogSection({ onSelectPost, onViewAllBlog }: BlogSection
       setPosts(getStoredBlogPosts());
     };
     window.addEventListener(BLOGS_UPDATED_EVENT, handleUpdate);
+    window.addEventListener(PORTFOLIO_UPDATED_EVENT, handleUpdate);
     return () => {
       window.removeEventListener(BLOGS_UPDATED_EVENT, handleUpdate);
+      window.removeEventListener(PORTFOLIO_UPDATED_EVENT, handleUpdate);
     };
   }, []);
 
@@ -53,7 +57,7 @@ export default function BlogSection({ onSelectPost, onViewAllBlog }: BlogSection
   const secondaryPosts = publishedPosts.filter(p => p.id !== featuredPost?.id).slice(0, 3);
 
   return (
-    <section id="blog" className="py-20 relative bg-[#0B0D12] border-t border-white/10 overflow-hidden">
+    <section id="blog" className="py-20 relative bg-transparent border-t border-white/10 overflow-hidden">
       {/* Background Ambience */}
       <div className="absolute top-1/3 left-0 w-96 h-96 bg-[var(--color-accent)]/5 rounded-full blur-3xl pointer-events-none" />
       <div className="absolute bottom-0 right-0 w-96 h-96 bg-blue-500/5 rounded-full blur-3xl pointer-events-none" />

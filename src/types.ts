@@ -70,6 +70,7 @@ export interface Project {
   logs: TestLog[];
   tags: string[];
   link?: string;
+  image?: string;
 }
 
 /**

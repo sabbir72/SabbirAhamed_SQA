@@ -23,7 +23,7 @@ export default function ExperienceTimeline() {
   }, []);
 
   return (
-    <section id="experience" className="py-24 bg-[#0B0D12] text-[#F3F4F6] border-t border-white/10 px-4 sm:px-6 relative">
+    <section id="experience" className="py-24 bg-transparent text-[#F3F4F6] border-t border-white/10 px-4 sm:px-6 relative">
       <div className="max-w-5xl mx-auto relative z-10 space-y-12">
         <div className="text-center max-w-3xl mx-auto space-y-3">
           <p className="text-xs font-mono font-bold text-[var(--color-accent)] tracking-widest uppercase mb-1 flex items-center justify-center gap-1.5">

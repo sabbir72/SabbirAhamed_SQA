@@ -2,43 +2,49 @@
  * -----------------------------------------
  * Project     : Sabbir Ahamed SQA Portfolio
  * Module      : Single Blog Post View
- * Description : Renders detailed single blog post with table of contents, markdown rendering,
- *               code block copy snippets, social sharing, Edit button, and article navigation.
+ * Description : Clean, distraction-free reader view for published technical articles.
+ *               Separates public reading from CMS administration:
+ *               - No standalone passcode modals or lock prompts inside articles.
+ *               - Draft articles remain strictly hidden from public visitors and
+ *                 public prev/next navigation, while authenticated CMS admins can
+ *                 preview, edit, or publish drafts seamlessly under the unified
+ *                 CMS Admin Panel session.
  * Author      : Sabbir Ahamed
- * Last Updated: 2026-08-04
+ * Last Updated: 2026-10-24
  * -----------------------------------------
  */
 
 import { useState, useEffect, useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
-import { 
-  ArrowLeft, 
-  Calendar, 
-  Clock, 
-  Share2, 
-  Linkedin, 
-  Twitter, 
-  Copy, 
-  Check, 
-  List, 
+import {
+  ArrowLeft,
+  Calendar,
+  Clock,
+  Share2,
+  Linkedin,
+  Twitter,
+  Copy,
+  Check,
+  List,
   ArrowRight,
-  BookOpen,
-  Sparkles,
-  ShieldCheck,
   Code,
-  Edit2
+  Edit2,
+  EyeOff,
+  Globe,
+  LayoutGrid,
 } from 'lucide-react';
 import { BlogPost as BlogPostType } from '../data/blogs';
-import { getStoredBlogPosts, BLOGS_UPDATED_EVENT } from '../utils/blogStore';
+import { getStoredBlogPosts, upsertBlogPost, BLOGS_UPDATED_EVENT } from '../utils/blogStore';
 import { isAdminAuthenticated } from '../utils/adminAuth';
 import { navigateTo } from '../utils/router';
+import { getStoredProfile } from '../utils/portfolioStore';
 import { PERSONAL_INFO } from '../data';
 import CreateBlogModal from './CreateBlogModal';
-import AdminPasscodeModal from './AdminPasscodeModal';
 
 const getAuthorAvatar = (author?: { name?: string; avatar?: string }) => {
+  const liveAvatar = getStoredProfile().avatar || PERSONAL_INFO.avatar || '/sabbir_avatar.jpeg';
   if (!author || !author.avatar || author.avatar.includes('sabbir_avatar') || author.name === PERSONAL_INFO.name) {
-    return PERSONAL_INFO.avatar || '/sabbir_avatar.jpeg';
+    return liveAvatar;
   }
   return author.avatar;
 };
@@ -56,21 +62,24 @@ interface TocItem {
   level: number;
 }
 
-export default function BlogPost({ slug, onBackToBlog, onSelectPost, onOpenContact }: BlogPostProps) {
+export default function BlogPost({ slug, onBackToBlog, onSelectPost }: BlogPostProps) {
   const [posts, setPosts] = useState<BlogPostType[]>(() => getStoredBlogPosts());
   const [copiedLink, setCopiedLink] = useState(false);
   const [copiedCodeId, setCopiedCodeId] = useState<string | null>(null);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
-  const [isPasscodeModalOpen, setIsPasscodeModalOpen] = useState(false);
   const [isAdmin, setIsAdmin] = useState<boolean>(() => isAdminAuthenticated());
 
-  // Subscribe to storage updates & admin auth
+  // Subscribe to storage updates & unified CMS admin session
   useEffect(() => {
     const refreshPosts = () => {
       setPosts(getStoredBlogPosts());
     };
     const syncAdmin = () => {
-      setIsAdmin(isAdminAuthenticated());
+      const authenticated = isAdminAuthenticated();
+      setIsAdmin(authenticated);
+      if (!authenticated) {
+        setIsEditModalOpen(false);
+      }
     };
     window.addEventListener(BLOGS_UPDATED_EVENT, refreshPosts);
     window.addEventListener('admin_auth_changed', syncAdmin);
@@ -80,28 +89,26 @@ export default function BlogPost({ slug, onBackToBlog, onSelectPost, onOpenConta
     };
   }, []);
 
-  const handleEditClick = () => {
-    if (isAdminAuthenticated()) {
-      setIsEditModalOpen(true);
-    } else {
-      setIsPasscodeModalOpen(true);
-    }
-  };
+  // Public visitors strictly see Published articles; CMS Admin can preview Drafts as well
+  const accessiblePosts = useMemo(() => {
+    return isAdmin ? posts : posts.filter((p) => p.status !== 'Draft');
+  }, [posts, isAdmin]);
 
-  // Find post matching slug
+  // Match requested article slug within accessible posts
   const post = useMemo(() => {
-    return posts.find((p) => p.slug === slug) || posts[0];
-  }, [posts, slug]);
+    return accessiblePosts.find((p) => p.slug === slug) || null;
+  }, [accessiblePosts, slug]);
 
-  // Determine previous and next articles
+  // Previous / Next navigation across accessible articles
   const { prevPost, nextPost } = useMemo(() => {
-    const currentIndex = posts.findIndex((p) => p.slug === slug);
-    const prev = currentIndex > 0 ? posts[currentIndex - 1] : null;
-    const next = currentIndex < posts.length - 1 ? posts[currentIndex + 1] : null;
+    if (!post) return { prevPost: null, nextPost: null };
+    const currentIndex = accessiblePosts.findIndex((p) => p.slug === post.slug);
+    const prev = currentIndex > 0 ? accessiblePosts[currentIndex - 1] : null;
+    const next = currentIndex >= 0 && currentIndex < accessiblePosts.length - 1 ? accessiblePosts[currentIndex + 1] : null;
     return { prevPost: prev, nextPost: next };
-  }, [posts, slug]);
+  }, [accessiblePosts, post]);
 
-  // Extract Table of Contents from markdown content
+  // Extract Table of Contents from markdown headings
   const toc: TocItem[] = useMemo(() => {
     if (!post?.content) return [];
     const lines = post.content.split('\n');
@@ -123,10 +130,12 @@ export default function BlogPost({ slug, onBackToBlog, onSelectPost, onOpenConta
     return items;
   }, [post?.content]);
 
-  // Set document title
+  // Set document title & reset scroll position
   useEffect(() => {
     if (post) {
       document.title = `${post.title} | Sabbir Ahamed Blog`;
+    } else {
+      document.title = 'Article Not Found | Sabbir Ahamed Blog';
     }
     window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
   }, [post]);
@@ -143,16 +152,29 @@ export default function BlogPost({ slug, onBackToBlog, onSelectPost, onOpenConta
     setTimeout(() => setCopiedCodeId(null), 2000);
   };
 
+  const handlePublishDraftDirectly = () => {
+    if (!post || !isAdminAuthenticated()) return;
+    upsertBlogPost({
+      ...post,
+      status: 'Published',
+    });
+    setPosts(getStoredBlogPosts());
+  };
+
   if (!post) {
     return (
-      <div className="pt-28 pb-20 min-h-screen bg-[#0B0D12] text-white flex items-center justify-center">
-        <div className="text-center space-y-4">
-          <h2 className="text-2xl font-bold">Article Not Found</h2>
+      <div className="pt-28 pb-20 min-h-screen bg-[#0B0D12] text-white flex items-center justify-center px-4">
+        <div className="max-w-md w-full bg-[#12151C] border border-white/10 rounded-3xl p-8 text-center space-y-4 shadow-2xl">
+          <h2 className="font-display text-2xl font-bold text-white">Article Not Available</h2>
+          <p className="text-xs font-mono text-[#9CA3AF] leading-relaxed">
+            This article may have been moved, unpublished as a private draft, or the URL slug has changed.
+          </p>
           <button
             onClick={onBackToBlog}
-            className="px-6 py-2.5 rounded-full bg-[var(--color-accent)] text-white font-mono text-xs font-bold cursor-pointer"
+            className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full bg-[var(--color-accent)] text-black font-mono text-xs font-bold cursor-pointer transition-transform hover:scale-105"
           >
-            Return to Blog Index
+            <ArrowLeft className="w-3.5 h-3.5" />
+            <span>Back to All Articles</span>
           </button>
         </div>
       </div>
@@ -169,24 +191,38 @@ export default function BlogPost({ slug, onBackToBlog, onSelectPost, onOpenConta
 
       <article className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10 space-y-10">
         
-        {/* ==================== DRAFT BANNER ==================== */}
-        {isDraft && (
-          <div className="p-4 rounded-2xl bg-amber-950/80 border border-amber-500/40 text-amber-300 text-xs font-mono flex items-center justify-between shadow-xl">
-            <div className="flex items-center space-x-2">
-              <Sparkles className="w-4 h-4 text-amber-400 shrink-0" />
-              <span><strong>Draft Post:</strong> This post is saved as a Draft and only visible in Admin mode.</span>
+        {/* ==================== ADMIN-ONLY DRAFT PREVIEW BAR ==================== */}
+        {isAdmin && isDraft && (
+          <div className="p-4 rounded-2xl bg-amber-950/70 border border-amber-500/35 text-amber-200 text-xs font-mono flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xl">
+            <div className="flex items-center space-x-2.5">
+              <EyeOff className="w-4 h-4 text-amber-400 shrink-0" />
+              <span>
+                <strong>Draft Preview:</strong> Hidden from public visitors until published from your CMS session.
+              </span>
             </div>
-            <button
-              onClick={handleEditClick}
-              className="px-3 py-1 rounded-full bg-amber-500 text-black font-bold text-[11px] hover:bg-amber-400 transition-colors cursor-pointer"
-            >
-              Publish Now
-            </button>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={handlePublishDraftDirectly}
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-[11px] transition-colors cursor-pointer whitespace-nowrap"
+              >
+                <Globe className="w-3.5 h-3.5" />
+                <span>Publish Live</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsEditModalOpen(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-[11px] transition-colors cursor-pointer whitespace-nowrap"
+              >
+                <Edit2 className="w-3 h-3" />
+                <span>Edit Draft</span>
+              </button>
+            </div>
           </div>
         )}
 
         {/* ==================== BREADCRUMB & BACK BUTTON ==================== */}
-        <div className="flex items-center justify-between pt-2">
+        <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
           <button
             onClick={onBackToBlog}
             className="inline-flex items-center space-x-2 px-4 py-2 rounded-full bg-white/[0.05] hover:bg-white/10 border border-white/10 text-xs font-mono text-[#D1D5DB] hover:text-white transition-all cursor-pointer"
@@ -195,19 +231,31 @@ export default function BlogPost({ slug, onBackToBlog, onSelectPost, onOpenConta
             <span>Back to All Articles</span>
           </button>
 
-          <div className="flex items-center space-x-2">
+          <div className="flex flex-wrap items-center gap-2">
             {isAdmin && (
-              <button
-                onClick={handleEditClick}
-                className="inline-flex items-center space-x-1.5 px-3.5 py-1.5 rounded-full bg-white/10 hover:bg-white/20 border border-white/15 text-xs font-mono text-white transition-all cursor-pointer"
-                title="Edit Article (Admin Only)"
-              >
-                <Edit2 className="w-3.5 h-3.5 text-[var(--color-accent)]" />
-                <span>Edit Article</span>
-              </button>
+              <>
+                <button
+                  type="button"
+                  onClick={() => setIsEditModalOpen(true)}
+                  className="inline-flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl bg-white/[0.07] hover:bg-white/15 border border-white/15 text-xs font-mono text-white transition-all cursor-pointer"
+                  title="Edit Article"
+                >
+                  <Edit2 className="w-3.5 h-3.5 text-[var(--color-accent)]" />
+                  <span>Edit Article</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => navigateTo('/admin?tab=blogs')}
+                  className="inline-flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/30 text-xs font-mono text-indigo-200 transition-all cursor-pointer"
+                  title="Open Blogs & Articles in CMS Admin Portal"
+                >
+                  <LayoutGrid className="w-3.5 h-3.5 text-indigo-400" />
+                  <span>CMS Articles</span>
+                </button>
+              </>
             )}
 
-            <span className="px-3.5 py-1 rounded-full bg-[var(--color-accent)]/10 border border-[var(--color-accent)]/30 text-[var(--color-accent)] text-xs font-mono font-bold uppercase tracking-wider">
+            <span className="px-3 py-1 rounded-lg bg-[var(--color-accent)]/10 border border-[var(--color-accent)]/30 text-[var(--color-accent)] text-xs font-mono font-bold uppercase tracking-wider">
               {post.category}
             </span>
           </div>
@@ -270,7 +318,10 @@ export default function BlogPost({ slug, onBackToBlog, onSelectPost, onOpenConta
             </div>
             <ul className="space-y-1.5 text-xs font-mono text-[#9CA3AF]">
               {toc.map((item) => (
-                <li key={item.id} style={{ paddingLeft: `${(item.level - 1) * 12}px` }}>
+                <li
+                  key={item.id}
+                  className={item.level === 2 ? 'pl-3' : item.level >= 3 ? 'pl-6' : ''}
+                >
                   <a
                     href={`#${item.id}`}
                     onClick={(e) => {
@@ -338,7 +389,7 @@ export default function BlogPost({ slug, onBackToBlog, onSelectPost, onOpenConta
               code: ({ className, children }) => {
                 const match = /language-(\w+)/.exec(className || '');
                 const codeString = String(children).replace(/\n$/, '');
-                const codeId = Math.random().toString(36).substring(2, 9);
+                const codeId = `${match ? match[1] : 'snippet'}-${codeString.length}`;
                 const isInline = !className;
 
                 if (isInline) {
@@ -402,7 +453,7 @@ export default function BlogPost({ slug, onBackToBlog, onSelectPost, onOpenConta
         <div className="pt-6 border-t border-white/10 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex flex-wrap gap-2">
             {post.tags && post.tags.map((tag) => (
-              <span key={tag} className="text-xs font-mono px-3 py-1 rounded-full bg-white/5 text-[#D1D5DB] border border-white/10">
+              <span key={tag} className="text-xs font-mono px-2.5 py-1 rounded-md bg-white/5 text-[#D1D5DB] border border-white/10">
                 #{tag}
               </span>
             ))}
@@ -493,26 +544,19 @@ export default function BlogPost({ slug, onBackToBlog, onSelectPost, onOpenConta
 
       </article>
 
-      {/* Edit Modal */}
-      <CreateBlogModal
-        isOpen={isEditModalOpen}
-        onClose={() => setIsEditModalOpen(false)}
-        postToEdit={post}
-        onSaved={(updated) => {
-          if (updated.slug !== slug) {
-            navigateTo(`/blog/${updated.slug}`);
-          }
-        }}
-      />
-
-      {/* Admin Passcode Modal */}
-      <AdminPasscodeModal
-        isOpen={isPasscodeModalOpen}
-        onClose={() => setIsPasscodeModalOpen(false)}
-        onSuccess={() => {
-          setIsEditModalOpen(true);
-        }}
-      />
+      {/* Admin Article Editor Modal (active only during authenticated CMS session — no separate lock popup) */}
+      {isAdmin && isEditModalOpen && (
+        <CreateBlogModal
+          isOpen={isEditModalOpen}
+          onClose={() => setIsEditModalOpen(false)}
+          postToEdit={post}
+          onSaved={(updated) => {
+            if (updated.slug !== slug) {
+              navigateTo(`/blog/${updated.slug}`);
+            }
+          }}
+        />
+      )}
     </div>
   );
 }

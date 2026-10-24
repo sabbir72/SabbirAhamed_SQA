@@ -1,19 +1,20 @@
 import { useState, useEffect } from 'react';
-import { ShieldCheck, Github, Linkedin, Mail, Menu, X } from 'lucide-react';
+import { Github, Linkedin, Mail, Menu, X, Nfc } from 'lucide-react';
 import { PERSONAL_INFO } from '../data';
 import { navigateTo, navigateToHomeSection } from '../utils/router';
+import { QaLogo } from './QaLogo';
 
 interface NavbarProps {
   dark?: boolean;
   setDark?: (val: boolean | ((prev: boolean) => boolean)) => void;
   onOpenResumeBuilder?: () => void;
   onOpenCoverLetter?: () => void;
+  onOpenVisitingCard?: () => void;
   currentPath?: string;
 }
 
 export default function Navbar({ 
-  onOpenResumeBuilder, 
-  onOpenCoverLetter, 
+  onOpenVisitingCard,
   currentPath = '/' 
 }: NavbarProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -81,15 +82,8 @@ export default function Navbar({
       }`}>
         <nav className="max-w-7xl mx-auto px-4 sm:px-6 flex items-center justify-between gap-4" aria-label="Main navigation">
           {/* Brand Logo */}
-          <a href="#about" onClick={handleLogoClick} className="flex items-center space-x-2.5 group shrink-0">
-            <div className="bg-[var(--color-accent)]/10 p-2 rounded-xl border border-[var(--color-accent)]/25 group-hover:border-[var(--color-accent)] transition-colors">
-              <ShieldCheck className="w-5 h-5 text-[var(--color-accent)]" />
-            </div>
-            <div>
-              <span className="font-display font-extrabold text-lg tracking-tight text-white whitespace-nowrap">
-                Sabbir<span className="text-[var(--color-accent)]">.SQAE</span>
-              </span>
-            </div>
+          <a href="#about" onClick={handleLogoClick} className="group shrink-0" aria-label="Sabbir QA Home">
+            <QaLogo variant="navbar" />
           </a>
 
           {/* Desktop Navigation Links */}
@@ -135,6 +129,19 @@ export default function Navbar({
               <Linkedin className="w-4 h-4" />
             </a>
 
+            {/* Smart Virtual Visiting Card Button */}
+            {onOpenVisitingCard && (
+              <button
+                onClick={onOpenVisitingCard}
+                className="hidden sm:inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-full bg-white/[0.05] hover:bg-white/10 text-white border border-white/10 hover:border-[var(--color-accent)] transition-all text-xs font-medium cursor-pointer shadow-sm group"
+                title="Smart Virtual Visiting Card (NFC & QR)"
+              >
+                <Nfc className="w-3.5 h-3.5 text-[var(--color-accent)] group-hover:scale-110 transition-transform" />
+                <span className="hidden md:inline">Visiting Card</span>
+                <span className="px-1.5 py-0.2 rounded text-[9px] font-mono font-bold bg-[var(--color-accent)]/20 text-[var(--color-accent)]">NFC</span>
+              </button>
+            )}
+
             {/* Hire Me Primary Button */}
             <a
               href="#contact"
@@ -179,7 +186,20 @@ export default function Navbar({
               </a>
             ))}
 
-            <div className="pt-4">
+            {onOpenVisitingCard && (
+              <button
+                onClick={() => {
+                  setMobileMenuOpen(false);
+                  onOpenVisitingCard();
+                }}
+                className="flex items-center space-x-2.5 w-full min-h-[44px] py-2.5 text-[#D1D5DB] hover:text-[var(--color-accent)] border-b border-white/[0.04] transition-colors text-left cursor-pointer"
+              >
+                <Nfc className="w-4 h-4 text-[var(--color-accent)] shrink-0" />
+                <span>Virtual Visiting Card (NFC &amp; QR)</span>
+              </button>
+            )}
+
+            <div className="pt-3">
               <a
                 href="#contact"
                 onClick={(e) => {
@@ -187,7 +207,7 @@ export default function Navbar({
                   setMobileMenuOpen(false);
                   navigateToHomeSection('#contact');
                 }}
-                className="flex items-center justify-center space-x-2 w-full py-3 shimmer text-black font-bold rounded-full text-xs shadow-lg cursor-pointer"
+                className="flex items-center justify-center space-x-2 w-full min-h-[46px] py-3 shimmer text-black font-bold rounded-full text-xs shadow-lg cursor-pointer whitespace-nowrap"
                 style={{
                   backgroundColor: 'var(--color-accent)',
                   boxShadow: '0 8px 20px -5px var(--color-accent-glow)'

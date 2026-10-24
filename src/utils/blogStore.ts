@@ -9,30 +9,132 @@
  * -----------------------------------------
  */
 
-import { BlogPost, BLOG_POSTS } from '../data/blogs';
+import { BlogPost, BLOG_POSTS, BLOG_CATEGORIES } from '../data/blogs';
 import { isAdminAuthenticated } from './adminAuth';
+import { getStoredProfile } from './portfolioStore';
 import { PERSONAL_INFO } from '../data';
 
 const STORAGE_KEY = 'sabbir_portfolio_blogs_v1';
+const CATEGORIES_STORAGE_KEY = 'sabbir_portfolio_blog_categories_v1';
 export const BLOGS_UPDATED_EVENT = 'sabbir_blogs_updated';
+
+const DEFAULT_CUSTOM_CATEGORIES = BLOG_CATEGORIES.filter((c) => c !== 'All');
+
+/**
+ * Retrieve all available blog categories (excluding 'All'), combining stored custom categories
+ * and any categories used by existing blog posts.
+ */
+export function getStoredBlogCategories(): string[] {
+  let savedCategories: string[] = [];
+  try {
+    const raw = localStorage.getItem(CATEGORIES_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        savedCategories = parsed.filter((c): c is string => typeof c === 'string' && c.trim().length > 0 && c.trim().toLowerCase() !== 'all');
+      }
+    }
+  } catch (err) {
+    console.error('Error reading blog categories from localStorage:', err);
+  }
+
+  if (savedCategories.length === 0) {
+    savedCategories = [...DEFAULT_CUSTOM_CATEGORIES];
+    try {
+      localStorage.setItem(CATEGORIES_STORAGE_KEY, JSON.stringify(savedCategories));
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  // Merge in any categories already used on existing posts without case-insensitive duplicates
+  const posts = getStoredBlogPosts();
+  const merged = [...savedCategories];
+  for (const post of posts) {
+    const cat = post.category?.trim();
+    if (cat && cat.toLowerCase() !== 'all' && !merged.some((existing) => existing.toLowerCase() === cat.toLowerCase())) {
+      merged.push(cat);
+    }
+  }
+
+  return merged;
+}
+
+/**
+ * Retrieve all categories prefixed with 'All' for filter bars
+ */
+export function getAllBlogFilterCategories(): string[] {
+  return ['All', ...getStoredBlogCategories()];
+}
+
+/**
+ * Create and persist a new blog category
+ */
+export function addBlogCategory(categoryName: string): string[] {
+  const trimmed = categoryName.trim();
+  const current = getStoredBlogCategories();
+  if (!trimmed || trimmed.toLowerCase() === 'all') {
+    return current;
+  }
+
+  const exists = current.some((c) => c.toLowerCase() === trimmed.toLowerCase());
+  const updated = exists ? current : [...current, trimmed];
+
+  try {
+    localStorage.setItem(CATEGORIES_STORAGE_KEY, JSON.stringify(updated));
+    window.dispatchEvent(new Event(BLOGS_UPDATED_EVENT));
+  } catch (err) {
+    console.error('Error saving blog categories:', err);
+  }
+
+  return updated;
+}
+
+/**
+ * Remove a category from the stored categories list
+ */
+export function deleteBlogCategory(categoryName: string): string[] {
+  const trimmed = categoryName.trim().toLowerCase();
+  const current = getStoredBlogCategories();
+  const updated = current.filter((c) => c.toLowerCase() !== trimmed);
+  const finalCategories = updated.length > 0 ? updated : ['Software Testing'];
+
+  try {
+    localStorage.setItem(CATEGORIES_STORAGE_KEY, JSON.stringify(finalCategories));
+    window.dispatchEvent(new Event(BLOGS_UPDATED_EVENT));
+  } catch (err) {
+    console.error('Error deleting blog category:', err);
+  }
+
+  return finalCategories;
+}
 
 /**
  * Normalizes author avatar to always reflect the main profile avatar from PERSONAL_INFO
  */
 function normalizeAuthorAvatar(post: BlogPost): BlogPost {
+  const liveProfile = getStoredProfile();
   const currentAvatar = post.author?.avatar || '';
-  const isSabbir = !post.author?.name || post.author.name === PERSONAL_INFO.name;
-  const isInternalAvatar = currentAvatar.includes('sabbir_avatar') || currentAvatar.includes('./assets') || !currentAvatar;
+  const isSabbir =
+    !post.author?.name ||
+    post.author.name === PERSONAL_INFO.name ||
+    post.author.name === liveProfile.name;
+  const isInternalAvatar =
+    currentAvatar.includes('sabbir_avatar') ||
+    currentAvatar.includes('./assets') ||
+    !currentAvatar;
 
   if (isSabbir || isInternalAvatar) {
     return {
       ...post,
       author: {
         ...post.author,
-        name: post.author?.name || PERSONAL_INFO.name,
-        role: post.author?.role || PERSONAL_INFO.title,
-        avatar: PERSONAL_INFO.avatar || '/sabbir_avatar.jpeg',
-        bio: post.author?.bio || 'SQA Engineer specializing in Manual & Automated Testing, API Validation, ERPNext QA, and CI/CD Quality Gates.',
+        name: post.author?.name || liveProfile.name || PERSONAL_INFO.name,
+        role: post.author?.role || liveProfile.title || PERSONAL_INFO.title,
+        avatar: liveProfile.avatar || PERSONAL_INFO.avatar || '/sabbir_avatar.jpeg',
+        bio:
+          post.author?.bio ||
+          'SQA Engineer specializing in Manual & Automated Testing, API Validation, ERPNext QA, and CI/CD Quality Gates.',
       },
     };
   }
@@ -136,15 +238,18 @@ export function calculateReadingTime(content: string): string {
 /**
  * Create or Update a Blog Post (Restricted strictly to authenticated Admin)
  */
-export function upsertBlogPost(postData: Partial<BlogPost> & { title: string; content: string }): BlogPost {
+export function upsertBlogPost(postData: Partial<BlogPost> & { title?: string; content?: string }): BlogPost {
   if (!isAdminAuthenticated()) {
     throw new Error('Unauthorized: Admin authentication required to create or modify blog posts.');
   }
 
   const posts = getStoredBlogPosts();
   
+  const postTitle = postData.title?.trim() || 'Untitled Article';
+  const postContent = postData.content ?? '';
+
   // Clean / generate slug
-  let cleanSlug = postData.slug ? generateSlug(postData.slug) : generateSlug(postData.title);
+  let cleanSlug = postData.slug?.trim() ? generateSlug(postData.slug) : generateSlug(postTitle);
   if (!cleanSlug) {
     cleanSlug = `blog-${Date.now()}`;
   }
@@ -169,18 +274,21 @@ export function upsertBlogPost(postData: Partial<BlogPost> & { title: string; co
     const index = posts.findIndex(p => p.id === postData.id);
     if (index !== -1) {
       const existing = posts[index];
+      const resolvedCategory = postData.category?.trim() || existing.category || 'Software Testing';
+      addBlogCategory(resolvedCategory);
+
       const updatedPost: BlogPost = {
         ...existing,
         ...postData,
         id: existing.id,
-        title: postData.title,
+        title: postTitle,
         slug: finalSlug,
-        content: postData.content,
-        category: postData.category || existing.category || 'Software Testing',
-        description: postData.description || existing.description || '',
+        content: postContent,
+        category: resolvedCategory,
+        description: postData.description !== undefined ? postData.description : (existing.description || ''),
         coverImage: postData.coverImage || existing.coverImage || 'https://images.unsplash.com/photo-1618401471353-b98afee0b2eb?auto=format&fit=crop&q=80&w=1200',
         publishDate: postData.publishDate || existing.publishDate || formattedDate,
-        readingTime: postData.readingTime || calculateReadingTime(postData.content),
+        readingTime: postData.readingTime || calculateReadingTime(postContent),
         tags: postData.tags || existing.tags || ['QA'],
         featured: postData.featured ?? existing.featured ?? false,
         status: postData.status || existing.status || 'Published',
@@ -199,16 +307,19 @@ export function upsertBlogPost(postData: Partial<BlogPost> & { title: string; co
   }
 
   // CREATE new post
+  const resolvedNewCategory = postData.category?.trim() || 'Software Testing';
+  addBlogCategory(resolvedNewCategory);
+
   const newPost: BlogPost = {
     id: `post_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-    title: postData.title,
+    title: postTitle,
     slug: finalSlug,
-    category: postData.category || 'Software Testing',
+    category: resolvedNewCategory,
     description: postData.description || '',
-    content: postData.content,
+    content: postContent,
     coverImage: postData.coverImage || 'https://images.unsplash.com/photo-1618401471353-b98afee0b2eb?auto=format&fit=crop&q=80&w=1200',
     publishDate: postData.publishDate || formattedDate,
-    readingTime: postData.readingTime || calculateReadingTime(postData.content),
+    readingTime: postData.readingTime || calculateReadingTime(postContent),
     tags: postData.tags && postData.tags.length > 0 ? postData.tags : ['Software Testing', 'SQA'],
     featured: postData.featured || false,
     status: postData.status || 'Published',
@@ -258,6 +369,7 @@ export function resetStoredBlogPosts(): BlogPost[] {
     status: 'Published' as const,
   }));
   localStorage.setItem(STORAGE_KEY, JSON.stringify(defaults));
+  localStorage.setItem(CATEGORIES_STORAGE_KEY, JSON.stringify(DEFAULT_CUSTOM_CATEGORIES));
   window.dispatchEvent(new Event(BLOGS_UPDATED_EVENT));
   return defaults;
 }

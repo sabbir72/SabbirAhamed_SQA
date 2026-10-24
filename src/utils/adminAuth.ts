@@ -1,26 +1,33 @@
 /**
  * -----------------------------------------
  * Project     : Sabbir Ahamed SQA Portfolio
- * Module      : Admin Authentication & Auto-Logout Session Lock
- * Description : Securely verifies Admin Passcode via backend API without storing or
- *               exposing hardcoded passcodes in client-side code, DOM, or storage.
- *               Includes strict 2-Minute Inactivity Auto-Logout for Portfolio Admin CMS.
+ * Module      : Unified Main Security & Authentication Manager
+ * Description : Single centralized authentication & password update service
+ *               with 2-minute inactivity auto-lock for the entire portfolio CMS.
  * Author      : Sabbir Ahamed
- * Last Updated: 2026-10-14
+ * Last Updated: 2026-10-24
  * -----------------------------------------
  */
 
 const ADMIN_TOKEN_KEY = 'sabbir_sqa_admin_token';
 const ADMIN_LAST_ACTIVE_KEY = 'sabbir_sqa_admin_last_active';
+const ADMIN_LOCAL_PASS_HASH_KEY = 'sabbir_sqa_admin_custom_hash';
 
-/**
- * Strict 2-Minute Session Timeout (120 seconds = 120,000 milliseconds)
- * User requested: "protfolia admin cms logout 2 min por por auto logut hoy jabe"
- */
 export const ADMIN_SESSION_TIMEOUT_MS = 2 * 60 * 1000;
 export const ADMIN_SESSION_TIMEOUT_SECONDS = 120;
 export const ADMIN_AUTH_CHANGED_EVENT = 'admin_auth_changed';
 export const ADMIN_SESSION_EXPIRED_EVENT = 'admin_session_expired';
+
+async function sha256Hex(input: string): Promise<string> {
+  if (typeof window !== 'undefined' && window.crypto?.subtle) {
+    const encoded = new TextEncoder().encode(input);
+    const digest = await window.crypto.subtle.digest('SHA-256', encoded);
+    return Array.from(new Uint8Array(digest))
+      .map((b) => b.toString(16).padStart(2, '0'))
+      .join('');
+  }
+  return input;
+}
 
 /**
  * Record active interaction to keep session alive during the 2-minute window
@@ -30,10 +37,10 @@ export function recordAdminActivity(): void {
     const token = sessionStorage.getItem(ADMIN_TOKEN_KEY) || localStorage.getItem(ADMIN_TOKEN_KEY);
     if (token && token.startsWith('sabbir_sqa_admin_')) {
       const now = Date.now();
-      const lastActiveRaw = sessionStorage.getItem(ADMIN_LAST_ACTIVE_KEY) || localStorage.getItem(ADMIN_LAST_ACTIVE_KEY);
+      const lastActiveRaw =
+        sessionStorage.getItem(ADMIN_LAST_ACTIVE_KEY) || localStorage.getItem(ADMIN_LAST_ACTIVE_KEY);
       const lastActive = lastActiveRaw ? parseInt(lastActiveRaw, 10) : now;
 
-      // If already expired, do not revive
       if (now - lastActive > ADMIN_SESSION_TIMEOUT_MS) {
         logoutAdmin(true);
         return;
@@ -42,7 +49,7 @@ export function recordAdminActivity(): void {
       sessionStorage.setItem(ADMIN_LAST_ACTIVE_KEY, String(now));
       localStorage.setItem(ADMIN_LAST_ACTIVE_KEY, String(now));
     }
-  } catch (err) {
+  } catch {
     // Ignore storage errors
   }
 }
@@ -57,7 +64,8 @@ export function getAdminSessionRemainingSeconds(): number {
       return 0;
     }
 
-    const lastActiveRaw = sessionStorage.getItem(ADMIN_LAST_ACTIVE_KEY) || localStorage.getItem(ADMIN_LAST_ACTIVE_KEY);
+    const lastActiveRaw =
+      sessionStorage.getItem(ADMIN_LAST_ACTIVE_KEY) || localStorage.getItem(ADMIN_LAST_ACTIVE_KEY);
     if (!lastActiveRaw) {
       return ADMIN_SESSION_TIMEOUT_SECONDS;
     }
@@ -71,7 +79,7 @@ export function getAdminSessionRemainingSeconds(): number {
     }
 
     return Math.ceil(remainingMs / 1000);
-  } catch (err) {
+  } catch {
     return 0;
   }
 }
@@ -86,24 +94,23 @@ export function isAdminAuthenticated(): boolean {
       return false;
     }
 
-    const lastActiveRaw = sessionStorage.getItem(ADMIN_LAST_ACTIVE_KEY) || localStorage.getItem(ADMIN_LAST_ACTIVE_KEY);
+    const lastActiveRaw =
+      sessionStorage.getItem(ADMIN_LAST_ACTIVE_KEY) || localStorage.getItem(ADMIN_LAST_ACTIVE_KEY);
     if (lastActiveRaw) {
       const lastActive = parseInt(lastActiveRaw, 10);
       const elapsed = Date.now() - lastActive;
       if (elapsed > ADMIN_SESSION_TIMEOUT_MS) {
-        // 2 minutes expired! Auto logout
         logoutAdmin(true);
         return false;
       }
     } else {
-      // First initialization of lastActive
       const now = Date.now();
       sessionStorage.setItem(ADMIN_LAST_ACTIVE_KEY, String(now));
       localStorage.setItem(ADMIN_LAST_ACTIVE_KEY, String(now));
     }
 
     return true;
-  } catch (err) {
+  } catch {
     return false;
   }
 }
@@ -117,20 +124,26 @@ export function getAdminToken(): string | null {
   }
   try {
     return sessionStorage.getItem(ADMIN_TOKEN_KEY) || localStorage.getItem(ADMIN_TOKEN_KEY);
-  } catch (err) {
+  } catch {
     return null;
   }
 }
 
+function storeAdminToken(token: string): void {
+  const now = Date.now();
+  sessionStorage.setItem(ADMIN_TOKEN_KEY, token);
+  localStorage.setItem(ADMIN_TOKEN_KEY, token);
+  sessionStorage.setItem(ADMIN_LAST_ACTIVE_KEY, String(now));
+  localStorage.setItem(ADMIN_LAST_ACTIVE_KEY, String(now));
+  window.dispatchEvent(new Event(ADMIN_AUTH_CHANGED_EVENT));
+}
+
 /**
  * Verify Admin Passcode via secure backend API endpoint
- * Passcode is sent directly over API and validated on backend server only.
  */
 export async function verifyAdminPasscode(inputCode: string): Promise<boolean> {
   const trimmed = (inputCode || '').trim();
   if (!trimmed) return false;
-
-  const now = Date.now();
 
   try {
     const response = await fetch('/api/admin/verify', {
@@ -144,30 +157,108 @@ export async function verifyAdminPasscode(inputCode: string): Promise<boolean> {
     if (response.ok) {
       const data = await response.json();
       if (data.success && data.token) {
-        sessionStorage.setItem(ADMIN_TOKEN_KEY, data.token);
-        localStorage.setItem(ADMIN_TOKEN_KEY, data.token);
-        sessionStorage.setItem(ADMIN_LAST_ACTIVE_KEY, String(now));
-        localStorage.setItem(ADMIN_LAST_ACTIVE_KEY, String(now));
-        window.dispatchEvent(new Event(ADMIN_AUTH_CHANGED_EVENT));
+        storeAdminToken(data.token);
         return true;
       }
     }
+
+    // Strictly reject invalid passcode responses from backend without falling back to default
+    if (response.status === 401 || response.status === 400 || response.status === 403) {
+      return false;
+    }
   } catch (err) {
-    console.error('Error verifying admin passcode with server:', err);
+    console.error('Network error verifying admin passcode, checking offline hash:', err);
   }
 
-  // Resilient fallback for preview environments or serverless network drops
+  // Offline/static fallback only when server is unreachable
+  try {
+    const savedHash = localStorage.getItem(ADMIN_LOCAL_PASS_HASH_KEY);
+    if (savedHash) {
+      const candidateHash = await sha256Hex(trimmed);
+      if (candidateHash === savedHash) {
+        storeAdminToken(`sabbir_sqa_admin_${Date.now()}`);
+        return true;
+      }
+      return false;
+    }
+  } catch {
+    // ignore
+  }
+
   if (trimmed === 'sabbir@sqa2026') {
-    const fallbackToken = `sabbir_sqa_admin_${now}`;
-    sessionStorage.setItem(ADMIN_TOKEN_KEY, fallbackToken);
-    localStorage.setItem(ADMIN_TOKEN_KEY, fallbackToken);
-    sessionStorage.setItem(ADMIN_LAST_ACTIVE_KEY, String(now));
-    localStorage.setItem(ADMIN_LAST_ACTIVE_KEY, String(now));
-    window.dispatchEvent(new Event(ADMIN_AUTH_CHANGED_EVENT));
+    storeAdminToken(`sabbir_sqa_admin_${Date.now()}`);
     return true;
   }
 
   return false;
+}
+
+/**
+ * Update Admin Password via backend API (requires current password verification)
+ */
+export async function updateAdminPasscode(
+  currentPasscode: string,
+  newPasscode: string
+): Promise<{ success: boolean; error?: string }> {
+  const currentTrimmed = (currentPasscode || '').trim();
+  const nextTrimmed = (newPasscode || '').trim();
+
+  if (!currentTrimmed) {
+    return { success: false, error: 'Current password is required.' };
+  }
+  if (nextTrimmed.length < 4) {
+    return { success: false, error: 'New password must be at least 4 characters.' };
+  }
+
+  const token = getAdminToken() || '';
+
+  try {
+    const response = await fetch('/api/admin/update-passcode', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-admin-token': token,
+      },
+      body: JSON.stringify({
+        currentPasscode: currentTrimmed,
+        newPasscode: nextTrimmed,
+      }),
+    });
+
+    const data = await response.json().catch(() => ({}));
+
+    if (response.ok && data.success) {
+      try {
+        const nextHash = await sha256Hex(nextTrimmed);
+        localStorage.setItem(ADMIN_LOCAL_PASS_HASH_KEY, nextHash);
+      } catch {
+        // ignore
+      }
+      if (data.token) {
+        storeAdminToken(data.token);
+      }
+      return { success: true };
+    }
+
+    return {
+      success: false,
+      error: data.error || 'Incorrect current password or unable to update password.',
+    };
+  } catch {
+    // Offline fallback if running purely client-side
+    const isCurrentValid = await verifyAdminPasscode(currentTrimmed);
+    if (!isCurrentValid) {
+      return { success: false, error: 'Incorrect current password.' };
+    }
+    try {
+      const nextHash = await sha256Hex(nextTrimmed);
+      localStorage.setItem(ADMIN_LOCAL_PASS_HASH_KEY, nextHash);
+      storeAdminToken(`sabbir_sqa_admin_${Date.now()}`);
+      return { success: true };
+    } catch {
+      return { success: false, error: 'Failed to save new password.' };
+    }
+  }
 }
 
 /**
@@ -192,14 +283,13 @@ export async function verifyOwnerWithServer(): Promise<boolean> {
       return Boolean(data.success && data.isOwner);
     }
     return false;
-  } catch (err) {
+  } catch {
     return false;
   }
 }
 
 /**
  * Logout / Lock Admin session
- * @param isAutoExpired If true, triggered automatically by 2-minute timer
  */
 export function logoutAdmin(isAutoExpired = false): void {
   try {
@@ -207,15 +297,17 @@ export function logoutAdmin(isAutoExpired = false): void {
     localStorage.removeItem(ADMIN_TOKEN_KEY);
     sessionStorage.removeItem(ADMIN_LAST_ACTIVE_KEY);
     localStorage.removeItem(ADMIN_LAST_ACTIVE_KEY);
-  } catch (err) {
+  } catch {
     // Ignore storage errors
   }
-  
+
   if (isAutoExpired) {
-    window.dispatchEvent(new CustomEvent(ADMIN_SESSION_EXPIRED_EVENT, { 
-      detail: { reason: 'inactivity_timeout_2min', timestamp: Date.now() } 
-    }));
+    window.dispatchEvent(
+      new CustomEvent(ADMIN_SESSION_EXPIRED_EVENT, {
+        detail: { reason: 'inactivity_timeout_2min', timestamp: Date.now() },
+      })
+    );
   }
-  
+
   window.dispatchEvent(new Event(ADMIN_AUTH_CHANGED_EVENT));
 }

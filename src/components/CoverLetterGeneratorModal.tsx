@@ -3,11 +3,9 @@ import {
   X, Sparkles, Send, Copy, Check, Printer, Download, Edit3, Eye, 
   RotateCcw, FileText, CheckCircle2, AlertTriangle, Lightbulb, 
   Building2, Briefcase, Calendar, MapPin, Globe, UserCheck, 
-  ChevronRight, Bookmark, Trash2, Award, ArrowRight, Type, ExternalLink, Lock
+  ChevronRight, Bookmark, Trash2, Award, ArrowRight, Type, ExternalLink
 } from 'lucide-react';
 import { PERSONAL_INFO, SKILL_CATEGORIES, WORK_EXPERIENCE, PROJECTS, EDUCATION_HISTORY } from '../data';
-import { isAdminAuthenticated } from '../utils/adminAuth';
-import AdminPasscodeModal from './AdminPasscodeModal';
 import html2pdf from 'html2pdf.js';
 
 interface CoverLetterGeneratorModalProps {
@@ -67,7 +65,7 @@ function renderTextWithLinks(text: string) {
       return (
         <a
           key={i}
-          href={normalizeUrl(typeof window !== 'undefined' ? window.location.origin : 'https://sabbirahamed.dev')}
+          href={normalizeUrl(typeof window !== 'undefined' ? window.location.origin : 'https://sabbir-sqa.vercel.app')}
           target="_blank"
           rel="noopener noreferrer"
           className="text-[#ea580c] hover:underline font-semibold"
@@ -131,16 +129,6 @@ export default function CoverLetterGeneratorModal({
   const [isEditing, setIsEditing] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [customContent, setCustomContent] = useState<string>('');
-  const [isAdmin, setIsAdmin] = useState<boolean>(() => isAdminAuthenticated());
-  const [isPasscodeModalOpen, setIsPasscodeModalOpen] = useState<boolean>(false);
-
-  useEffect(() => {
-    const handleAuth = () => {
-      setIsAdmin(isAdminAuthenticated());
-    };
-    window.addEventListener('admin_auth_changed', handleAuth);
-    return () => window.removeEventListener('admin_auth_changed', handleAuth);
-  }, []);
 
   // UI Feedback State
   const [copied, setCopied] = useState(false);
@@ -328,10 +316,6 @@ ${PERSONAL_INFO.title}`;
 
   // Handlers
   const handleGenerate = () => {
-    if (!isAdminAuthenticated()) {
-      setIsPasscodeModalOpen(true);
-      return;
-    }
     setIsGenerating(true);
     setTimeout(() => {
       const generated = generateLetterText(
@@ -350,10 +334,6 @@ ${PERSONAL_INFO.title}`;
   };
 
   const handleCopy = () => {
-    if (!isAdminAuthenticated()) {
-      setIsPasscodeModalOpen(true);
-      return;
-    }
     navigator.clipboard.writeText(activeLetterText);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
@@ -361,10 +341,6 @@ ${PERSONAL_INFO.title}`;
 
   // Browser Print trigger with dedicated isolated iframe for A4 print/PDF output
   const handlePrint = () => {
-    if (!isAdminAuthenticated()) {
-      setIsPasscodeModalOpen(true);
-      return;
-    }
     try {
       window.focus();
       const element = printRef.current;
@@ -452,10 +428,6 @@ ${PERSONAL_INFO.title}`;
   };
 
   const handleDownloadPdf = () => {
-    if (!isAdminAuthenticated()) {
-      setIsPasscodeModalOpen(true);
-      return;
-    }
     if (!printRef.current) return;
     setIsExportingPdf(true);
 
@@ -517,10 +489,6 @@ ${PERSONAL_INFO.title}`;
   };
 
   const handleSaveToHistory = () => {
-    if (!isAdminAuthenticated()) {
-      setIsPasscodeModalOpen(true);
-      return;
-    }
     const newEntry: SavedCoverLetter = {
       id: Date.now().toString(),
       companyName: companyName || 'Company',
@@ -542,56 +510,6 @@ ${PERSONAL_INFO.title}`;
 
   if (!isOpen) return null;
 
-  if (!isAdmin) {
-    return (
-      <>
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-fadeIn">
-          <div className="relative w-full max-w-md bg-[#12151C] border border-blue-500/40 rounded-3xl p-6 sm:p-8 shadow-2xl text-white space-y-6 text-center">
-            <div className="inline-flex p-3.5 rounded-2xl bg-blue-500/10 border border-blue-500/30 text-blue-400 mx-auto">
-              <Lock className="w-8 h-8" />
-            </div>
-            <div className="space-y-2">
-              <h3 className="font-display font-extrabold text-xl text-white">
-                Admin Authentication Required
-              </h3>
-              <p className="text-xs font-mono text-[#9CA3AF] leading-relaxed">
-                Only the verified portfolio administrator (Sabbir Ahamed) has permission to generate, customize, or download tailored Cover Letters.
-              </p>
-            </div>
-            <div className="flex flex-col sm:flex-row gap-3 pt-2">
-              <button
-                onClick={onClose}
-                className="flex-1 py-3 rounded-full bg-white/10 hover:bg-white/20 text-white font-mono text-xs font-bold transition-all cursor-pointer"
-              >
-                Close
-              </button>
-              <button
-                onClick={() => setIsPasscodeModalOpen(true)}
-                className="flex-1 py-3 rounded-full bg-blue-600 hover:bg-blue-500 text-white font-mono text-xs font-bold shadow-lg shadow-blue-600/25 transition-all cursor-pointer flex items-center justify-center space-x-2"
-              >
-                <Lock className="w-3.5 h-3.5" />
-                <span>Admin Unlock</span>
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {isPasscodeModalOpen && (
-          <AdminPasscodeModal
-            isOpen={isPasscodeModalOpen}
-            onClose={() => setIsPasscodeModalOpen(false)}
-            onSuccess={() => {
-              setIsAdmin(true);
-              setIsPasscodeModalOpen(false);
-            }}
-            title="Cover Letter Admin Verification"
-            description="Enter your Admin Security Passcode to generate and download customized Cover Letters."
-          />
-        )}
-      </>
-    );
-  }
-
   return (
     <div className="fixed inset-0 z-50 overflow-hidden bg-black/85 backdrop-blur-md flex flex-col justify-between animate-fadeIn">
       
@@ -599,7 +517,7 @@ ${PERSONAL_INFO.title}`;
       <div className="bg-[#12151C] border-b border-white/10 px-4 sm:px-6 py-3 flex items-center justify-between no-print z-20">
         <div className="flex items-center space-x-3">
           <div className="bg-[var(--color-accent)]/15 p-2 rounded-xl border border-[var(--color-accent)]/30 text-[var(--color-accent)]">
-            <Sparkles className="w-5 h-5 animate-pulse" />
+            <Sparkles className="w-5 h-5" />
           </div>
           <div>
             <h2 className="font-display font-bold text-base sm:text-lg text-white flex items-center gap-2">
@@ -1005,7 +923,7 @@ ${PERSONAL_INFO.title}`;
                             <span>•</span>
                             <a href={normalizeUrl(PERSONAL_INFO.github)} target="_blank" rel="noopener noreferrer" className="text-gray-900 hover:underline font-semibold" style={{ color: '#111827', textDecoration: 'underline' }}>GitHub (Click Here)</a>
                             <span>•</span>
-                            <a href={normalizeUrl(typeof window !== 'undefined' ? window.location.origin : 'https://sabbirahamed.dev')} target="_blank" rel="noopener noreferrer" className="text-[#ea580c] hover:underline font-semibold" style={{ color: '#ea580c', textDecoration: 'underline' }}>Portfolio (Click Here)</a>
+                            <a href={normalizeUrl(typeof window !== 'undefined' ? window.location.origin : 'https://sabbir-sqa.vercel.app')} target="_blank" rel="noopener noreferrer" className="text-[#ea580c] hover:underline font-semibold" style={{ color: '#ea580c', textDecoration: 'underline' }}>Portfolio (Click Here)</a>
                           </div>
                         </div>
                       </div>
@@ -1029,7 +947,7 @@ ${PERSONAL_INFO.title}`;
                           <span>|</span>
                           <a href={normalizeUrl(PERSONAL_INFO.github)} target="_blank" rel="noopener noreferrer" className="text-gray-900 hover:underline font-semibold" style={{ color: '#111827', textDecoration: 'underline' }}>GitHub (Click Here)</a>
                           <span>|</span>
-                          <a href={normalizeUrl(typeof window !== 'undefined' ? window.location.origin : 'https://sabbirahamed.dev')} target="_blank" rel="noopener noreferrer" className="text-[#ea580c] hover:underline font-semibold" style={{ color: '#ea580c', textDecoration: 'underline' }}>Portfolio (Click Here)</a>
+                          <a href={normalizeUrl(typeof window !== 'undefined' ? window.location.origin : 'https://sabbir-sqa.vercel.app')} target="_blank" rel="noopener noreferrer" className="text-[#ea580c] hover:underline font-semibold" style={{ color: '#ea580c', textDecoration: 'underline' }}>Portfolio (Click Here)</a>
                         </p>
                       </div>
                     )}

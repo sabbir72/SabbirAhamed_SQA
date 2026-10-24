@@ -13,15 +13,7 @@ export interface BlogPost {
   id: string;
   title: string;
   slug: string;
-  category: 
-    | 'Software Testing'
-    | 'Playwright'
-    | 'API Testing'
-    | 'ERPNext'
-    | 'QA Career'
-    | 'Automation'
-    | 'AI'
-    | 'Programming';
+  category: string;
   description: string;
   content: string;
   coverImage: string;
@@ -38,7 +30,7 @@ export interface BlogPost {
   };
 }
 
-export const BLOG_CATEGORIES = [
+export const BLOG_CATEGORIES: string[] = [
   'All',
   'Software Testing',
   'Playwright',
@@ -48,7 +40,7 @@ export const BLOG_CATEGORIES = [
   'Automation',
   'AI',
   'Programming',
-] as const;
+];
 
 export const BLOG_POSTS: BlogPost[] = [
   {

@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bangladesh Flag & SQA Particles - Three.js</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    html, body {
+      width: 100%;
+      height: 100%;
+      background: #000;
+      overflow-x: hidden;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+    /* Fixed WebGL Canvas */
+    #canvas-container {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      z-index: 1;
+      pointer-events: none;
+    }
+    /* Scroll Spacer (~500vh to drive the scroll animation) */
+    .scroll-track {
+      height: 500vh;
+      position: relative;
+      z-index: 2;
+      pointer-events: none;
+    }
+  </style>
+  <!-- Three.js r128 from cdnjs -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+
+  <!-- Fixed WebGL Canvas Container -->
+  <div id="canvas-container"></div>
+
+  <!-- 500vh Scroll Track -->
+  <div class="scroll-track"></div>
+
+  <script>
+    // ========================================================================
+    // CONFIGURATION & TWEAKABLE PARAMETERS
+    // ========================================================================
+    const CONFIG = {
+      // 1. Particle Counts (40k desktop, 12k mobile)
+      desktopParticles: 40000,
+      mobileParticles: 12000,
+
+      // 2. Flag Dimensions (10:6 official ratio)
+      flagWidth: 6.4,
+      flagHeight: 3.84,
+      discRadius: 1.28,       // 1/5 of flag length
+      discOffsetX: -0.32,     // 45% of length from left hoist (-3.2 + 2.88)
+
+      // 3. Flag Authentic Colors
+      fieldGreen: [0.0, 0.78, 0.46], // rgb(0, 0.78, 0.46)
+      redDisc: [1.0, 0.16, 0.25],    // rgb(1, 0.16, 0.25)
+
+      // 4. Wave Dynamics
+      waveStrengthZ: 0.30,
+      waveStrengthY: 0.10,
+      waveSpeed: 1.80,
+
+      // 5. Three Rendering Layers (Calibrated for crisp luminescence)
+      coreSize: 2.10,
+      coreGain: 1.15,
+      haloSize: 5.50,
+      haloGain: 0.20,
+      glowSize: 12.0,
+      glowGain: 0.04,
+
+      // 6. Target Text & Typography
+      targetText: 'SQA',
+      textFont: '900 340px "Arial Black", Arial, sans-serif',
+
+      // 7. Scroll Smoothing
+      scrollDamping: 0.035,
+    };
+
+    // ========================================================================
+    // SCENE, CAMERA, RENDERER
+    // ========================================================================
+    const container = document.getElementById('canvas-container');
+    const isMobile = window.innerWidth < 768;
+    const totalParticles = isMobile ? CONFIG.mobileParticles : CONFIG.desktopParticles;
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x000000);
+
+    const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
+    camera.position.set(0, 0, 8.0);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    container.appendChild(renderer.domElement);
+
+    const group = new THREE.Group();
+    scene.add(group);
+
+    const updateGroupScale = () => {
+      const aspect = window.innerWidth / window.innerHeight;
+      const s = Math.min(1.25, (aspect * 8.4 * 0.82) / 6.4);
+      group.scale.set(s, s, s);
+      return s;
+    };
+    let currentScale = updateGroupScale();
+
+    // ========================================================================
+    // FLAG COORDINATES & COLOR SAMPLING
+    // ========================================================================
+    const flagPositions = new Float32Array(totalParticles * 3);
+    const colors = new Float32Array(totalParticles * 3);
+    const randoms = new Float32Array(totalParticles * 2);
+
+    const discX = CONFIG.discOffsetX;
+    const discR = CONFIG.discRadius;
+    const discRSq = discR * discR;
+    const edgeCount = Math.floor(totalParticles * 0.10);
+
+    for (let i = 0; i < totalParticles; i++) {
+      let x = 0;
+      let y = 0;
+      let isRed = false;
+
+      if (i < edgeCount) {
+        const ang = Math.random() * Math.PI * 2;
+        const rad = discR + (Math.random() - 0.5) * 0.05;
+        x = discX + Math.cos(ang) * rad;
+        y = Math.sin(ang) * rad;
+        isRed = true;
+      } else {
+        x = (Math.random() - 0.5) * CONFIG.flagWidth;
+        y = (Math.random() - 0.5) * CONFIG.flagHeight;
+        const dx = x - discX;
+        const dy = y;
+        if (dx * dx + dy * dy <= discRSq) {
+          isRed = true;
+        }
+      }
+
+      const z = (Math.random() - 0.5) * 0.08;
+      flagPositions[i * 3 + 0] = x;
+      flagPositions[i * 3 + 1] = y;
+      flagPositions[i * 3 + 2] = z;
+
+      if (isRed) {
+        colors[i * 3 + 0] = CONFIG.redDisc[0];
+        colors[i * 3 + 1] = CONFIG.redDisc[1];
+        colors[i * 3 + 2] = CONFIG.redDisc[2];
+      } else {
+        colors[i * 3 + 0] = CONFIG.fieldGreen[0];
+        colors[i * 3 + 1] = CONFIG.fieldGreen[1];
+        colors[i * 3 + 2] = CONFIG.fieldGreen[2];
+      }
+
+      randoms[i * 2 + 0] = Math.random();
+      randoms[i * 2 + 1] = Math.random() * Math.PI * 2;
+    }
+
+    // ========================================================================
+    // SQA TEXT PIXEL SAMPLING
+    // ========================================================================
+    function sampleSqaPixels(count, scale) {
+      const c = document.createElement('canvas');
+      const w = 1200;
+      const h = 480;
+      c.width = w;
+      c.height = h;
+      const ctx = c.getContext('2d');
+      const pos = new Float32Array(count * 3);
+      if (!ctx) return pos;
+
+      ctx.fillStyle = '#000000';
+      ctx.fillRect(0, 0, w, h);
+      ctx.fillStyle = '#ffffff';
+      ctx.font = CONFIG.textFont;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(CONFIG.targetText, w / 2, h / 2);
+
+      const img = ctx.getImageData(0, 0, w, h);
+      const lit = [];
+      for (let py = 0; py < h; py += 2) {
+        for (let px = 0; px < w; px += 2) {
+          if (img.data[(py * w + px) * 4] > 120) {
+            lit.push([px, py]);
+          }
+        }
+      }
+
+      const aspect = window.innerWidth / window.innerHeight;
+      const visH = 2.0 * Math.tan((45.0 * Math.PI / 180.0) / 2.0) * camera.position.z;
+      const visW = visH * aspect;
+      const tW = Math.min(12.0, visW * 0.80);
+      const tH = tW * (h / w) * 0.95;
+
+      const compW = tW / (scale || 1.0);
+      const compH = tH / (scale || 1.0);
+
+      const litCount = lit.length;
+      for (let i = 0; i < count; i++) {
+        const p = lit[Math.floor(Math.random() * litCount)] || [w / 2, h / 2];
+        const nx = (p[0] / w - 0.5) * compW;
+        const ny = (0.5 - p[1] / h) * compH;
+
+        pos[i * 3 + 0] = nx + (Math.random() - 0.5) * 0.04;
+        pos[i * 3 + 1] = ny + (Math.random() - 0.5) * 0.04;
+        pos[i * 3 + 2] = (Math.random() - 0.5) * 0.04;
+      }
+      return pos;
+    }
+
+    const finalPositions = sampleSqaPixels(totalParticles, currentScale);
+
+    // ========================================================================
+    // BUFFER GEOMETRY & SHADERS
+    // ========================================================================
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(flagPositions, 3));
+    geometry.setAttribute('aFinalPosition', new THREE.BufferAttribute(finalPositions, 3));
+    geometry.setAttribute('aColor', new THREE.BufferAttribute(colors, 3));
+    geometry.setAttribute('aRandom', new THREE.BufferAttribute(randoms, 2));
+
+    const uniforms = {
+      uTime: { value: 0 },
+      uProgress: { value: 0 },
+      uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) },
+    };
+
+    const vertexShader = `
+      uniform float uTime;
+      uniform float uProgress;
+      uniform float uPointSize;
+      uniform float uPixelRatio;
+
+      attribute vec3 aFinalPosition;
+      attribute vec3 aColor;
+      attribute vec2 aRandom;
+
+      varying vec3 vColor;
+      varying float vBrightness;
+
+      void main() {
+        vColor = aColor;
+        float delay = aRandom.x;
+        float phase = aRandom.y;
+
+        // 1. Wind Wave
+        float k = clamp((position.x - (-3.2)) / 6.4, 0.0, 1.0);
+        k = mix(0.15, 1.0, k);
+
+        vec3 flagPos = position;
+        flagPos.z += sin(position.x * 1.1 - uTime * 1.8) * 0.30 * k;
+        flagPos.y += sin(position.x * 0.8 - uTime * 1.4) * 0.10 * k;
+
+        // 2. Smoothstep detachment applied twice
+        float p = smoothstep(0.03 + delay * 0.40, 0.75 + delay * 0.25, uProgress);
+        p = p * p * (3.0 - 2.0 * p);
+
+        // 3. Organic Curl Offset
+        float curlWeight = sin(p * 3.14159265);
+        vec3 curl = vec3(
+          sin(position.y * 1.5 + uTime * 0.7 + phase) * cos(position.z * 1.3 + phase * 2.0),
+          cos(position.x * 1.3 + uTime * 0.6 + phase * 1.5) * sin(position.z * 1.1),
+          sin(position.x * 1.1 + uTime * 0.8 + phase * 2.5) * cos(position.y * 1.4)
+        ) * 1.8 * curlWeight;
+
+        vec3 finalPos = aFinalPosition;
+        finalPos.y += sin(uTime * 1.2 + aFinalPosition.x * 0.6) * 0.035;
+        finalPos.z += cos(uTime * 1.0 + aFinalPosition.y * 0.6) * 0.035;
+
+        vec3 currentPos = mix(flagPos, finalPos, p) + curl;
+
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(currentPos, 1.0);
+
+        // Fixed point size (NO random variation, NO perspective scaling)
+        gl_PointSize = uPointSize * uPixelRatio;
+
+        vBrightness = mix(1.0, 1.22, p);
+      }
+    `;
+
+    const fragmentShader = `
+      uniform float uGain;
+      uniform float uIsCore;
+      varying vec3 vColor;
+      varying float vBrightness;
+
+      void main() {
+        vec2 coord = gl_PointCoord - vec2(0.5);
+        float dist = length(coord);
+        if (dist > 0.5) discard;
+
+        float strength = clamp(1.0 - dist * 2.0, 0.0, 1.0);
+
+        vec3 col = vColor;
+        if (uIsCore > 0.5) {
+          float faintWhite = pow(strength, 3.5) * 0.28;
+          col = mix(col, vec3(1.0), faintWhite);
+        }
+
+        float alpha = strength * uGain * vBrightness;
+        gl_FragColor = vec4(col * alpha, alpha);
+      }
+    `;
+
+    // 1) Crisp Core Layer
+    const coreMat = new THREE.ShaderMaterial({
+      vertexShader,
+      fragmentShader,
+      uniforms: {
+        ...uniforms,
+        uPointSize: { value: CONFIG.coreSize },
+        uGain: { value: CONFIG.coreGain },
+        uIsCore: { value: 1.0 },
+      },
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    });
+    const corePoints = new THREE.Points(geometry, coreMat);
+    group.add(corePoints);
+
+    // 2) Soft Halo Layer
+    const haloMat = new THREE.ShaderMaterial({
+      vertexShader,
+      fragmentShader,
+      uniforms: {
+        ...uniforms,
+        uPointSize: { value: CONFIG.haloSize },
+        uGain: { value: CONFIG.haloGain },
+        uIsCore: { value: 0.0 },
+      },
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    });
+    const haloPoints = new THREE.Points(geometry, haloMat);
+    group.add(haloPoints);
+
+    // 3) Faint Wide Glow Layer
+    const glowMat = new THREE.ShaderMaterial({
+      vertexShader,
+      fragmentShader,
+      uniforms: {
+        ...uniforms,
+        uPointSize: { value: CONFIG.glowSize },
+        uGain: { value: CONFIG.glowGain },
+        uIsCore: { value: 0.0 },
+      },
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    });
+    const glowPoints = new THREE.Points(geometry, glowMat);
+    group.add(glowPoints);
+
+    // ========================================================================
+    // SCROLL LISTENER & RESIZE
+    // ========================================================================
+    let targetProgress = 0;
+    let smoothedProgress = 0;
+
+    window.addEventListener('scroll', () => {
+      const maxScroll = document.documentElement.scrollHeight - window.innerHeight;
+      if (maxScroll > 0) {
+        targetProgress = Math.min(Math.max(window.scrollY / maxScroll, 0.0), 1.0);
+      }
+    }, { passive: true });
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+
+      const s = updateGroupScale();
+      uniforms.uPixelRatio.value = Math.min(window.devicePixelRatio, 2);
+
+      const newPositions = sampleSqaPixels(totalParticles, s);
+      geometry.setAttribute('aFinalPosition', new THREE.BufferAttribute(newPositions, 3));
+    });
+
+    // ========================================================================
+    // ANIMATION LOOP (Target 60 FPS & Auto Halo Protection)
+    // ========================================================================
+    const clock = new THREE.Clock();
+    let lastTime = performance.now();
+
+    function animate() {
+      requestAnimationFrame(animate);
+
+      const now = performance.now();
+      const frameDelta = now - lastTime;
+      lastTime = now;
+
+      if (frameDelta > 40 && haloPoints.visible) {
+        haloPoints.visible = false;
+        glowPoints.visible = false;
+      } else if (frameDelta < 30 && !haloPoints.visible) {
+        haloPoints.visible = true;
+        glowPoints.visible = true;
+      }
+
+      uniforms.uTime.value = clock.getElapsedTime();
+      smoothedProgress += (targetProgress - smoothedProgress) * CONFIG.scrollDamping;
+      uniforms.uProgress.value = smoothedProgress;
+
+      renderer.render(scene, camera);
+    }
+
+    animate();
+  </script>
+</body>
+</html>
