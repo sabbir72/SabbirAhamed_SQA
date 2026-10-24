@@ -1,0 +1,978 @@
+/**
+ * -----------------------------------------
+ * Project     : Sabbir Ahamed SQA Portfolio
+ * Module      : Real-Time Cloud Firestore Synchronization Engine
+ * Description : Persists and synchronizes Projects, Blogs, Categories, Experiences,
+ *               Skills, References, Career Roadmap, Profile, and Optimized Images
+ *               with Google Cloud Firestore so live data never disappears across
+ *               rebuilds, Git pushes, or Vercel/Cloud Run deployments.
+ * Author      : Sabbir Ahamed
+ * Last Updated: 2026-10-24
+ * -----------------------------------------
+ */
+
+import {
+  collection,
+  deleteDoc,
+  doc,
+  getDoc,
+  getDocFromServer,
+  getDocs,
+  onSnapshot,
+  query,
+  serverTimestamp,
+  setDoc,
+  updateDoc,
+  where,
+  Unsubscribe,
+} from 'firebase/firestore';
+import { onAuthStateChanged, signInWithPopup, signOut } from 'firebase/auth';
+import {
+  auth,
+  db,
+  googleProvider,
+  handleFirestoreError,
+  isVerifiedFirebaseOwner,
+  OperationType,
+} from '../firebase';
+import type { Project, Experience, Skill, Reference, CareerRoadmapItem } from '../types';
+import type { BlogPost } from '../data/blogs';
+import type { PortfolioData, ProfileData } from './portfolioStore';
+import { grantAdminSessionFromGoogleOwner } from './adminAuth';
+
+export const CLOUD_SYNC_STATUS_EVENT = 'sabbir_cloud_sync_status';
+
+export interface CloudSyncStatus {
+  isOwnerConnected: boolean;
+  ownerEmail: string | null;
+  isSyncing: boolean;
+  lastSyncedAt: string | null;
+  cloudProjectsCount: number;
+  cloudBlogsCount: number;
+  error: string | null;
+}
+
+export interface CloudPortfolioSnapshotPayload {
+  meta?: {
+    profile?: ProfileData;
+    skills?: Skill[];
+    references?: Reference[];
+    careerRoadmap?: CareerRoadmapItem[];
+    blogCategories?: string[];
+    deletedProjectIds?: string[];
+    deletedExperienceIds?: string[];
+    deletedBlogIds?: string[];
+    lastModified?: string;
+  };
+  projects?: Project[];
+  experiences?: Experience[];
+  blogs?: BlogPost[];
+}
+
+export interface CloudBridgeCallbacks {
+  getPortfolioData: () => PortfolioData;
+  getBlogs: () => BlogPost[];
+  getBlogCategories: () => string[];
+  onCloudSnapshot: (snapshot: CloudPortfolioSnapshotPayload) => void;
+}
+
+let bridge: CloudBridgeCallbacks | null = null;
+let syncInitialized = false;
+let isApplyingSnapshot = false;
+
+type FullSyncResult = {
+  success: boolean;
+  projectsSynced: number;
+  blogsSynced: number;
+  error?: string;
+};
+
+let activeFullSyncPromise: Promise<FullSyncResult> | null = null;
+const pathWriteQueues = new Map<string, Promise<void>>();
+
+function enqueuePathWrite(path: string, task: () => Promise<void>): Promise<void> {
+  const previous = pathWriteQueues.get(path) ?? Promise.resolve();
+  const current = previous.catch(() => undefined).then(task);
+  pathWriteQueues.set(
+    path,
+    current.finally(() => {
+      if (pathWriteQueues.get(path) === current) {
+        pathWriteQueues.delete(path);
+      }
+    })
+  );
+  return current;
+}
+
+let currentStatus: CloudSyncStatus = {
+  isOwnerConnected: false,
+  ownerEmail: null,
+  isSyncing: false,
+  lastSyncedAt: localStorage.getItem('sabbir_cloud_last_synced_at'),
+  cloudProjectsCount: 0,
+  cloudBlogsCount: 0,
+  error: null,
+};
+
+// Latest cloud cache for incremental snapshot assembly
+let latestCloudMeta: CloudPortfolioSnapshotPayload['meta'] | undefined;
+let latestCloudProjects: Project[] | undefined;
+let latestCloudExperiences: Experience[] | undefined;
+let latestCloudBlogs: BlogPost[] | undefined;
+
+function emitStatus(partial: Partial<CloudSyncStatus>): void {
+  currentStatus = { ...currentStatus, ...partial };
+  if (partial.lastSyncedAt) {
+    try {
+      localStorage.setItem('sabbir_cloud_last_synced_at', partial.lastSyncedAt);
+    } catch {
+      // ignore
+    }
+  }
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent(CLOUD_SYNC_STATUS_EVENT, { detail: currentStatus }));
+  }
+}
+
+export function getCloudSyncStatus(): CloudSyncStatus {
+  return currentStatus;
+}
+
+export function isCurrentlyApplyingCloudSnapshot(): boolean {
+  return isApplyingSnapshot;
+}
+
+// ------------------------------------------------------------------------
+// Defensive Payload Sanitizers (1:1 Schema Parity with firestore.rules)
+// ------------------------------------------------------------------------
+
+export function sanitizeDocId(rawId: string): string {
+  const cleaned = String(rawId || '')
+    .trim()
+    .replace(/[^a-zA-Z0-9_-]/g, '-')
+    .replace(/-+/g, '-')
+    .slice(0, 128);
+  return cleaned || `item-${Date.now()}`;
+}
+
+function safeStr(val: unknown, maxLen: number, fallback = ''): string {
+  const str = typeof val === 'string' ? val : val != null ? String(val) : fallback;
+  return str.slice(0, maxLen);
+}
+
+function safeNonEmptyStr(val: unknown, maxLen: number, fallback: string): string {
+  const trimmed = safeStr(val, maxLen).trim();
+  return (trimmed || fallback).slice(0, maxLen);
+}
+
+function sanitizeStringArray(arr: unknown, maxItems: number, maxLen: number): string[] {
+  if (!Array.isArray(arr)) return [];
+  const out: string[] = [];
+  for (const item of arr) {
+    if (out.length >= maxItems) break;
+    if (typeof item === 'string' && item.trim()) {
+      out.push(item.trim().slice(0, maxLen));
+    }
+  }
+  return out;
+}
+
+function sanitizeProfileMap(p: Partial<ProfileData> | undefined) {
+  const updatedIso = safeNonEmptyStr(p?.updatedAt, 64, new Date().toISOString());
+  return {
+    name: safeStr(p?.name, 200, 'Sabbir Ahamed'),
+    title: safeStr(p?.title, 300, 'Software Quality Assurance Engineer'),
+    avatar: safeStr(p?.avatar, 650000, '/sabbir_avatar.jpeg'),
+    email: safeStr(p?.email, 200, 'sabbircse72@gmail.com'),
+    phone: safeStr(p?.phone, 100, '+8801681387906'),
+    location: safeStr(p?.location, 200, 'Dhaka, Bangladesh'),
+    github: safeStr(p?.github, 500, 'https://github.com/Sabbir-SQAE'),
+    linkedin: safeStr(p?.linkedin, 500, ''),
+    objective: safeStr(p?.objective, 5000, ''),
+    experienceYears: safeStr(p?.experienceYears, 64, '2+ Years'),
+    testCasesCount: safeStr(p?.testCasesCount, 64, '150+'),
+    bugsReportedCount: safeStr(p?.bugsReportedCount, 64, '100+'),
+    automationScriptsCount: safeStr(p?.automationScriptsCount, 64, '20+'),
+    defectDetectionRate: safeStr(p?.defectDetectionRate, 64, '95%'),
+    updatedAt: updatedIso,
+  };
+}
+
+function sanitizeSkillsList(skills: Skill[] | undefined) {
+  if (!Array.isArray(skills)) return [];
+  return skills.slice(0, 50).map((s) => ({
+    category: safeNonEmptyStr(s?.category, 150, 'General QA'),
+    items: sanitizeStringArray(s?.items, 60, 120),
+  }));
+}
+
+function sanitizeReferencesList(refs: Reference[] | undefined) {
+  if (!Array.isArray(refs)) return [];
+  return refs.slice(0, 50).map((r) => ({
+    id: sanitizeDocId(r?.id || `ref-${Date.now()}`),
+    name: safeStr(r?.name, 200),
+    role: safeStr(r?.role, 200),
+    company: safeStr(r?.company, 200),
+    email: safeStr(r?.email, 200),
+    phone: safeStr(r?.phone, 100),
+    endorsement: safeStr(r?.endorsement, 2000),
+    updatedAt: safeNonEmptyStr(r?.updatedAt, 64, new Date().toISOString()),
+  }));
+}
+
+function sanitizeRoadmapList(items: CareerRoadmapItem[] | undefined) {
+  if (!Array.isArray(items)) return [];
+  const validStatuses = ['completed', 'active', 'future', 'vision'] as const;
+  return items.slice(0, 50).map((item) => {
+    const status = validStatuses.includes(item?.status as (typeof validStatuses)[number])
+      ? item.status
+      : 'future';
+    return {
+      id: sanitizeDocId(item?.id || `road-${Date.now()}`),
+      title: safeNonEmptyStr(item?.title, 250, 'Milestone'),
+      status,
+      badge: safeStr(item?.badge, 100),
+      updatedAt: safeNonEmptyStr(item?.updatedAt, 64, new Date().toISOString()),
+    };
+  });
+}
+
+function sanitizeProjectMutableFields(project: Project, orderIndex: number) {
+  const validTypes = ['Manual', 'Automation', 'API', 'Performance'] as const;
+  const resolvedType = validTypes.includes(project.type) ? project.type : 'Automation';
+  const clampedOrder = Math.max(0, Math.min(10000, Math.floor(orderIndex)));
+
+  const metrics = Array.isArray(project.metrics)
+    ? project.metrics.slice(0, 30).map((m) => ({
+        label: safeStr(m?.label, 120),
+        value: safeStr(m?.value, 120),
+      }))
+    : [];
+
+  const assertions = Array.isArray(project.assertions)
+    ? project.assertions.slice(0, 60).map((a) => ({
+        name: safeStr(a?.name, 250),
+        status: a?.status === 'FAIL' ? 'FAIL' : 'PASS',
+        duration: safeStr(a?.duration, 64),
+      }))
+    : [];
+
+  const logs = Array.isArray(project.logs)
+    ? project.logs.slice(0, 100).map((l) => ({
+        timestamp: safeStr(l?.timestamp, 64),
+        level: ['INFO', 'PASS', 'FAIL', 'WARN'].includes(l?.level) ? l.level : 'INFO',
+        message: safeStr(l?.message, 500),
+      }))
+    : [];
+
+  return {
+    visibility: 'public' as const,
+    orderIndex: clampedOrder,
+    title: safeNonEmptyStr(project.title, 300, 'Untitled SQA Project'),
+    type: resolvedType,
+    description: safeStr(project.description, 10000),
+    metrics,
+    assertions,
+    logs,
+    tags: sanitizeStringArray(project.tags, 40, 100),
+    link: safeStr(project.link, 2048),
+    image: safeStr(project.image, 750000),
+    updatedAtIso: safeNonEmptyStr(project.updatedAt, 64, new Date().toISOString()),
+  };
+}
+
+function sanitizeExperienceMutableFields(exp: Experience, orderIndex: number) {
+  const clampedOrder = Math.max(0, Math.min(10000, Math.floor(orderIndex)));
+  return {
+    visibility: 'public' as const,
+    orderIndex: clampedOrder,
+    role: safeNonEmptyStr(exp.role, 200, 'SQA Engineer'),
+    company: safeNonEmptyStr(exp.company, 200, 'Organization'),
+    period: safeStr(exp.period, 120),
+    location: safeStr(exp.location, 200),
+    highlights: sanitizeStringArray(exp.highlights, 50, 2000),
+    updatedAtIso: safeNonEmptyStr(exp.updatedAt, 64, new Date().toISOString()),
+  };
+}
+
+function sanitizeBlogMutableFields(blog: BlogPost, orderIndex: number) {
+  const clampedOrder = Math.max(0, Math.min(10000, Math.floor(orderIndex)));
+  const authorName = safeNonEmptyStr(blog.author?.name, 200, 'Sabbir Ahamed');
+  const rawAvatar = safeStr(blog.author?.avatar, 120000, '/sabbir_avatar.jpeg');
+  // Avoid duplicating large base64 profile avatars into every blog doc since blogStore hydrates Sabbir's avatar from profile
+  const cleanAuthorAvatar =
+    rawAvatar.startsWith('data:image/') && authorName.toLowerCase().includes('sabbir')
+      ? '/sabbir_avatar.jpeg'
+      : rawAvatar.slice(0, 120000);
+
+  return {
+    orderIndex: clampedOrder,
+    title: safeNonEmptyStr(blog.title, 400, 'Untitled Article'),
+    slug: safeNonEmptyStr(blog.slug, 250, `article-${Date.now()}`),
+    category: safeNonEmptyStr(blog.category, 120, 'Software Testing'),
+    description: safeStr(blog.description, 5000),
+    content: safeStr(blog.content, 200000),
+    coverImage: safeStr(
+      blog.coverImage,
+      550000,
+      'https://images.unsplash.com/photo-1618401471353-b98afee0b2eb?auto=format&fit=crop&q=80&w=1200'
+    ),
+    publishDate: safeStr(blog.publishDate, 100),
+    readingTime: safeStr(blog.readingTime, 64, '5 min read'),
+    tags: sanitizeStringArray(blog.tags, 40, 100),
+    featured: Boolean(blog.featured),
+    status: blog.status === 'Draft' ? ('Draft' as const) : ('Published' as const),
+    author: {
+      name: authorName,
+      role: safeStr(blog.author?.role, 250, 'Software Quality Assurance Engineer'),
+      avatar: cleanAuthorAvatar,
+      bio: safeStr(
+        blog.author?.bio,
+        2000,
+        'SQA Engineer specializing in Manual & Automated Testing, API Validation, ERPNext QA, and CI/CD Quality Gates.'
+      ),
+    },
+    updatedAtIso: safeNonEmptyStr(blog.updatedAt, 64, new Date().toISOString()),
+  };
+}
+
+// ------------------------------------------------------------------------
+// Cloud Document Deserializers
+// ------------------------------------------------------------------------
+
+function docToProject(raw: Record<string, unknown>): Project & { _orderIndex: number } {
+  return {
+    id: String(raw.id || ''),
+    title: String(raw.title || ''),
+    type: (['Manual', 'Automation', 'API', 'Performance'].includes(String(raw.type))
+      ? raw.type
+      : 'Automation') as Project['type'],
+    description: String(raw.description || ''),
+    metrics: Array.isArray(raw.metrics) ? (raw.metrics as Project['metrics']) : [],
+    assertions: Array.isArray(raw.assertions) ? (raw.assertions as Project['assertions']) : [],
+    logs: Array.isArray(raw.logs) ? (raw.logs as Project['logs']) : [],
+    tags: Array.isArray(raw.tags) ? (raw.tags as string[]) : [],
+    link: raw.link ? String(raw.link) : undefined,
+    image: raw.image ? String(raw.image) : undefined,
+    updatedAt: String(raw.updatedAtIso || ''),
+    _orderIndex: typeof raw.orderIndex === 'number' ? raw.orderIndex : 9999,
+  };
+}
+
+function docToExperience(raw: Record<string, unknown>): Experience & { _orderIndex: number } {
+  return {
+    id: String(raw.id || ''),
+    role: String(raw.role || ''),
+    company: String(raw.company || ''),
+    period: String(raw.period || ''),
+    location: String(raw.location || ''),
+    highlights: Array.isArray(raw.highlights) ? (raw.highlights as string[]) : [],
+    updatedAt: String(raw.updatedAtIso || ''),
+    _orderIndex: typeof raw.orderIndex === 'number' ? raw.orderIndex : 9999,
+  };
+}
+
+function docToBlog(raw: Record<string, unknown>): BlogPost & { _orderIndex: number } {
+  const authorObj = (raw.author && typeof raw.author === 'object' ? raw.author : {}) as Record<
+    string,
+    unknown
+  >;
+  return {
+    id: String(raw.id || ''),
+    title: String(raw.title || ''),
+    slug: String(raw.slug || ''),
+    category: String(raw.category || 'Software Testing'),
+    description: String(raw.description || ''),
+    content: String(raw.content || ''),
+    coverImage: String(raw.coverImage || ''),
+    publishDate: String(raw.publishDate || ''),
+    readingTime: String(raw.readingTime || '5 min read'),
+    tags: Array.isArray(raw.tags) ? (raw.tags as string[]) : [],
+    featured: Boolean(raw.featured),
+    status: raw.status === 'Draft' ? 'Draft' : 'Published',
+    updatedAt: String(raw.updatedAtIso || ''),
+    author: {
+      name: String(authorObj.name || 'Sabbir Ahamed'),
+      role: String(authorObj.role || 'Software Quality Assurance Engineer'),
+      avatar: String(authorObj.avatar || '/sabbir_avatar.jpeg'),
+      bio: String(authorObj.bio || ''),
+    },
+    _orderIndex: typeof raw.orderIndex === 'number' ? raw.orderIndex : 9999,
+  };
+}
+
+// ------------------------------------------------------------------------
+// Core Create-or-Update Helper (Immutable Field Safe)
+// ------------------------------------------------------------------------
+
+async function checkServerDocExists(docRef: ReturnType<typeof doc>, path: string): Promise<boolean> {
+  try {
+    const serverSnap = await getDocFromServer(docRef);
+    return serverSnap.exists();
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg.includes('Missing or insufficient permissions')) {
+      handleFirestoreError(err, OperationType.GET, path);
+    }
+    try {
+      const cachedSnap = await getDoc(docRef);
+      return cachedSnap.exists();
+    } catch (fallbackErr) {
+      handleFirestoreError(fallbackErr, OperationType.GET, path);
+    }
+  }
+}
+
+async function upsertProtectedDocument(
+  collectionName: string,
+  docId: string,
+  mutableData: Record<string, unknown>
+): Promise<void> {
+  const cleanId = sanitizeDocId(docId);
+  const path = `${collectionName}/${cleanId}`;
+
+  return enqueuePathWrite(path, async () => {
+    const user = auth.currentUser;
+    if (!isVerifiedFirebaseOwner(user) || !user) return;
+
+    const docRef = doc(db, collectionName, cleanId);
+    const exists = await checkServerDocExists(docRef, path);
+
+    if (exists) {
+      try {
+        await updateDoc(docRef, {
+          ...mutableData,
+          updatedAt: serverTimestamp(),
+        });
+      } catch (error) {
+        handleFirestoreError(error, OperationType.UPDATE, path);
+      }
+    } else {
+      try {
+        await setDoc(docRef, {
+          id: cleanId,
+          ...mutableData,
+          authorUid: user.uid,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+      } catch (createError) {
+        // Cross-tab safety: if another tab/instance created the doc right before setDoc arrived,
+        // Firestore evaluated setDoc as an update with a new createdAt. Fall back cleanly to updateDoc.
+        const createdConcurrently = await checkServerDocExists(docRef, path);
+        if (createdConcurrently) {
+          try {
+            await updateDoc(docRef, {
+              ...mutableData,
+              updatedAt: serverTimestamp(),
+            });
+            return;
+          } catch (updateError) {
+            handleFirestoreError(updateError, OperationType.UPDATE, path);
+          }
+        }
+        handleFirestoreError(createError, OperationType.CREATE, path);
+      }
+    }
+  });
+}
+
+async function deleteProtectedDocument(collectionName: string, docId: string): Promise<void> {
+  const cleanId = sanitizeDocId(docId);
+  const path = `${collectionName}/${cleanId}`;
+
+  return enqueuePathWrite(path, async () => {
+    const user = auth.currentUser;
+    if (!isVerifiedFirebaseOwner(user)) return;
+
+    try {
+      await deleteDoc(doc(db, collectionName, cleanId));
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, path);
+    }
+  });
+}
+
+// ------------------------------------------------------------------------
+// Granular Cloud Writers Called Automatically by portfolioStore & blogStore
+// ------------------------------------------------------------------------
+
+export async function pushPortfolioMetaToCloud(
+  data: PortfolioData,
+  blogCategories?: string[]
+): Promise<void> {
+  if (isApplyingSnapshot || !isVerifiedFirebaseOwner(auth.currentUser)) return;
+
+  const resolvedCats =
+    blogCategories ?? data.blogCategories ?? (bridge ? bridge.getBlogCategories() : []);
+
+  const mutableMeta = {
+    isPublic: true,
+    profile: sanitizeProfileMap(data.profile),
+    skills: sanitizeSkillsList(data.skills),
+    references: sanitizeReferencesList(data.references),
+    careerRoadmap: sanitizeRoadmapList(data.careerRoadmap),
+    blogCategories: sanitizeStringArray(resolvedCats, 100, 120),
+    deletedProjectIds: sanitizeStringArray(data.deletedProjectIds, 500, 128).map(sanitizeDocId),
+    deletedExperienceIds: sanitizeStringArray(data.deletedExperienceIds, 500, 128).map(
+      sanitizeDocId
+    ),
+    deletedBlogIds: sanitizeStringArray(data.deletedBlogIds, 500, 128).map(sanitizeDocId),
+    lastModifiedIso: safeNonEmptyStr(data.lastModified, 64, new Date().toISOString()),
+  };
+
+  await upsertProtectedDocument('portfolio_meta', 'main', mutableMeta);
+  emitStatus({ lastSyncedAt: new Date().toISOString(), error: null });
+}
+
+export async function pushProjectToCloud(project: Project, orderIndex = 0): Promise<void> {
+  if (isApplyingSnapshot || !isVerifiedFirebaseOwner(auth.currentUser)) return;
+  const cleanId = sanitizeDocId(project.id);
+  const mutable = sanitizeProjectMutableFields({ ...project, id: cleanId }, orderIndex);
+  await upsertProtectedDocument('projects', cleanId, mutable);
+  emitStatus({ lastSyncedAt: new Date().toISOString(), error: null });
+}
+
+export async function pushAllProjectsToCloud(projects: Project[]): Promise<void> {
+  if (isApplyingSnapshot || !isVerifiedFirebaseOwner(auth.currentUser)) return;
+  for (let i = 0; i < projects.length; i++) {
+    const p = projects[i];
+    const cleanId = sanitizeDocId(p.id);
+    const mutable = sanitizeProjectMutableFields({ ...p, id: cleanId }, i);
+    await upsertProtectedDocument('projects', cleanId, mutable);
+  }
+  emitStatus({
+    cloudProjectsCount: projects.length,
+    lastSyncedAt: new Date().toISOString(),
+    error: null,
+  });
+}
+
+export async function deleteProjectFromCloud(projectId: string): Promise<void> {
+  if (isApplyingSnapshot || !isVerifiedFirebaseOwner(auth.currentUser)) return;
+  await deleteProtectedDocument('projects', projectId);
+  emitStatus({ lastSyncedAt: new Date().toISOString(), error: null });
+}
+
+export async function pushExperienceToCloud(exp: Experience, orderIndex = 0): Promise<void> {
+  if (isApplyingSnapshot || !isVerifiedFirebaseOwner(auth.currentUser)) return;
+  const cleanId = sanitizeDocId(exp.id);
+  const mutable = sanitizeExperienceMutableFields({ ...exp, id: cleanId }, orderIndex);
+  await upsertProtectedDocument('experiences', cleanId, mutable);
+  emitStatus({ lastSyncedAt: new Date().toISOString(), error: null });
+}
+
+export async function pushAllExperiencesToCloud(experiences: Experience[]): Promise<void> {
+  if (isApplyingSnapshot || !isVerifiedFirebaseOwner(auth.currentUser)) return;
+  for (let i = 0; i < experiences.length; i++) {
+    const e = experiences[i];
+    const cleanId = sanitizeDocId(e.id);
+    const mutable = sanitizeExperienceMutableFields({ ...e, id: cleanId }, i);
+    await upsertProtectedDocument('experiences', cleanId, mutable);
+  }
+  emitStatus({ lastSyncedAt: new Date().toISOString(), error: null });
+}
+
+export async function deleteExperienceFromCloud(expId: string): Promise<void> {
+  if (isApplyingSnapshot || !isVerifiedFirebaseOwner(auth.currentUser)) return;
+  await deleteProtectedDocument('experiences', expId);
+  emitStatus({ lastSyncedAt: new Date().toISOString(), error: null });
+}
+
+export async function pushBlogToCloud(blog: BlogPost, orderIndex = 0): Promise<void> {
+  if (isApplyingSnapshot || !isVerifiedFirebaseOwner(auth.currentUser)) return;
+  const cleanId = sanitizeDocId(blog.id);
+  const mutable = sanitizeBlogMutableFields({ ...blog, id: cleanId }, orderIndex);
+  await upsertProtectedDocument('blogs', cleanId, mutable);
+  emitStatus({ lastSyncedAt: new Date().toISOString(), error: null });
+}
+
+export async function pushAllBlogsToCloud(blogs: BlogPost[]): Promise<void> {
+  if (isApplyingSnapshot || !isVerifiedFirebaseOwner(auth.currentUser)) return;
+  for (let i = 0; i < blogs.length; i++) {
+    const b = blogs[i];
+    const cleanId = sanitizeDocId(b.id);
+    const mutable = sanitizeBlogMutableFields({ ...b, id: cleanId }, i);
+    await upsertProtectedDocument('blogs', cleanId, mutable);
+  }
+  emitStatus({
+    cloudBlogsCount: blogs.length,
+    lastSyncedAt: new Date().toISOString(),
+    error: null,
+  });
+}
+
+export async function deleteBlogFromCloud(blogId: string): Promise<void> {
+  if (isApplyingSnapshot || !isVerifiedFirebaseOwner(auth.currentUser)) return;
+  await deleteProtectedDocument('blogs', blogId);
+  emitStatus({ lastSyncedAt: new Date().toISOString(), error: null });
+}
+
+// ------------------------------------------------------------------------
+// Full Non-Destructive Two-Way Cloud Backup & Migration
+// ------------------------------------------------------------------------
+
+export async function syncAllLocalDataToCloud(): Promise<FullSyncResult> {
+  if (activeFullSyncPromise) {
+    return activeFullSyncPromise;
+  }
+
+  if (!bridge) {
+    return { success: false, projectsSynced: 0, blogsSynced: 0, error: 'Cloud bridge not ready.' };
+  }
+  if (!isVerifiedFirebaseOwner(auth.currentUser)) {
+    return {
+      success: false,
+      projectsSynced: 0,
+      blogsSynced: 0,
+      error: 'Connect Google Cloud Sync with owner account first.',
+    };
+  }
+
+  activeFullSyncPromise = (async (): Promise<FullSyncResult> => {
+    emitStatus({ isSyncing: true, error: null });
+
+    try {
+      // Step 1: Pull latest cloud documents first so nothing already in Firestore is ever overwritten!
+      await pullCloudSnapshotOnce();
+
+      // Step 2: Read the freshly merged local state
+      const portfolio = bridge.getPortfolioData();
+      const blogs = bridge.getBlogs();
+      const categories = bridge.getBlogCategories();
+
+      const deletedProjSet = new Set((portfolio.deletedProjectIds || []).map(sanitizeDocId));
+      const deletedExpSet = new Set((portfolio.deletedExperienceIds || []).map(sanitizeDocId));
+      const deletedBlogSet = new Set((portfolio.deletedBlogIds || []).map(sanitizeDocId));
+
+      // Step 3: Push metadata
+      await pushPortfolioMetaToCloud(portfolio, categories);
+
+      // Step 4: Push all active projects & remove tombstoned docs
+      const activeProjects = portfolio.projects.filter(
+        (p) => !deletedProjSet.has(sanitizeDocId(p.id))
+      );
+      await pushAllProjectsToCloud(activeProjects);
+      for (const delId of deletedProjSet) {
+        await deleteProtectedDocument('projects', delId);
+      }
+
+      // Step 5: Push all active experiences & remove tombstoned docs
+      const activeExperiences = portfolio.experiences.filter(
+        (e) => !deletedExpSet.has(sanitizeDocId(e.id))
+      );
+      await pushAllExperiencesToCloud(activeExperiences);
+      for (const delId of deletedExpSet) {
+        await deleteProtectedDocument('experiences', delId);
+      }
+
+      // Step 6: Push all active blogs & remove tombstoned docs
+      const activeBlogs = blogs.filter((b) => !deletedBlogSet.has(sanitizeDocId(b.id)));
+      await pushAllBlogsToCloud(activeBlogs);
+      for (const delId of deletedBlogSet) {
+        await deleteProtectedDocument('blogs', delId);
+      }
+
+      const nowIso = new Date().toISOString();
+      emitStatus({
+        isSyncing: false,
+        lastSyncedAt: nowIso,
+        cloudProjectsCount: activeProjects.length,
+        cloudBlogsCount: activeBlogs.length,
+        error: null,
+      });
+
+      return {
+        success: true,
+        projectsSynced: activeProjects.length,
+        blogsSynced: activeBlogs.length,
+      };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Cloud synchronization failed.';
+      emitStatus({ isSyncing: false, error: msg });
+      return { success: false, projectsSynced: 0, blogsSynced: 0, error: msg };
+    } finally {
+      activeFullSyncPromise = null;
+    }
+  })();
+
+  return activeFullSyncPromise;
+}
+
+// ------------------------------------------------------------------------
+// Google Owner Sign-In / Sign-Out Actions
+// ------------------------------------------------------------------------
+
+export async function signInOwnerWithGoogle(): Promise<{
+  success: boolean;
+  email?: string;
+  error?: string;
+}> {
+  try {
+    const result = await signInWithPopup(auth, googleProvider);
+    const user = result.user;
+    if (!isVerifiedFirebaseOwner(user)) {
+      await signOut(auth);
+      return {
+        success: false,
+        error: 'Unauthorized Google account. Please sign in with the verified portfolio owner email.',
+      };
+    }
+
+    // Grant unified Main Security System session immediately
+    grantAdminSessionFromGoogleOwner();
+    emitStatus({
+      isOwnerConnected: true,
+      ownerEmail: user.email || null,
+      error: null,
+    });
+
+    // Deduped full two-way sync (shares activeFullSyncPromise with onAuthStateChanged)
+    void syncAllLocalDataToCloud();
+
+    return { success: true, email: user.email || undefined };
+  } catch (err) {
+    const rawMsg = err instanceof Error ? err.message : String(err);
+    if (rawMsg.includes('popup-closed-by-user') || rawMsg.includes('cancelled-popup-request')) {
+      return { success: false, error: 'Google sign-in popup was closed.' };
+    }
+    return { success: false, error: 'Unable to complete Google sign-in. Please try again.' };
+  }
+}
+
+export async function signOutOwnerFromGoogle(): Promise<void> {
+  try {
+    await signOut(auth);
+  } finally {
+    emitStatus({
+      isOwnerConnected: false,
+      ownerEmail: null,
+    });
+  }
+}
+
+// ------------------------------------------------------------------------
+// Real-Time Cloud Listeners (Visitors + Authenticated Owner)
+// ------------------------------------------------------------------------
+
+function notifyBridgeSnapshot(): void {
+  if (!bridge) return;
+  if (!latestCloudMeta && !latestCloudProjects && !latestCloudExperiences && !latestCloudBlogs) {
+    return;
+  }
+  isApplyingSnapshot = true;
+  try {
+    bridge.onCloudSnapshot({
+      meta: latestCloudMeta,
+      projects: latestCloudProjects,
+      experiences: latestCloudExperiences,
+      blogs: latestCloudBlogs,
+    });
+  } finally {
+    isApplyingSnapshot = false;
+  }
+}
+
+async function pullCloudSnapshotOnce(): Promise<void> {
+  // 1. portfolio_meta/main
+  try {
+    const metaSnap = await getDoc(doc(db, 'portfolio_meta', 'main'));
+    if (metaSnap.exists()) {
+      const d = metaSnap.data();
+      latestCloudMeta = {
+        profile: d.profile as ProfileData,
+        skills: Array.isArray(d.skills) ? (d.skills as Skill[]) : undefined,
+        references: Array.isArray(d.references) ? (d.references as Reference[]) : undefined,
+        careerRoadmap: Array.isArray(d.careerRoadmap)
+          ? (d.careerRoadmap as CareerRoadmapItem[])
+          : undefined,
+        blogCategories: Array.isArray(d.blogCategories) ? (d.blogCategories as string[]) : undefined,
+        deletedProjectIds: Array.isArray(d.deletedProjectIds)
+          ? (d.deletedProjectIds as string[])
+          : [],
+        deletedExperienceIds: Array.isArray(d.deletedExperienceIds)
+          ? (d.deletedExperienceIds as string[])
+          : [],
+        deletedBlogIds: Array.isArray(d.deletedBlogIds) ? (d.deletedBlogIds as string[]) : [],
+        lastModified: typeof d.lastModifiedIso === 'string' ? d.lastModifiedIso : undefined,
+      };
+    }
+  } catch (error) {
+    handleFirestoreError(error, OperationType.GET, 'portfolio_meta/main');
+  }
+
+  // 2. projects
+  try {
+    const projQuery = query(collection(db, 'projects'), where('visibility', '==', 'public'));
+    const projSnap = await getDocs(projQuery);
+    const parsedProjects = projSnap.docs
+      .map((docItem) => docToProject(docItem.data() as Record<string, unknown>))
+      .sort((a, b) => a._orderIndex - b._orderIndex)
+      .map(({ _orderIndex: _, ...rest }) => rest);
+    if (parsedProjects.length > 0) {
+      latestCloudProjects = parsedProjects;
+    }
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, 'projects');
+  }
+
+  // 3. experiences
+  try {
+    const expQuery = query(collection(db, 'experiences'), where('visibility', '==', 'public'));
+    const expSnap = await getDocs(expQuery);
+    const parsedExp = expSnap.docs
+      .map((docItem) => docToExperience(docItem.data() as Record<string, unknown>))
+      .sort((a, b) => a._orderIndex - b._orderIndex)
+      .map(({ _orderIndex: _, ...rest }) => rest);
+    if (parsedExp.length > 0) {
+      latestCloudExperiences = parsedExp;
+    }
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, 'experiences');
+  }
+
+  // 4. blogs
+  try {
+    const ownerSignedIn = isVerifiedFirebaseOwner(auth.currentUser);
+    const blogQuery = ownerSignedIn
+      ? collection(db, 'blogs')
+      : query(collection(db, 'blogs'), where('status', '==', 'Published'));
+    const blogSnap = await getDocs(blogQuery);
+    const parsedBlogs = blogSnap.docs
+      .map((docItem) => docToBlog(docItem.data() as Record<string, unknown>))
+      .sort((a, b) => a._orderIndex - b._orderIndex)
+      .map(({ _orderIndex: _, ...rest }) => rest);
+    if (parsedBlogs.length > 0) {
+      latestCloudBlogs = parsedBlogs;
+    }
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, 'blogs');
+  }
+
+  notifyBridgeSnapshot();
+}
+
+export function initializeCloudRealtimeSync(callbacks: CloudBridgeCallbacks): void {
+  bridge = callbacks;
+  if (syncInitialized || typeof window === 'undefined') return;
+  syncInitialized = true;
+
+  let unsubBlogs: Unsubscribe | null = null;
+
+  // 1. Real-time portfolio_meta/main listener (publicly readable)
+  onSnapshot(
+    doc(db, 'portfolio_meta', 'main'),
+    (snap) => {
+      if (!snap.exists()) return;
+      const d = snap.data();
+      latestCloudMeta = {
+        profile: d.profile as ProfileData,
+        skills: Array.isArray(d.skills) ? (d.skills as Skill[]) : undefined,
+        references: Array.isArray(d.references) ? (d.references as Reference[]) : undefined,
+        careerRoadmap: Array.isArray(d.careerRoadmap)
+          ? (d.careerRoadmap as CareerRoadmapItem[])
+          : undefined,
+        blogCategories: Array.isArray(d.blogCategories) ? (d.blogCategories as string[]) : undefined,
+        deletedProjectIds: Array.isArray(d.deletedProjectIds)
+          ? (d.deletedProjectIds as string[])
+          : [],
+        deletedExperienceIds: Array.isArray(d.deletedExperienceIds)
+          ? (d.deletedExperienceIds as string[])
+          : [],
+        deletedBlogIds: Array.isArray(d.deletedBlogIds) ? (d.deletedBlogIds as string[]) : [],
+        lastModified: typeof d.lastModifiedIso === 'string' ? d.lastModifiedIso : undefined,
+      };
+      notifyBridgeSnapshot();
+    },
+    (error) => {
+      handleFirestoreError(error, OperationType.GET, 'portfolio_meta/main');
+    }
+  );
+
+  // 2. Real-time projects listener (publicly readable via visibility == 'public')
+  onSnapshot(
+    query(collection(db, 'projects'), where('visibility', '==', 'public')),
+    (snap) => {
+      const parsedProjects = snap.docs
+        .map((docItem) => docToProject(docItem.data() as Record<string, unknown>))
+        .sort((a, b) => a._orderIndex - b._orderIndex)
+        .map(({ _orderIndex: _, ...rest }) => rest);
+
+      emitStatus({ cloudProjectsCount: parsedProjects.length });
+      if (parsedProjects.length > 0) {
+        latestCloudProjects = parsedProjects;
+        notifyBridgeSnapshot();
+      }
+    },
+    (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'projects');
+    }
+  );
+
+  // 3. Real-time experiences listener (publicly readable via visibility == 'public')
+  onSnapshot(
+    query(collection(db, 'experiences'), where('visibility', '==', 'public')),
+    (snap) => {
+      const parsedExp = snap.docs
+        .map((docItem) => docToExperience(docItem.data() as Record<string, unknown>))
+        .sort((a, b) => a._orderIndex - b._orderIndex)
+        .map(({ _orderIndex: _, ...rest }) => rest);
+
+      if (parsedExp.length > 0) {
+        latestCloudExperiences = parsedExp;
+        notifyBridgeSnapshot();
+      }
+    },
+    (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'experiences');
+    }
+  );
+
+  const attachBlogsListener = (ownerSignedIn: boolean) => {
+    if (unsubBlogs) {
+      unsubBlogs();
+      unsubBlogs = null;
+    }
+    const blogQuery = ownerSignedIn
+      ? collection(db, 'blogs')
+      : query(collection(db, 'blogs'), where('status', '==', 'Published'));
+
+    unsubBlogs = onSnapshot(
+      blogQuery,
+      (snap) => {
+        const parsedBlogs = snap.docs
+          .map((docItem) => docToBlog(docItem.data() as Record<string, unknown>))
+          .sort((a, b) => a._orderIndex - b._orderIndex)
+          .map(({ _orderIndex: _, ...rest }) => rest);
+
+        emitStatus({ cloudBlogsCount: parsedBlogs.length });
+        if (parsedBlogs.length > 0) {
+          latestCloudBlogs = parsedBlogs;
+          notifyBridgeSnapshot();
+        }
+      },
+      (error) => {
+        handleFirestoreError(error, OperationType.LIST, 'blogs');
+      }
+    );
+  };
+
+  // Start public blogs listener immediately for fast first paint
+  attachBlogsListener(isVerifiedFirebaseOwner(auth.currentUser));
+
+  // 4. Listen to Firebase Auth state changes for Owner auto-backup & draft access
+  onAuthStateChanged(auth, (user) => {
+    const ownerConnected = isVerifiedFirebaseOwner(user);
+    emitStatus({
+      isOwnerConnected: ownerConnected,
+      ownerEmail: ownerConnected && user ? user.email : null,
+    });
+
+    attachBlogsListener(ownerConnected);
+
+    if (ownerConnected) {
+      // Automatically ensure all local custom & default items are safely persisted to Cloud Firestore
+      void syncAllLocalDataToCloud();
+    }
+  });
+}

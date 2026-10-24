@@ -29,7 +29,13 @@ import AdminPortal from './components/AdminPortal';
 import AdminQuickAccess from './components/AdminQuickAccess';
 import { getCurrentRoute, navigateTo, navigateToHomeSection, AppRoute } from './utils/router';
 import { isAdminAuthenticated, verifyOwnerWithServer, logoutAdmin } from './utils/adminAuth';
-import { initializePortfolioStoreFromServer } from './utils/portfolioStore';
+import {
+  applyCloudPortfolioSnapshot,
+  getStoredPortfolioData,
+  initializePortfolioStoreFromServer,
+} from './utils/portfolioStore';
+import { getStoredBlogCategories, getStoredBlogPosts } from './utils/blogStore';
+import { initializeCloudRealtimeSync } from './utils/cloudSync';
 import { initializeTheme } from './utils/themeStore';
 import AdminPasscodeModal, { SecurityModalMode } from './components/AdminPasscodeModal';
 import { VisitingCardModal } from './components/VisitingCardModal';
@@ -69,6 +75,12 @@ export default function App(): React.ReactNode {
 
     syncAdmin();
     initializePortfolioStoreFromServer();
+    initializeCloudRealtimeSync({
+      getPortfolioData: getStoredPortfolioData,
+      getBlogs: getStoredBlogPosts,
+      getBlogCategories: getStoredBlogCategories,
+      onCloudSnapshot: applyCloudPortfolioSnapshot,
+    });
 
     window.addEventListener('popstate', handlePopState);
     window.addEventListener('admin_auth_changed', syncAdmin);

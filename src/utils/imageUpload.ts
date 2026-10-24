@@ -1,9 +1,10 @@
 /**
  * -----------------------------------------
  * Project     : Sabbir Ahamed SQA Portfolio
- * Module      : Direct Local File Image Upload & Optimization Utility
- * Description : Handles local device image file selection, client-side Canvas
- *               optimization, and server persistence (/api/upload-image).
+ * Module      : Direct Local File Image Upload & Self-Contained Persistence Utility
+ * Description : Handles local device image file selection, client-side high-clarity WebP/JPEG
+ *               optimization, and self-contained Data URL storage mirrored to /api/upload-image
+ *               so uploaded images NEVER break (404) across container rebuilds or Vercel deploys.
  * Author      : Sabbir Ahamed
  * Last Updated: 2026-10-24
  * -----------------------------------------
@@ -37,19 +38,18 @@ function readFileAsDataUrl(file: File): Promise<string> {
 
 /**
  * Optimizes raster images on the client so large phone/camera photos
- * upload instantaneously and fit comfortably in both server & browser storage.
+ * upload instantaneously and remain permanently self-contained across rebuilds.
  */
 async function optimizeImageDataUrl(
   file: File,
   options: ImageUploadOptions = {}
 ): Promise<string> {
-  const maxWidth = options.maxWidth || 1400;
-  const maxHeight = options.maxHeight || 1400;
-  const quality = options.quality || 0.88;
+  const maxWidth = options.maxWidth || 1200;
+  const maxHeight = options.maxHeight || 1200;
+  const quality = options.quality || 0.84;
 
   const rawDataUrl = await readFileAsDataUrl(file);
 
-  // Keep SVG or animated GIF untouched
   if (file.type === 'image/svg+xml' || file.type === 'image/gif') {
     return rawDataUrl;
   }
@@ -59,7 +59,7 @@ async function optimizeImageDataUrl(
     img.onload = () => {
       let { width, height } = img;
 
-      if (width <= maxWidth && height <= maxHeight && file.size <= 450 * 1024) {
+      if (width <= maxWidth && height <= maxHeight && file.size <= 220 * 1024) {
         resolve(rawDataUrl);
         return;
       }
@@ -99,8 +99,9 @@ async function optimizeImageDataUrl(
 }
 
 /**
- * Validates, optimizes, and uploads an image file directly from the user's device.
- * Persists to backend /uploads directory when available and returns a ready-to-render URL.
+ * Validates, optimizes, and persists an image file directly from the user's device.
+ * Returns a self-contained optimized Data URL (while also mirroring to /api/upload-image)
+ * so images never disappear or 404 after a new build or serverless deployment.
  */
 export async function uploadPortfolioImageFile(
   file: File,
@@ -117,29 +118,19 @@ export async function uploadPortfolioImageFile(
   const optimizedDataUrl = await optimizeImageDataUrl(file, options);
   const token = getAdminToken() || '';
 
-  try {
-    const response = await fetch('/api/upload-image', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-admin-token': token,
-      },
-      body: JSON.stringify({
-        dataUrl: optimizedDataUrl,
-        filename: file.name,
-        token,
-      }),
-    });
-
-    if (response.ok) {
-      const result = await response.json();
-      if (result.success && typeof result.url === 'string' && result.url) {
-        return result.url;
-      }
-    }
-  } catch {
-    // Fallback to optimized data URL if offline or static preview
-  }
+  // Mirror asynchronously to backend /uploads without relying on ephemeral disk URLs
+  fetch('/api/upload-image', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-admin-token': token,
+    },
+    body: JSON.stringify({
+      dataUrl: optimizedDataUrl,
+      fileName: file.name,
+      token,
+    }),
+  }).catch(() => {});
 
   return optimizedDataUrl;
 }

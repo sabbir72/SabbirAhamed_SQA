@@ -45,6 +45,110 @@ export default function InteractiveTestRunner() {
   // Code snippets for each project type
   const getProjectCode = (projectId: string) => {
     switch (projectId) {
+      case 'proj-thaura-security':
+        return `# Thaura Security Testing Automation (run_security_tests.py)
+# Non-intrusive security audit across 15 public Thaura.ai pages
+from playwright.sync_api import sync_playwright
+from excel_utils import export_combined_security_report
+
+SECURITY_HEADERS = [
+    "strict-transport-security",
+    "content-security-policy",
+    "x-frame-options",
+    "x-content-type-options",
+]
+
+def audit_public_page_security(url: str):
+    findings = []
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        context = browser.new_context()
+        page = context.new_page()
+
+        # TC-SEC-01: Detect insecure HTTP mixed-content requests
+        mixed_content = []
+        page.on("request", lambda req: mixed_content.append(req.url) if req.url.startswith("http://") else None)
+
+        response = page.goto(url, wait_until="networkidle")
+        headers = {k.lower(): v for k, v in (response.headers if response else {}).items()}
+
+        # TC-SEC-02: Validate HTTP Security Response Headers
+        missing_headers = [h for h in SECURITY_HEADERS if h not in headers]
+
+        # TC-SEC-05: Audit Cookie Security Flags (Secure, HttpOnly, SameSite)
+        cookies = context.cookies()
+        insecure_cookies = [c["name"] for c in cookies if not c.get("secure")]
+
+        findings.append({"url": url, "mixed": len(mixed_content), "missingHeaders": missing_headers, "insecureCookies": insecure_cookies})
+        browser.close()
+    export_combined_security_report(findings, "reports/Thaura_Security_Testing_Combined_Report.xlsx")`;
+
+      case 'proj-thaura-postman':
+        return `// Thaura Task 01 – Postman Post-Response Script (Q2 & Q5 Auth Lifecycle)
+// Chaining OTP token & verifying post-logout token invalidation
+
+pm.test("Q2: Verify OTP returns 200 OK and issues Bearer token", function () {
+    pm.response.to.have.status(200);
+    const jsonData = pm.response.json();
+    pm.expect(jsonData).to.have.property("token").that.is.a("string").and.not.empty;
+
+    // Persist active token and archive copy for post-logout revocation check (Q5)
+    pm.environment.set("thaura_token", jsonData.token);
+    pm.environment.set("old_thaura_token", jsonData.token);
+});
+
+// Q5_auth_validate_old_token_after_logout assertion:
+pm.test("Q5: Old session token is strictly rejected after logout", function () {
+    pm.expect(pm.response.code).to.be.oneOf([401, 403]);
+});`;
+
+      case 'proj-thaura-links-perf':
+        return `# Thaura.ai Task 02 – Link & Media Payload Validation (Pytest + Playwright)
+import csv
+from playwright.sync_api import Page
+
+def test_links_and_media_optimization(page: Page):
+    page.goto("https://thaura.ai", wait_until="domcontentloaded")
+
+    # 1. Extract all Header, Content & Footer links
+    hrefs = page.eval_on_selector_all("a[href]", "els => els.map(e => e.href)")
+    assert len(hrefs) > 0, "Expected navigable links on page"
+
+    # 2. Validate HTTP status & zero 404 broken links
+    for link in set(hrefs):
+        if link.startswith("http"):
+            res = page.request.get(link)
+            assert res.status < 400, f"Broken link detected: {link} ({res.status})"
+
+    # 3. Audit offscreen images for lazy-loading compliance
+    imgs = page.eval_on_selector_all("img", "els => els.map(i => ({ src: i.src, loading: i.loading }))")
+    with open("thaura_lazy_loading_report.csv", "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=["src", "loading"])
+        writer.writeheader()
+        writer.writerows(imgs)`;
+
+      case 'proj-cypress-saucedemo':
+        return `// SauceDemo Cypress E2E Automation (cypress/e2e/Login.cy.js)
+describe('SauceDemo E2E Suite with Allure Reporting', () => {
+  it('Logs in via .env credentials, validates product & cart badge, and logs out', () => {
+    cy.visit(Cypress.env('API_URL') || 'https://www.saucedemo.com');
+
+    cy.get('[data-test="username"]').type(Cypress.env('USER_NAME'));
+    cy.get('[data-test="password"]').type(Cypress.env('PASSWORD'), { log: false });
+    cy.get('[data-test="login-button"]').click();
+
+    cy.url().should('include', '/inventory.html');
+    cy.contains('Sauce Labs Backpack').click();
+    cy.get('.inventory_details_price').should('be.visible');
+
+    cy.get('[data-test^="add-to-cart"]').click();
+    cy.get('.shopping_cart_badge').should('have.text', '1');
+
+    cy.get('#react-burger-menu-btn').click();
+    cy.get('#logout_sidebar_link').click();
+  });
+});`;
+
       case 'proj-erpnext-agent':
         return `# ERPNext + Playwright + Ollama AI Agent (agent.py)
 # Connects local Ollama (qwen2.5-coder:7b) to Playwright

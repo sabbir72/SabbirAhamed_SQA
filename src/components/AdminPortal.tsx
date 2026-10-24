@@ -20,7 +20,7 @@ import {
   BookOpen, User,
   Globe, Mail, Phone, MapPin, Linkedin, Github, Sliders,
   CheckSquare, Building2, Send, Award, Target, EyeOff, Palette, Nfc,
-  LayoutGrid, Menu, TrendingUp, Settings, Save
+  LayoutGrid, Menu, TrendingUp, Settings, Save, Cloud
 } from 'lucide-react';
 import ThemeSelectorModal from './ThemeSelectorModal';
 import { VisitingCardModal } from './VisitingCardModal';
@@ -53,6 +53,14 @@ import {
   getAdminSessionRemainingSeconds,
   ADMIN_SESSION_EXPIRED_EVENT
 } from '../utils/adminAuth';
+import {
+  CLOUD_SYNC_STATUS_EVENT,
+  CloudSyncStatus,
+  getCloudSyncStatus,
+  signInOwnerWithGoogle,
+  signOutOwnerFromGoogle,
+  syncAllLocalDataToCloud,
+} from '../utils/cloudSync';
 import { PERSONAL_INFO } from '../data';
 import { 
   DEFAULT_CAREER_OBJECTIVE, 
@@ -104,6 +112,7 @@ export default function AdminPortal({
   const [currentThemeId, setCurrentThemeId] = useState<string>(() => getSavedThemeId());
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
   const [visitorStats, setVisitorStats] = useState<VisitorMetrics>(() => getCurrentVisitorMetrics());
+  const [cloudStatus, setCloudStatus] = useState<CloudSyncStatus>(() => getCloudSyncStatus());
 
   useEffect(() => {
     if (!isAdmin && onOpenMainSecurity) {
@@ -247,15 +256,22 @@ export default function AdminPortal({
       setVisitorStats(updatedStats);
     });
 
+    const handleCloudStatus = (e: Event) => {
+      const custom = e as CustomEvent<CloudSyncStatus>;
+      setCloudStatus(custom.detail || getCloudSyncStatus());
+    };
+
     window.addEventListener(PORTFOLIO_UPDATED_EVENT, handlePortfolioUpdated);
     window.addEventListener(BLOGS_UPDATED_EVENT, handleBlogsUpdated);
     window.addEventListener('admin_auth_changed', handleAuthUpdated);
+    window.addEventListener(CLOUD_SYNC_STATUS_EVENT, handleCloudStatus);
 
     return () => {
       unsubscribeVisitors();
       window.removeEventListener(PORTFOLIO_UPDATED_EVENT, handlePortfolioUpdated);
       window.removeEventListener(BLOGS_UPDATED_EVENT, handleBlogsUpdated);
       window.removeEventListener('admin_auth_changed', handleAuthUpdated);
+      window.removeEventListener(CLOUD_SYNC_STATUS_EVENT, handleCloudStatus);
     };
   }, []);
 
@@ -4112,6 +4128,98 @@ ${profile.title || PERSONAL_INFO.title}`;
                     </button>
                   );
                 })}
+              </div>
+            </div>
+
+            {/* Permanent Google Cloud Firestore Sync */}
+            <div className="bg-[#12151C] border border-white/10 rounded-3xl p-6 sm:p-8 space-y-5 shadow-xl">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-white/10">
+                <div className="flex items-start space-x-3.5">
+                  <div className="p-3 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 shrink-0">
+                    <Cloud className="w-6 h-6" />
+                  </div>
+                  <div className="space-y-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="font-display font-bold text-xl text-white">
+                        Permanent Cloud Database Sync
+                      </h3>
+                      <span
+                        className={`px-2.5 py-0.5 rounded-md text-[11px] font-mono font-bold border ${
+                          cloudStatus.isOwnerConnected
+                            ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                            : 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+                        }`}
+                      >
+                        {cloudStatus.isOwnerConnected ? 'Cloud Connected' : 'Connect Owner Account'}
+                      </span>
+                    </div>
+                    <p className="text-xs font-mono text-[#9CA3AF] max-w-2xl leading-relaxed">
+                      {cloudStatus.isOwnerConnected
+                        ? `Linked as ${cloudStatus.ownerEmail}. Every project, blog article, category, skill, and uploaded image is saved permanently in Google Cloud Firestore across all rebuilds and deployments.`
+                        : 'Link your verified Google owner account once so every project, blog article, and uploaded image is backed up permanently in Google Cloud Firestore and never resets on new builds.'}
+                    </p>
+                    {cloudStatus.lastSyncedAt && (
+                      <p className="text-[11px] font-mono text-emerald-400/90">
+                        Last Cloud Sync: {new Date(cloudStatus.lastSyncedAt).toLocaleString()}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+                  {cloudStatus.isOwnerConnected ? (
+                    <>
+                      <button
+                        type="button"
+                        disabled={cloudStatus.isSyncing}
+                        onClick={async () => {
+                          const res = await syncAllLocalDataToCloud();
+                          if (res.success) {
+                            showToast(
+                              `Synced ${res.projectsSynced} projects & ${res.blogsSynced} blogs to Cloud!`
+                            );
+                          } else if (res.error) {
+                            showToast(res.error);
+                          }
+                        }}
+                        className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-mono text-xs font-bold flex items-center gap-2 cursor-pointer transition-colors disabled:opacity-50"
+                      >
+                        <RefreshCw
+                          className={`w-3.5 h-3.5 ${cloudStatus.isSyncing ? 'animate-spin' : ''}`}
+                        />
+                        <span>
+                          {cloudStatus.isSyncing ? 'Syncing to Cloud...' : 'Sync All Data to Cloud'}
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          await signOutOwnerFromGoogle();
+                          showToast('Disconnected Google Cloud write session.');
+                        }}
+                        className="px-3.5 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 font-mono text-xs cursor-pointer transition-colors"
+                      >
+                        Disconnect
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const res = await signInOwnerWithGoogle();
+                        if (res.success) {
+                          showToast(`Connected Cloud Sync as ${res.email || 'Owner'}!`);
+                        } else if (res.error) {
+                          showToast(res.error);
+                        }
+                      }}
+                      className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-mono text-xs font-bold flex items-center gap-2 cursor-pointer transition-colors shadow-lg shadow-emerald-600/20"
+                    >
+                      <Cloud className="w-4 h-4" />
+                      <span>Connect Google Cloud Sync</span>
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
 

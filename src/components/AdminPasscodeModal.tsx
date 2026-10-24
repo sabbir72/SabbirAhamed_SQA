@@ -22,12 +22,14 @@ import {
   Eye,
   EyeOff,
   RefreshCw,
+  Cloud,
 } from 'lucide-react';
 import {
   verifyAdminPasscode,
   updateAdminPasscode,
   isAdminAuthenticated,
 } from '../utils/adminAuth';
+import { signInOwnerWithGoogle } from '../utils/cloudSync';
 import { useMobileKeyboardViewport } from '../utils/useMobileKeyboardViewport';
 
 export type SecurityModalMode = 'unlock' | 'change-password';
@@ -127,6 +129,27 @@ export default function AdminPasscodeModal({
       }
     } catch {
       setErrorMsg('Authentication error occurred. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleGoogleOwnerUnlock = async () => {
+    if (isSubmitting) return;
+    setErrorMsg('');
+    setSuccessMsg('');
+    setIsSubmitting(true);
+    try {
+      const res = await signInOwnerWithGoogle();
+      if (res.success) {
+        setIsInputFocused(false);
+        onSuccess('unlock');
+        onClose();
+      } else if (res.error) {
+        setErrorMsg(res.error);
+      }
+    } catch {
+      setErrorMsg('Google authentication error occurred. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
@@ -403,6 +426,23 @@ export default function AdminPasscodeModal({
                 )}
               </button>
             </div>
+
+            {!isCompactMobileKeyboard && (
+              <div className="pt-2 border-t border-white/10 space-y-2.5">
+                <div className="text-[11px] font-mono text-[#9CA3AF] text-center">
+                  Or unlock with verified owner Google account (enables permanent Cloud DB sync)
+                </div>
+                <button
+                  type="button"
+                  onClick={handleGoogleOwnerUnlock}
+                  disabled={isSubmitting}
+                  className="w-full min-h-[44px] px-4 py-2.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/15 text-white font-mono text-xs font-semibold flex items-center justify-center gap-2 transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  <Cloud className="w-4 h-4 text-[var(--color-accent)] shrink-0" />
+                  <span>Sign in with Google (Owner Cloud Sync)</span>
+                </button>
+              </div>
+            )}
           </form>
         ) : (
           <form onSubmit={handleUpdatePasswordSubmit} className="space-y-3">

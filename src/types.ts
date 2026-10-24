@@ -27,6 +27,7 @@ export interface Experience {
   period: string;
   location: string;
   highlights: string[];
+  updatedAt?: string;
 }
 
 /**
@@ -71,6 +72,7 @@ export interface Project {
   tags: string[];
   link?: string;
   image?: string;
+  updatedAt?: string;
 }
 
 /**
@@ -99,6 +101,7 @@ export interface Reference {
   email: string;
   phone: string;
   endorsement: string;
+  updatedAt?: string;
 }
 
 export interface CareerRoadmapItem {
@@ -106,4 +109,5 @@ export interface CareerRoadmapItem {
   title: string;
   status: 'completed' | 'active' | 'future' | 'vision';
   badge?: string;
+  updatedAt?: string;
 }

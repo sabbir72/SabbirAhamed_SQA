@@ -1,0 +1,469 @@
+{
+  "entities": {
+    "AdminRecord": {
+      "title": "AdminRecord",
+      "description": "Explicit administrator UID record for RBAC verification.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Firebase Auth UID of the administrator.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "role": {
+          "type": "string",
+          "description": "Assigned role.",
+          "enum": ["admin"],
+          "minLength": 5,
+          "maxLength": 16
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp."
+        }
+      },
+      "required": ["uid", "role", "createdAt"]
+    },
+    "PortfolioMeta": {
+      "title": "PortfolioMeta",
+      "description": "Singleton portfolio metadata document storing profile, skills, references, roadmap, categories, and deletion tombstones.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Document identifier (main).",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "isPublic": {
+          "type": "boolean",
+          "description": "Public visibility flag for portfolio visitors."
+        },
+        "profile": {
+          "type": "object",
+          "description": "Owner personal profile, headline metrics, and avatar."
+        },
+        "skills": {
+          "type": "array",
+          "description": "Skill categories and technical tools."
+        },
+        "references": {
+          "type": "array",
+          "description": "Verified professional references."
+        },
+        "careerRoadmap": {
+          "type": "array",
+          "description": "Career vision milestones and roadmap stages."
+        },
+        "blogCategories": {
+          "type": "array",
+          "description": "Custom and default SQA blog categories."
+        },
+        "deletedProjectIds": {
+          "type": "array",
+          "description": "Tombstone IDs of intentionally deleted projects."
+        },
+        "deletedExperienceIds": {
+          "type": "array",
+          "description": "Tombstone IDs of intentionally deleted experiences."
+        },
+        "deletedBlogIds": {
+          "type": "array",
+          "description": "Tombstone IDs of intentionally deleted blog articles."
+        },
+        "authorUid": {
+          "type": "string",
+          "description": "UID of the verified portfolio owner.",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "lastModifiedIso": {
+          "type": "string",
+          "description": "ISO-8601 modification timestamp string.",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Firestore server creation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Firestore server update timestamp."
+        }
+      },
+      "required": [
+        "id",
+        "isPublic",
+        "profile",
+        "skills",
+        "references",
+        "careerRoadmap",
+        "blogCategories",
+        "deletedProjectIds",
+        "deletedExperienceIds",
+        "deletedBlogIds",
+        "authorUid",
+        "lastModifiedIso",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "ProjectDocument": {
+      "title": "ProjectDocument",
+      "description": "Individual SQA portfolio project showcase with metrics, assertions, logs, and screenshot.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique project identifier.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "visibility": {
+          "type": "string",
+          "description": "Public visibility state.",
+          "enum": ["public"],
+          "minLength": 6,
+          "maxLength": 16
+        },
+        "orderIndex": {
+          "type": "integer",
+          "description": "Display sort index in portfolio."
+        },
+        "title": {
+          "type": "string",
+          "description": "Project title.",
+          "minLength": 1,
+          "maxLength": 300
+        },
+        "type": {
+          "type": "string",
+          "description": "SQA testing discipline.",
+          "enum": ["Manual", "Automation", "API", "Performance"],
+          "minLength": 3,
+          "maxLength": 32
+        },
+        "description": {
+          "type": "string",
+          "description": "Detailed project summary.",
+          "minLength": 0,
+          "maxLength": 10000
+        },
+        "metrics": {
+          "type": "array",
+          "description": "Key QA execution metrics."
+        },
+        "assertions": {
+          "type": "array",
+          "description": "Test assertions and outcomes."
+        },
+        "logs": {
+          "type": "array",
+          "description": "Execution log lines."
+        },
+        "tags": {
+          "type": "array",
+          "description": "Technology and framework tags."
+        },
+        "link": {
+          "type": "string",
+          "description": "External repository or live report URL.",
+          "minLength": 0,
+          "maxLength": 2048
+        },
+        "image": {
+          "type": "string",
+          "description": "Project screenshot URL or optimized Data URL.",
+          "minLength": 0,
+          "maxLength": 750000
+        },
+        "updatedAtIso": {
+          "type": "string",
+          "description": "Client ISO-8601 modification timestamp.",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "authorUid": {
+          "type": "string",
+          "description": "UID of the verified portfolio owner.",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Firestore server creation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Firestore server update timestamp."
+        }
+      },
+      "required": [
+        "id",
+        "visibility",
+        "orderIndex",
+        "title",
+        "type",
+        "description",
+        "metrics",
+        "assertions",
+        "logs",
+        "tags",
+        "link",
+        "image",
+        "updatedAtIso",
+        "authorUid",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "ExperienceDocument": {
+      "title": "ExperienceDocument",
+      "description": "Professional SQA work experience milestone.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique experience identifier.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "visibility": {
+          "type": "string",
+          "description": "Public visibility state.",
+          "enum": ["public"],
+          "minLength": 6,
+          "maxLength": 16
+        },
+        "orderIndex": {
+          "type": "integer",
+          "description": "Display sort index on timeline."
+        },
+        "role": {
+          "type": "string",
+          "description": "Job title or SQA role.",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "company": {
+          "type": "string",
+          "description": "Company or organization name.",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "period": {
+          "type": "string",
+          "description": "Employment date range.",
+          "minLength": 0,
+          "maxLength": 120
+        },
+        "location": {
+          "type": "string",
+          "description": "Office location or remote status.",
+          "minLength": 0,
+          "maxLength": 200
+        },
+        "highlights": {
+          "type": "array",
+          "description": "Key SQA achievements and responsibilities."
+        },
+        "updatedAtIso": {
+          "type": "string",
+          "description": "Client ISO-8601 modification timestamp.",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "authorUid": {
+          "type": "string",
+          "description": "UID of the verified portfolio owner.",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Firestore server creation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Firestore server update timestamp."
+        }
+      },
+      "required": [
+        "id",
+        "visibility",
+        "orderIndex",
+        "role",
+        "company",
+        "period",
+        "location",
+        "highlights",
+        "updatedAtIso",
+        "authorUid",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "BlogDocument": {
+      "title": "BlogDocument",
+      "description": "Technical SQA blog article with Markdown content, cover image, and publication status.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique blog post identifier.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "orderIndex": {
+          "type": "integer",
+          "description": "Editorial sort index."
+        },
+        "title": {
+          "type": "string",
+          "description": "Article headline.",
+          "minLength": 1,
+          "maxLength": 400
+        },
+        "slug": {
+          "type": "string",
+          "description": "URL-safe article slug.",
+          "minLength": 1,
+          "maxLength": 250
+        },
+        "category": {
+          "type": "string",
+          "description": "Article category.",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "description": {
+          "type": "string",
+          "description": "Article excerpt.",
+          "minLength": 0,
+          "maxLength": 5000
+        },
+        "content": {
+          "type": "string",
+          "description": "Markdown body content.",
+          "minLength": 0,
+          "maxLength": 250000
+        },
+        "coverImage": {
+          "type": "string",
+          "description": "Cover photo URL or optimized Data URL.",
+          "minLength": 0,
+          "maxLength": 650000
+        },
+        "publishDate": {
+          "type": "string",
+          "description": "Human-readable publish date.",
+          "minLength": 0,
+          "maxLength": 100
+        },
+        "readingTime": {
+          "type": "string",
+          "description": "Estimated reading duration.",
+          "minLength": 0,
+          "maxLength": 64
+        },
+        "tags": {
+          "type": "array",
+          "description": "Article topic tags."
+        },
+        "featured": {
+          "type": "boolean",
+          "description": "Whether highlighted as a featured article."
+        },
+        "status": {
+          "type": "string",
+          "description": "Editorial status (Published is public; Draft is admin-only).",
+          "enum": ["Published", "Draft"],
+          "minLength": 5,
+          "maxLength": 32
+        },
+        "author": {
+          "type": "object",
+          "description": "Author attribution metadata."
+        },
+        "updatedAtIso": {
+          "type": "string",
+          "description": "Client ISO-8601 modification timestamp.",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "authorUid": {
+          "type": "string",
+          "description": "UID of the verified portfolio owner.",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Firestore server creation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Firestore server update timestamp."
+        }
+      },
+      "required": [
+        "id",
+        "orderIndex",
+        "title",
+        "slug",
+        "category",
+        "description",
+        "content",
+        "coverImage",
+        "publishDate",
+        "readingTime",
+        "tags",
+        "featured",
+        "status",
+        "author",
+        "updatedAtIso",
+        "authorUid",
+        "createdAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/admins/{adminUid}": {
+      "schema": "AdminRecord",
+      "description": "Explicit administrator UID allowlist records."
+    },
+    "/portfolio_meta/{metaId}": {
+      "schema": "PortfolioMeta",
+      "description": "Singleton portfolio metadata, profile, skills, references, roadmap, and deletion tombstones."
+    },
+    "/projects/{projectId}": {
+      "schema": "ProjectDocument",
+      "description": "SQA portfolio project showcases."
+    },
+    "/experiences/{experienceId}": {
+      "schema": "ExperienceDocument",
+      "description": "Professional SQA work experience timeline entries."
+    },
+    "/blogs/{blogId}": {
+      "schema": "BlogDocument",
+      "description": "SQA technical blog articles and CMS drafts."
+    }
+  }
+}

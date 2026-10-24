@@ -1,0 +1,353 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 1. Global Safety Net (Default-Deny Catch-All)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // ------------------------------------------------------------------------
+    // Reusable Hardened Security Primitives
+    // ------------------------------------------------------------------------
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedEmail() {
+      return isSignedIn() &&
+        'email' in request.auth.token &&
+        request.auth.token.email is string &&
+        'email_verified' in request.auth.token &&
+        request.auth.token.email_verified == true;
+    }
+
+    // Zero-DB-read owner check safe for list queries (Cost-Optimization Clause)
+    function isBootstrappedOwner() {
+      return isVerifiedEmail() && (
+        request.auth.token.email.lower() == 'sabbir.altersense@gmail.com' ||
+        request.auth.token.email.lower() == 'sabbircse72@gmail.com'
+      );
+    }
+
+    // Full Admin check with DB role fallback (evaluated last after static checks)
+    function isAdmin() {
+      return isBootstrappedOwner() || (
+        isVerifiedEmail() &&
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    function isBoundedStringList(arr, maxItems, maxFirstLen) {
+      return arr is list &&
+        arr.size() <= maxItems &&
+        (arr.size() == 0 || (arr[0] is string && arr[0].size() <= maxFirstLen));
+    }
+
+    function isBoundedMapList(arr, maxItems) {
+      return arr is list &&
+        arr.size() <= maxItems &&
+        (arr.size() == 0 || arr[0] is map);
+    }
+
+    // ------------------------------------------------------------------------
+    // Validation Blueprints
+    // ------------------------------------------------------------------------
+    function isValidProfileMap(p) {
+      return p is map &&
+        p.keys().hasAll([
+          'name', 'title', 'avatar', 'email', 'phone', 'location',
+          'github', 'linkedin', 'objective', 'experienceYears',
+          'testCasesCount', 'bugsReportedCount', 'automationScriptsCount',
+          'defectDetectionRate'
+        ]) &&
+        p.keys().hasOnly([
+          'name', 'title', 'avatar', 'email', 'phone', 'location',
+          'github', 'linkedin', 'objective', 'experienceYears',
+          'testCasesCount', 'bugsReportedCount', 'automationScriptsCount',
+          'defectDetectionRate', 'updatedAt'
+        ]) &&
+        p.name is string && p.name.size() <= 200 &&
+        p.title is string && p.title.size() <= 300 &&
+        p.avatar is string && p.avatar.size() <= 650000 &&
+        p.email is string && p.email.size() <= 200 &&
+        p.phone is string && p.phone.size() <= 100 &&
+        p.location is string && p.location.size() <= 200 &&
+        p.github is string && p.github.size() <= 500 &&
+        p.linkedin is string && p.linkedin.size() <= 500 &&
+        p.objective is string && p.objective.size() <= 5000 &&
+        p.experienceYears is string && p.experienceYears.size() <= 64 &&
+        p.testCasesCount is string && p.testCasesCount.size() <= 64 &&
+        p.bugsReportedCount is string && p.bugsReportedCount.size() <= 64 &&
+        p.automationScriptsCount is string && p.automationScriptsCount.size() <= 64 &&
+        p.defectDetectionRate is string && p.defectDetectionRate.size() <= 64 &&
+        (!('updatedAt' in p) || (p.updatedAt is string && p.updatedAt.size() <= 64));
+    }
+
+    function isValidPortfolioMeta(data) {
+      return data.keys().hasAll([
+          'id', 'isPublic', 'profile', 'skills', 'references',
+          'careerRoadmap', 'blogCategories', 'deletedProjectIds',
+          'deletedExperienceIds', 'deletedBlogIds', 'authorUid',
+          'lastModifiedIso', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'id', 'isPublic', 'profile', 'skills', 'references',
+          'careerRoadmap', 'blogCategories', 'deletedProjectIds',
+          'deletedExperienceIds', 'deletedBlogIds', 'authorUid',
+          'lastModifiedIso', 'createdAt', 'updatedAt'
+        ]) &&
+        data.id == 'main' &&
+        data.isPublic is bool &&
+        isValidProfileMap(data.profile) &&
+        isBoundedMapList(data.skills, 50) &&
+        isBoundedMapList(data.references, 50) &&
+        isBoundedMapList(data.careerRoadmap, 50) &&
+        isBoundedStringList(data.blogCategories, 100, 120) &&
+        isBoundedStringList(data.deletedProjectIds, 500, 128) &&
+        isBoundedStringList(data.deletedExperienceIds, 500, 128) &&
+        isBoundedStringList(data.deletedBlogIds, 500, 128) &&
+        data.authorUid is string && data.authorUid.size() >= 1 && data.authorUid.size() <= 128 &&
+        data.lastModifiedIso is string && data.lastModifiedIso.size() >= 1 && data.lastModifiedIso.size() <= 64 &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidProject(data) {
+      return data.keys().hasAll([
+          'id', 'visibility', 'orderIndex', 'title', 'type', 'description',
+          'metrics', 'assertions', 'logs', 'tags', 'link', 'image',
+          'updatedAtIso', 'authorUid', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'id', 'visibility', 'orderIndex', 'title', 'type', 'description',
+          'metrics', 'assertions', 'logs', 'tags', 'link', 'image',
+          'updatedAtIso', 'authorUid', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.id) &&
+        data.visibility == 'public' &&
+        data.orderIndex is int && data.orderIndex >= 0 && data.orderIndex <= 10000 &&
+        data.title is string && data.title.size() >= 1 && data.title.size() <= 300 &&
+        data.type is string && data.type in ['Manual', 'Automation', 'API', 'Performance'] &&
+        data.description is string && data.description.size() <= 10000 &&
+        isBoundedMapList(data.metrics, 30) &&
+        isBoundedMapList(data.assertions, 60) &&
+        isBoundedMapList(data.logs, 100) &&
+        isBoundedStringList(data.tags, 40, 100) &&
+        data.link is string && data.link.size() <= 2048 &&
+        data.image is string && data.image.size() <= 750000 &&
+        data.updatedAtIso is string && data.updatedAtIso.size() >= 1 && data.updatedAtIso.size() <= 64 &&
+        data.authorUid is string && data.authorUid.size() >= 1 && data.authorUid.size() <= 128 &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidExperience(data) {
+      return data.keys().hasAll([
+          'id', 'visibility', 'orderIndex', 'role', 'company', 'period',
+          'location', 'highlights', 'updatedAtIso', 'authorUid', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'id', 'visibility', 'orderIndex', 'role', 'company', 'period',
+          'location', 'highlights', 'updatedAtIso', 'authorUid', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.id) &&
+        data.visibility == 'public' &&
+        data.orderIndex is int && data.orderIndex >= 0 && data.orderIndex <= 10000 &&
+        data.role is string && data.role.size() >= 1 && data.role.size() <= 200 &&
+        data.company is string && data.company.size() >= 1 && data.company.size() <= 200 &&
+        data.period is string && data.period.size() <= 120 &&
+        data.location is string && data.location.size() <= 200 &&
+        isBoundedStringList(data.highlights, 50, 2000) &&
+        data.updatedAtIso is string && data.updatedAtIso.size() >= 1 && data.updatedAtIso.size() <= 64 &&
+        data.authorUid is string && data.authorUid.size() >= 1 && data.authorUid.size() <= 128 &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidBlogAuthor(a) {
+      return a is map &&
+        a.keys().hasAll(['name', 'role', 'avatar', 'bio']) &&
+        a.keys().hasOnly(['name', 'role', 'avatar', 'bio']) &&
+        a.name is string && a.name.size() >= 1 && a.name.size() <= 200 &&
+        a.role is string && a.role.size() <= 250 &&
+        a.avatar is string && a.avatar.size() <= 250000 &&
+        a.bio is string && a.bio.size() <= 2000;
+    }
+
+    function isValidBlog(data) {
+      return data.keys().hasAll([
+          'id', 'orderIndex', 'title', 'slug', 'category', 'description',
+          'content', 'coverImage', 'publishDate', 'readingTime', 'tags',
+          'featured', 'status', 'author', 'updatedAtIso', 'authorUid',
+          'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'id', 'orderIndex', 'title', 'slug', 'category', 'description',
+          'content', 'coverImage', 'publishDate', 'readingTime', 'tags',
+          'featured', 'status', 'author', 'updatedAtIso', 'authorUid',
+          'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.id) &&
+        data.orderIndex is int && data.orderIndex >= 0 && data.orderIndex <= 10000 &&
+        data.title is string && data.title.size() >= 1 && data.title.size() <= 400 &&
+        data.slug is string && data.slug.size() >= 1 && data.slug.size() <= 250 &&
+        data.category is string && data.category.size() >= 1 && data.category.size() <= 120 &&
+        data.description is string && data.description.size() <= 5000 &&
+        data.content is string && data.content.size() <= 250000 &&
+        data.coverImage is string && data.coverImage.size() <= 650000 &&
+        data.publishDate is string && data.publishDate.size() <= 100 &&
+        data.readingTime is string && data.readingTime.size() <= 64 &&
+        isBoundedStringList(data.tags, 40, 100) &&
+        data.featured is bool &&
+        data.status is string && data.status in ['Published', 'Draft'] &&
+        isValidBlogAuthor(data.author) &&
+        data.updatedAtIso is string && data.updatedAtIso.size() >= 1 && data.updatedAtIso.size() <= 64 &&
+        data.authorUid is string && data.authorUid.size() >= 1 && data.authorUid.size() <= 128 &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    // ------------------------------------------------------------------------
+    // Collection Match Rules
+    // ------------------------------------------------------------------------
+
+    match /admins/{adminUid} {
+      allow get: if isSignedIn() && isValidId(adminUid) && request.auth.uid == adminUid;
+      allow list: if false;
+      allow create, update, delete: if false;
+    }
+
+    match /portfolio_meta/{metaId} {
+      allow get: if isValidId(metaId) && (resource == null || existing().isPublic == true || isAdmin());
+      allow list: if false;
+
+      allow create: if isSignedIn() &&
+        isValidId(metaId) &&
+        metaId == 'main' &&
+        isValidPortfolioMeta(incoming()) &&
+        incoming().authorUid == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        isAdmin();
+
+      allow update: if isValidPortfolioMeta(incoming()) &&
+        isSignedIn() &&
+        isValidId(metaId) &&
+        metaId == 'main' &&
+        incoming().id == existing().id &&
+        incoming().authorUid == existing().authorUid &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'isPublic', 'profile', 'skills', 'references', 'careerRoadmap',
+          'blogCategories', 'deletedProjectIds', 'deletedExperienceIds',
+          'deletedBlogIds', 'lastModifiedIso', 'updatedAt'
+        ]) &&
+        isAdmin();
+
+      allow delete: if isSignedIn() && isValidId(metaId) && isAdmin();
+    }
+
+    match /projects/{projectId} {
+      allow get: if isValidId(projectId) && (resource == null || existing().visibility == 'public' || isAdmin());
+      allow list: if existing().visibility == 'public' || isBootstrappedOwner();
+
+      allow create: if isSignedIn() &&
+        isValidId(projectId) &&
+        incoming().id == projectId &&
+        isValidProject(incoming()) &&
+        incoming().authorUid == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        isAdmin();
+
+      allow update: if isValidProject(incoming()) &&
+        isSignedIn() &&
+        isValidId(projectId) &&
+        incoming().id == existing().id &&
+        incoming().authorUid == existing().authorUid &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'visibility', 'orderIndex', 'title', 'type', 'description',
+          'metrics', 'assertions', 'logs', 'tags', 'link', 'image',
+          'updatedAtIso', 'updatedAt'
+        ]) &&
+        isAdmin();
+
+      allow delete: if isSignedIn() && isValidId(projectId) && isAdmin();
+    }
+
+    match /experiences/{experienceId} {
+      allow get: if isValidId(experienceId) && (resource == null || existing().visibility == 'public' || isAdmin());
+      allow list: if existing().visibility == 'public' || isBootstrappedOwner();
+
+      allow create: if isSignedIn() &&
+        isValidId(experienceId) &&
+        incoming().id == experienceId &&
+        isValidExperience(incoming()) &&
+        incoming().authorUid == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        isAdmin();
+
+      allow update: if isValidExperience(incoming()) &&
+        isSignedIn() &&
+        isValidId(experienceId) &&
+        incoming().id == existing().id &&
+        incoming().authorUid == existing().authorUid &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'visibility', 'orderIndex', 'role', 'company', 'period',
+          'location', 'highlights', 'updatedAtIso', 'updatedAt'
+        ]) &&
+        isAdmin();
+
+      allow delete: if isSignedIn() && isValidId(experienceId) && isAdmin();
+    }
+
+    match /blogs/{blogId} {
+      allow get: if isValidId(blogId) && (resource == null || existing().status == 'Published' || isAdmin());
+      allow list: if existing().status == 'Published' || isBootstrappedOwner();
+
+      allow create: if isSignedIn() &&
+        isValidId(blogId) &&
+        incoming().id == blogId &&
+        isValidBlog(incoming()) &&
+        incoming().authorUid == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        isAdmin();
+
+      allow update: if isValidBlog(incoming()) &&
+        isSignedIn() &&
+        isValidId(blogId) &&
+        incoming().id == existing().id &&
+        incoming().authorUid == existing().authorUid &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'orderIndex', 'title', 'slug', 'category', 'description',
+          'content', 'coverImage', 'publishDate', 'readingTime', 'tags',
+          'featured', 'status', 'author', 'updatedAtIso', 'updatedAt'
+        ]) &&
+        isAdmin();
+
+      allow delete: if isSignedIn() && isValidId(blogId) && isAdmin();
+    }
+  }
+}

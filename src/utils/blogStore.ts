@@ -1,112 +1,67 @@
 /**
  * -----------------------------------------
  * Project     : Sabbir Ahamed SQA Portfolio
- * Module      : Blog Store & Persistent LocalStorage Manager
- * Description : Handles persistent storage, CRUD operations, slug generation,
+ * Module      : Blog Store & Non-Destructive Persistent Sync Manager
+ * Description : Handles persistent storage, non-destructive default + custom merging,
+ *               server/cloud synchronization, CRUD operations, slug generation,
  *               and reactive state events for blog articles.
  * Author      : Sabbir Ahamed
- * Last Updated: 2026-08-04
+ * Last Updated: 2026-10-24
  * -----------------------------------------
  */
 
 import { BlogPost, BLOG_POSTS, BLOG_CATEGORIES } from '../data/blogs';
 import { isAdminAuthenticated } from './adminAuth';
-import { getStoredProfile } from './portfolioStore';
+import {
+  getStoredProfile,
+  getStoredPortfolioData,
+  syncBlogStateToPortfolioServer,
+  SERVER_BLOGS_SYNCED_EVENT,
+} from './portfolioStore';
+import {
+  deleteBlogFromCloud,
+  pushAllBlogsToCloud,
+  pushBlogToCloud,
+} from './cloudSync';
 import { PERSONAL_INFO } from '../data';
 
 const STORAGE_KEY = 'sabbir_portfolio_blogs_v1';
 const CATEGORIES_STORAGE_KEY = 'sabbir_portfolio_blog_categories_v1';
+const DELETED_BLOGS_STORAGE_KEY = 'sabbir_portfolio_deleted_blogs_v1';
 export const BLOGS_UPDATED_EVENT = 'sabbir_blogs_updated';
 
 const DEFAULT_CUSTOM_CATEGORIES = BLOG_CATEGORIES.filter((c) => c !== 'All');
 
-/**
- * Retrieve all available blog categories (excluding 'All'), combining stored custom categories
- * and any categories used by existing blog posts.
- */
-export function getStoredBlogCategories(): string[] {
-  let savedCategories: string[] = [];
+const CANDIDATE_BLOG_KEYS = [
+  STORAGE_KEY,
+  'sabbir_portfolio_blogs',
+  'sabbir_blog_posts',
+];
+
+function getDeletedBlogIds(): string[] {
   try {
-    const raw = localStorage.getItem(CATEGORIES_STORAGE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        savedCategories = parsed.filter((c): c is string => typeof c === 'string' && c.trim().length > 0 && c.trim().toLowerCase() !== 'all');
-      }
-    }
-  } catch (err) {
-    console.error('Error reading blog categories from localStorage:', err);
+    const raw = localStorage.getItem(DELETED_BLOGS_STORAGE_KEY);
+    const localIds: string[] = raw ? JSON.parse(raw) : [];
+    const portfolioIds = getStoredPortfolioData().deletedBlogIds || [];
+    return Array.from(
+      new Set(
+        [...(Array.isArray(localIds) ? localIds : []), ...portfolioIds].filter(
+          (id): id is string => typeof id === 'string' && id.trim().length > 0
+        )
+      )
+    );
+  } catch {
+    return [];
   }
-
-  if (savedCategories.length === 0) {
-    savedCategories = [...DEFAULT_CUSTOM_CATEGORIES];
-    try {
-      localStorage.setItem(CATEGORIES_STORAGE_KEY, JSON.stringify(savedCategories));
-    } catch (e) {
-      // ignore
-    }
-  }
-
-  // Merge in any categories already used on existing posts without case-insensitive duplicates
-  const posts = getStoredBlogPosts();
-  const merged = [...savedCategories];
-  for (const post of posts) {
-    const cat = post.category?.trim();
-    if (cat && cat.toLowerCase() !== 'all' && !merged.some((existing) => existing.toLowerCase() === cat.toLowerCase())) {
-      merged.push(cat);
-    }
-  }
-
-  return merged;
 }
 
-/**
- * Retrieve all categories prefixed with 'All' for filter bars
- */
-export function getAllBlogFilterCategories(): string[] {
-  return ['All', ...getStoredBlogCategories()];
-}
-
-/**
- * Create and persist a new blog category
- */
-export function addBlogCategory(categoryName: string): string[] {
-  const trimmed = categoryName.trim();
-  const current = getStoredBlogCategories();
-  if (!trimmed || trimmed.toLowerCase() === 'all') {
-    return current;
-  }
-
-  const exists = current.some((c) => c.toLowerCase() === trimmed.toLowerCase());
-  const updated = exists ? current : [...current, trimmed];
-
+function saveDeletedBlogIds(ids: string[]): void {
+  const clean = Array.from(new Set(ids.filter((id): id is string => typeof id === 'string' && id.trim().length > 0)));
   try {
-    localStorage.setItem(CATEGORIES_STORAGE_KEY, JSON.stringify(updated));
-    window.dispatchEvent(new Event(BLOGS_UPDATED_EVENT));
-  } catch (err) {
-    console.error('Error saving blog categories:', err);
+    localStorage.setItem(DELETED_BLOGS_STORAGE_KEY, JSON.stringify(clean));
+  } catch {
+    // ignore
   }
-
-  return updated;
-}
-
-/**
- * Remove a category from the stored categories list
- */
-export function deleteBlogCategory(categoryName: string): string[] {
-  const trimmed = categoryName.trim().toLowerCase();
-  const current = getStoredBlogCategories();
-  const updated = current.filter((c) => c.toLowerCase() !== trimmed);
-  const finalCategories = updated.length > 0 ? updated : ['Software Testing'];
-
-  try {
-    localStorage.setItem(CATEGORIES_STORAGE_KEY, JSON.stringify(finalCategories));
-    window.dispatchEvent(new Event(BLOGS_UPDATED_EVENT));
-  } catch (err) {
-    console.error('Error deleting blog category:', err);
-  }
-
-  return finalCategories;
 }
 
 /**
@@ -141,38 +96,208 @@ function normalizeAuthorAvatar(post: BlogPost): BlogPost {
   return post;
 }
 
-const CANDIDATE_BLOG_KEYS = [
-  STORAGE_KEY,
-  'sabbir_portfolio_blogs',
-  'sabbir_blog_posts'
-];
+/**
+ * Non-destructively merges saved/custom blog posts with secondary and default posts by id & slug,
+ * honoring explicit deletions (`deletedIds`) so custom live articles and newly seeded articles coexist.
+ */
+function mergeBlogPostsNonDestructive(
+  primaryList: BlogPost[],
+  secondaryList: BlogPost[],
+  defaultList: BlogPost[],
+  deletedIds: string[]
+): BlogPost[] {
+  const deletedSet = new Set(deletedIds);
+  const byId = new Map<string, BlogPost>();
+  const slugToId = new Map<string, string>();
+  const orderedIds: string[] = [];
+
+  const upsert = (rawPost: BlogPost | undefined, isDefaultSeed = false) => {
+    if (!rawPost || typeof rawPost.id !== 'string' || !rawPost.id.trim()) return;
+    if (deletedSet.has(rawPost.id)) return;
+
+    const normalized = normalizeAuthorAvatar({
+      ...rawPost,
+      status: rawPost.status || 'Published',
+    });
+    const cleanSlug = (normalized.slug || '').trim().toLowerCase();
+
+    // Avoid duplicate slugs if same post was stored under a different id unless it's an edit
+    const existingIdForSlug = cleanSlug ? slugToId.get(cleanSlug) : undefined;
+    const targetId = byId.has(normalized.id) ? normalized.id : existingIdForSlug || normalized.id;
+
+    if (deletedSet.has(targetId)) return;
+
+    const existing = byId.get(targetId);
+    if (!existing) {
+      byId.set(targetId, normalized);
+      if (cleanSlug) slugToId.set(cleanSlug, targetId);
+      orderedIds.push(targetId);
+    } else if (!isDefaultSeed) {
+      const t1 = existing.updatedAt ? Date.parse(existing.updatedAt) : 0;
+      const t2 = normalized.updatedAt ? Date.parse(normalized.updatedAt) : 0;
+      if (!Number.isNaN(t2) && !Number.isNaN(t1) && t2 > t1) {
+        byId.set(targetId, normalized);
+      }
+    }
+  };
+
+  const defaultIds = new Set(defaultList.map((d) => d.id));
+  const defaultSlugs = new Set(defaultList.map((d) => d.slug.toLowerCase()));
+
+  // 1. Custom live-created posts come first so user's custom blogs never get buried or lost
+  for (const post of primaryList) {
+    if (!defaultIds.has(post.id) && !defaultSlugs.has((post.slug || '').toLowerCase())) {
+      upsert(post);
+    }
+  }
+  for (const post of secondaryList) {
+    if (!defaultIds.has(post.id) && !defaultSlugs.has((post.slug || '').toLowerCase())) {
+      upsert(post);
+    }
+  }
+
+  // 2. Newly seeded codebase articles that were not yet present in primary/secondary
+  const knownIds = new Set([...primaryList.map((p) => p.id), ...secondaryList.map((p) => p.id)]);
+  const knownSlugs = new Set([
+    ...primaryList.map((p) => (p.slug || '').toLowerCase()),
+    ...secondaryList.map((p) => (p.slug || '').toLowerCase()),
+  ]);
+  for (const defPost of defaultList) {
+    if (!knownIds.has(defPost.id) && !knownSlugs.has(defPost.slug.toLowerCase())) {
+      upsert(defPost, true);
+    }
+  }
+
+  // 3. Remaining saved & default posts in order
+  for (const post of primaryList) upsert(post);
+  for (const post of secondaryList) upsert(post);
+  for (const defPost of defaultList) upsert(defPost, true);
+
+  return orderedIds.map((id) => byId.get(id)!).filter(Boolean);
+}
 
 /**
- * Initialize and load blog posts from LocalStorage or default dataset non-destructively
+ * Retrieve all available blog categories (excluding 'All'), combining stored custom categories
+ * and any categories used by existing blog posts.
+ */
+export function getStoredBlogCategories(): string[] {
+  let savedCategories: string[] = [];
+  try {
+    const raw = localStorage.getItem(CATEGORIES_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        savedCategories = parsed.filter(
+          (c): c is string => typeof c === 'string' && c.trim().length > 0 && c.trim().toLowerCase() !== 'all'
+        );
+      }
+    }
+  } catch (err) {
+    console.error('Error reading blog categories from localStorage:', err);
+  }
+
+  const portfolioCategories = getStoredPortfolioData().blogCategories || [];
+  for (const cat of portfolioCategories) {
+    const trimmed = typeof cat === 'string' ? cat.trim() : '';
+    if (
+      trimmed &&
+      trimmed.toLowerCase() !== 'all' &&
+      !savedCategories.some((existing) => existing.toLowerCase() === trimmed.toLowerCase())
+    ) {
+      savedCategories.push(trimmed);
+    }
+  }
+
+  if (savedCategories.length === 0) {
+    savedCategories = [...DEFAULT_CUSTOM_CATEGORIES];
+    try {
+      localStorage.setItem(CATEGORIES_STORAGE_KEY, JSON.stringify(savedCategories));
+    } catch {
+      // ignore
+    }
+  }
+
+  const posts = getStoredBlogPosts();
+  const merged = [...savedCategories];
+  for (const post of posts) {
+    const cat = post.category?.trim();
+    if (
+      cat &&
+      cat.toLowerCase() !== 'all' &&
+      !merged.some((existing) => existing.toLowerCase() === cat.toLowerCase())
+    ) {
+      merged.push(cat);
+    }
+  }
+
+  return merged;
+}
+
+/**
+ * Retrieve all categories prefixed with 'All' for filter bars
+ */
+export function getAllBlogFilterCategories(): string[] {
+  return ['All', ...getStoredBlogCategories()];
+}
+
+/**
+ * Create and persist a new blog category
+ */
+export function addBlogCategory(categoryName: string): string[] {
+  const trimmed = categoryName.trim();
+  const current = getStoredBlogCategories();
+  if (!trimmed || trimmed.toLowerCase() === 'all') {
+    return current;
+  }
+
+  const exists = current.some((c) => c.toLowerCase() === trimmed.toLowerCase());
+  const updated = exists ? current : [...current, trimmed];
+
+  try {
+    localStorage.setItem(CATEGORIES_STORAGE_KEY, JSON.stringify(updated));
+    syncBlogStateToPortfolioServer(getStoredBlogPosts(), updated, getDeletedBlogIds());
+    window.dispatchEvent(new Event(BLOGS_UPDATED_EVENT));
+  } catch (err) {
+    console.error('Error saving blog categories:', err);
+  }
+
+  return updated;
+}
+
+/**
+ * Remove a category from the stored categories list
+ */
+export function deleteBlogCategory(categoryName: string): string[] {
+  const trimmed = categoryName.trim().toLowerCase();
+  const current = getStoredBlogCategories();
+  const updated = current.filter((c) => c.toLowerCase() !== trimmed);
+  const finalCategories = updated.length > 0 ? updated : ['Software Testing'];
+
+  try {
+    localStorage.setItem(CATEGORIES_STORAGE_KEY, JSON.stringify(finalCategories));
+    syncBlogStateToPortfolioServer(getStoredBlogPosts(), finalCategories, getDeletedBlogIds());
+    window.dispatchEvent(new Event(BLOGS_UPDATED_EVENT));
+  } catch (err) {
+    console.error('Error deleting blog category:', err);
+  }
+
+  return finalCategories;
+}
+
+/**
+ * Initialize and load blog posts from LocalStorage + Portfolio Server mirror + Default dataset non-destructively
  */
 export function getStoredBlogPosts(): BlogPost[] {
+  const deletedIds = getDeletedBlogIds();
+  let collectedLocal: BlogPost[] = [];
+
   try {
     for (const key of CANDIDATE_BLOG_KEYS) {
       const raw = localStorage.getItem(key);
       if (raw) {
         const parsed: BlogPost[] = JSON.parse(raw);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          // Ensure status field exists and sync author profile avatar from main profile
-          const synchronizedPosts = parsed.map(post => normalizeAuthorAvatar({
-            ...post,
-            status: post.status || 'Published',
-          }));
-
-          // Synchronize to primary key if loaded from fallback
-          if (key !== STORAGE_KEY) {
-            try {
-              localStorage.setItem(STORAGE_KEY, JSON.stringify(synchronizedPosts));
-            } catch (e) {
-              // ignore
-            }
-          }
-
-          return synchronizedPosts;
+          collectedLocal = mergeBlogPostsNonDestructive(collectedLocal, parsed, [], deletedIds);
         }
       }
     }
@@ -180,30 +305,82 @@ export function getStoredBlogPosts(): BlogPost[] {
     console.error('Error reading blog posts from localStorage:', err);
   }
 
-  // First time initialization fallback - load default posts with status 'Published'
-  const initialPosts = BLOG_POSTS.map(post => normalizeAuthorAvatar({
-    ...post,
-    status: post.status || ('Published' as const),
-  }));
+  const portfolioMirrorBlogs = getStoredPortfolioData().blogs || [];
+  const mergedPosts = mergeBlogPostsNonDestructive(
+    collectedLocal,
+    portfolioMirrorBlogs,
+    BLOG_POSTS,
+    deletedIds
+  );
+
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(initialPosts));
-    localStorage.setItem('sabbir_portfolio_blogs', JSON.stringify(initialPosts));
-  } catch (e) {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(mergedPosts));
+    localStorage.setItem('sabbir_portfolio_blogs', JSON.stringify(mergedPosts));
+  } catch {
     // ignore
   }
-  return initialPosts;
+
+  return mergedPosts;
 }
 
 /**
- * Save full blog posts array to LocalStorage and trigger event listener
+ * Save full blog posts array to LocalStorage, sync to backend/cloud, and trigger event listener
  */
 export function saveStoredBlogPosts(posts: BlogPost[]): void {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(posts));
+    localStorage.setItem('sabbir_portfolio_blogs', JSON.stringify(posts));
+    syncBlogStateToPortfolioServer(posts, getStoredBlogCategories(), getDeletedBlogIds());
     window.dispatchEvent(new Event(BLOGS_UPDATED_EVENT));
   } catch (err) {
     console.error('Error saving blog posts to localStorage:', err);
   }
+}
+
+// Listen for server blog hydration events emitted by portfolioStore on startup or import
+if (typeof window !== 'undefined') {
+  window.addEventListener(SERVER_BLOGS_SYNCED_EVENT, ((event: CustomEvent) => {
+    const detail = event.detail || {};
+    const serverBlogs: BlogPost[] = Array.isArray(detail.blogs) ? detail.blogs : [];
+    const serverCategories: string[] = Array.isArray(detail.blogCategories) ? detail.blogCategories : [];
+    const serverDeletedIds: string[] = Array.isArray(detail.deletedBlogIds) ? detail.deletedBlogIds : [];
+
+    const combinedDeleted = Array.from(new Set([...getDeletedBlogIds(), ...serverDeletedIds]));
+    saveDeletedBlogIds(combinedDeleted);
+
+    if (serverBlogs.length > 0) {
+      const localPosts = getStoredBlogPosts();
+      const merged = mergeBlogPostsNonDestructive(serverBlogs, localPosts, BLOG_POSTS, combinedDeleted);
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
+        localStorage.setItem('sabbir_portfolio_blogs', JSON.stringify(merged));
+      } catch {
+        // ignore
+      }
+    }
+
+    if (serverCategories.length > 0) {
+      const currentCats = getStoredBlogCategories();
+      const mergedCats = [...currentCats];
+      for (const c of serverCategories) {
+        const trimmed = typeof c === 'string' ? c.trim() : '';
+        if (
+          trimmed &&
+          trimmed.toLowerCase() !== 'all' &&
+          !mergedCats.some((existing) => existing.toLowerCase() === trimmed.toLowerCase())
+        ) {
+          mergedCats.push(trimmed);
+        }
+      }
+      try {
+        localStorage.setItem(CATEGORIES_STORAGE_KEY, JSON.stringify(mergedCats));
+      } catch {
+        // ignore
+      }
+    }
+
+    window.dispatchEvent(new Event(BLOGS_UPDATED_EVENT));
+  }) as EventListener);
 }
 
 /**
@@ -244,25 +421,23 @@ export function upsertBlogPost(postData: Partial<BlogPost> & { title?: string; c
   }
 
   const posts = getStoredBlogPosts();
-  
   const postTitle = postData.title?.trim() || 'Untitled Article';
   const postContent = postData.content ?? '';
 
-  // Clean / generate slug
   let cleanSlug = postData.slug?.trim() ? generateSlug(postData.slug) : generateSlug(postTitle);
   if (!cleanSlug) {
     cleanSlug = `blog-${Date.now()}`;
   }
 
-  // Ensure unique slug if new post or changing slug
   let finalSlug = cleanSlug;
   let counter = 1;
-  while (posts.some(p => p.slug === finalSlug && p.id !== postData.id)) {
+  while (posts.some((p) => p.slug === finalSlug && p.id !== postData.id)) {
     finalSlug = `${cleanSlug}-${counter}`;
     counter++;
   }
 
   const now = new Date();
+  const nowIso = now.toISOString();
   const formattedDate = now.toLocaleDateString('en-US', {
     month: 'long',
     day: 'numeric',
@@ -270,8 +445,7 @@ export function upsertBlogPost(postData: Partial<BlogPost> & { title?: string; c
   });
 
   if (postData.id) {
-    // UPDATE existing post
-    const index = posts.findIndex(p => p.id === postData.id);
+    const index = posts.findIndex((p) => p.id === postData.id);
     if (index !== -1) {
       const existing = posts[index];
       const resolvedCategory = postData.category?.trim() || existing.category || 'Software Testing';
@@ -285,28 +459,37 @@ export function upsertBlogPost(postData: Partial<BlogPost> & { title?: string; c
         slug: finalSlug,
         content: postContent,
         category: resolvedCategory,
-        description: postData.description !== undefined ? postData.description : (existing.description || ''),
-        coverImage: postData.coverImage || existing.coverImage || 'https://images.unsplash.com/photo-1618401471353-b98afee0b2eb?auto=format&fit=crop&q=80&w=1200',
+        description: postData.description !== undefined ? postData.description : existing.description || '',
+        coverImage:
+          postData.coverImage ||
+          existing.coverImage ||
+          'https://images.unsplash.com/photo-1618401471353-b98afee0b2eb?auto=format&fit=crop&q=80&w=1200',
         publishDate: postData.publishDate || existing.publishDate || formattedDate,
         readingTime: postData.readingTime || calculateReadingTime(postContent),
         tags: postData.tags || existing.tags || ['QA'],
         featured: postData.featured ?? existing.featured ?? false,
         status: postData.status || existing.status || 'Published',
+        updatedAt: nowIso,
         author: {
           name: postData.author?.name || existing.author?.name || 'Sabbir Ahamed',
           role: postData.author?.role || existing.author?.role || 'Software Quality Assurance Engineer',
           avatar: postData.author?.avatar || existing.author?.avatar || '/sabbir_avatar.jpeg',
-          bio: postData.author?.bio || existing.author?.bio || 'SQA Engineer specializing in Manual & Automated Testing.',
+          bio:
+            postData.author?.bio ||
+            existing.author?.bio ||
+            'SQA Engineer specializing in Manual & Automated Testing.',
         },
       };
 
       posts[index] = updatedPost;
       saveStoredBlogPosts(posts);
+      void pushBlogToCloud(updatedPost, index).catch((err) =>
+        console.error('Cloud blog update sync error:', err)
+      );
       return updatedPost;
     }
   }
 
-  // CREATE new post
   const resolvedNewCategory = postData.category?.trim() || 'Software Testing';
   addBlogCategory(resolvedNewCategory);
 
@@ -317,23 +500,30 @@ export function upsertBlogPost(postData: Partial<BlogPost> & { title?: string; c
     category: resolvedNewCategory,
     description: postData.description || '',
     content: postContent,
-    coverImage: postData.coverImage || 'https://images.unsplash.com/photo-1618401471353-b98afee0b2eb?auto=format&fit=crop&q=80&w=1200',
+    coverImage:
+      postData.coverImage ||
+      'https://images.unsplash.com/photo-1618401471353-b98afee0b2eb?auto=format&fit=crop&q=80&w=1200',
     publishDate: postData.publishDate || formattedDate,
     readingTime: postData.readingTime || calculateReadingTime(postContent),
     tags: postData.tags && postData.tags.length > 0 ? postData.tags : ['Software Testing', 'SQA'],
     featured: postData.featured || false,
     status: postData.status || 'Published',
+    updatedAt: nowIso,
     author: {
       name: postData.author?.name || 'Sabbir Ahamed',
       role: postData.author?.role || 'Software Quality Assurance Engineer',
       avatar: postData.author?.avatar || '/sabbir_avatar.jpeg',
-      bio: postData.author?.bio || 'SQA Engineer specializing in Manual & Automated Testing, API Validation, ERPNext QA, and CI/CD Quality Gates.',
+      bio:
+        postData.author?.bio ||
+        'SQA Engineer specializing in Manual & Automated Testing, API Validation, ERPNext QA, and CI/CD Quality Gates.',
     },
   };
 
-  // Add to beginning of array
   const updatedList = [newPost, ...posts];
   saveStoredBlogPosts(updatedList);
+  void pushAllBlogsToCloud(updatedList).catch((err) =>
+    console.error('Cloud blog create sync error:', err)
+  );
   return newPost;
 }
 
@@ -347,9 +537,14 @@ export function deleteBlogPost(id: string): boolean {
   }
 
   const posts = getStoredBlogPosts();
-  const filtered = posts.filter(p => p.id !== id);
+  const filtered = posts.filter((p) => p.id !== id);
   if (filtered.length !== posts.length) {
+    const deletedIds = [...getDeletedBlogIds(), id];
+    saveDeletedBlogIds(deletedIds);
     saveStoredBlogPosts(filtered);
+    void deleteBlogFromCloud(id).catch((err) =>
+      console.error('Cloud blog delete sync error:', err)
+    );
     return true;
   }
   return false;
@@ -364,12 +559,20 @@ export function resetStoredBlogPosts(): BlogPost[] {
     return getStoredBlogPosts();
   }
 
-  const defaults = BLOG_POSTS.map(post => ({
-    ...post,
-    status: 'Published' as const,
-  }));
+  saveDeletedBlogIds([]);
+  const defaults = BLOG_POSTS.map((post) =>
+    normalizeAuthorAvatar({
+      ...post,
+      status: 'Published' as const,
+    })
+  );
   localStorage.setItem(STORAGE_KEY, JSON.stringify(defaults));
+  localStorage.setItem('sabbir_portfolio_blogs', JSON.stringify(defaults));
   localStorage.setItem(CATEGORIES_STORAGE_KEY, JSON.stringify(DEFAULT_CUSTOM_CATEGORIES));
+  syncBlogStateToPortfolioServer(defaults, DEFAULT_CUSTOM_CATEGORIES, []);
+  void pushAllBlogsToCloud(defaults).catch((err) =>
+    console.error('Cloud blog reset sync error:', err)
+  );
   window.dispatchEvent(new Event(BLOGS_UPDATED_EVENT));
   return defaults;
 }

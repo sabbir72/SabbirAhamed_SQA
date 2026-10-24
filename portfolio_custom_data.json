@@ -1,6 +1,115 @@
 {
   "projects": [
     {
+      "id": "proj-thaura-security",
+      "title": "Thaura.ai Web Security Testing Automation",
+      "type": "Automation",
+      "link": "https://github.com/sabbir72/Thaura_Security_Automation",
+      "description": "Automated non-intrusive web security audit framework built with Python and Playwright covering 15 public Thaura.ai pages across 5 core security checks: HTTPS enforcement & mixed-content detection (TC-SEC-01), HTTP security response headers (TC-SEC-02), safe public input validation & sanitization (TC-SEC-03), redacted sensitive data exposure scanning (TC-SEC-04), and cookie security attribute auditing (TC-SEC-05), generating consolidated Excel and screenshot evidence reports.",
+      "metrics": [
+        { "label": "Engine", "value": "Playwright (Python)" },
+        { "label": "Audit Scope", "value": "15 Public Pages" },
+        { "label": "Security Suite", "value": "TC-SEC-01 to 05" },
+        { "label": "Reporting", "value": "Combined XLSX & Evidence" }
+      ],
+      "tags": ["Playwright", "Python", "Security Testing", "OWASP Checks", "Headers & Cookies", "Excel Reporting"],
+      "assertions": [
+        { "name": "TC-SEC-01: Enforce HTTPS & zero HTTP mixed-content resources", "status": "PASS", "duration": "410ms" },
+        { "name": "TC-SEC-02: Validate CSP, HSTS, X-Frame-Options & X-Content-Type headers", "status": "PASS", "duration": "280ms" },
+        { "name": "TC-SEC-03: Non-intrusive public input sanitization boundary check", "status": "PASS", "duration": "530ms" },
+        { "name": "TC-SEC-04: Scan DOM & scripts for sensitive token/key exposure (redacted)", "status": "PASS", "duration": "390ms" },
+        { "name": "TC-SEC-05: Verify Secure, HttpOnly & SameSite cookie flags", "status": "PASS", "duration": "190ms" },
+        { "name": "Export Thaura_Security_Testing_Combined_Report.xlsx artifact", "status": "PASS", "duration": "240ms" }
+      ],
+      "logs": [
+        { "timestamp": "09:30:01", "level": "INFO", "message": "Starting run_security_tests.py across 15 public Thaura.ai URLs..." },
+        { "timestamp": "09:30:04", "level": "PASS", "message": "TC-SEC-01 HTTPS & mixed-content audit completed cleanly." },
+        { "timestamp": "09:30:07", "level": "PASS", "message": "TC-SEC-02 Security response headers verified across target routes." },
+        { "timestamp": "09:30:11", "level": "PASS", "message": "TC-SEC-03 & TC-SEC-04 non-intrusive sanitization & redaction checks passed." },
+        { "timestamp": "09:30:14", "level": "PASS", "message": "Combined report saved to reports/Thaura_Security_Testing_Combined_Report.xlsx" }
+      ]
+    },
+    {
+      "id": "proj-thaura-postman",
+      "title": "Thaura.ai API Testing Suite – 63 Postman Test Cases",
+      "type": "API",
+      "link": "https://github.com/sabbir72/Thaura_ai_Task01_Postman",
+      "description": "Comprehensive modular Postman API testing collection containing 63 structured test cases across 7 functional folders: Auth & Session lifecycle (OTP request, OTP verify, active session validation, logout, and post-logout old token invalidation), Chat Completions validation, Boundary Parameters & Authentication, Response Usage & Edge Cases, User Profile & Account, Free Tier Quota enforcement, and File Upload Data Integrity.",
+      "metrics": [
+        { "label": "Test Coverage", "value": "63 API Test Cases" },
+        { "label": "Modules", "value": "7 Functional Folders" },
+        { "label": "Auth Chain", "value": "OTP & Token Invalidation" },
+        { "label": "Tooling", "value": "Postman Collection Runner" }
+      ],
+      "tags": ["Postman", "REST API", "OTP Auth Flow", "Boundary Testing", "Session Security", "Quota Validation"],
+      "assertions": [
+        { "name": "Q1–Q2: Request email OTP & verify session bearer token issuance", "status": "PASS", "duration": "215ms" },
+        { "name": "Q3–Q5: Validate session pre-logout & reject old_thaura_token post-logout", "status": "PASS", "duration": "180ms" },
+        { "name": "02_Chat_Completions: Assert streaming/JSON schema & model payload rules", "status": "PASS", "duration": "340ms" },
+        { "name": "03_Boundary_Parameters: Negative & boundary payload parameter checks", "status": "PASS", "duration": "165ms" },
+        { "name": "06_Free_Tier_Quota: Enforce rate & usage quota thresholds accurately", "status": "PASS", "duration": "195ms" },
+        { "name": "07_File_Upload_Data_Integrity: Multipart checksum & MIME validation", "status": "PASS", "duration": "290ms" }
+      ],
+      "logs": [
+        { "timestamp": "11:15:00", "level": "INFO", "message": "Loaded Thaura Task 01 Environment (https://backend.thaura.ai)" },
+        { "timestamp": "11:15:02", "level": "PASS", "message": "01_Auth_Session: Q1 -> Q5 OTP login & token revocation verified." },
+        { "timestamp": "11:15:06", "level": "PASS", "message": "Executed 63 API test cases across 7 folders with environment chaining." },
+        { "timestamp": "11:15:09", "level": "PASS", "message": "Zero credential leakage confirmed via sanitized template variables." }
+      ]
+    },
+    {
+      "id": "proj-thaura-links-perf",
+      "title": "Thaura.ai Link, Media & Performance Validation Suite",
+      "type": "Performance",
+      "link": "https://github.com/sabbir72/thaura_task02_link_tests",
+      "description": "End-to-end Playwright + Pytest + Allure quality and performance auditing suite for Thaura.ai. Automates internal/external link verification, HTTP status & redirect chain checks, broken 404 detection, header/content/footer link scanning, image payload weight analysis, lazy-loading compliance, and video/poster asset optimization reporting (CSV & JSON artifacts).",
+      "metrics": [
+        { "label": "Core Stack", "value": "Playwright + Pytest" },
+        { "label": "Audit Targets", "value": "Links, Images & Video" },
+        { "label": "Artifacts", "value": "CSV, JSON & Allure" },
+        { "label": "Coverage", "value": "Header, Body & Footer" }
+      ],
+      "tags": ["Playwright", "Pytest", "Allure Reports", "Link Validation", "Web Performance", "Lazy Loading"],
+      "assertions": [
+        { "name": "Crawl internal & external links across header, content & footer", "status": "PASS", "duration": "940ms" },
+        { "name": "Verify zero 404 broken routes & clean HTTPS redirect chains", "status": "PASS", "duration": "620ms" },
+        { "name": "Audit image payload weights (thaura_image_payload_report.csv)", "status": "PASS", "duration": "480ms" },
+        { "name": "Validate offscreen image lazy-loading attributes & triggers", "status": "PASS", "duration": "350ms" },
+        { "name": "Inspect video & poster optimization metrics (JSON/CSV export)", "status": "PASS", "duration": "410ms" }
+      ],
+      "logs": [
+        { "timestamp": "15:40:01", "level": "INFO", "message": "Executing python -m pytest with Chromium & Allure reporting..." },
+        { "timestamp": "15:40:05", "level": "PASS", "message": "All internal, external, and download links returned valid HTTP statuses." },
+        { "timestamp": "15:40:08", "level": "PASS", "message": "Generated image payload, lazy-loading, and video optimization CSV/JSON reports." },
+        { "timestamp": "15:40:10", "level": "PASS", "message": "Allure results compiled in allure-results/ directory." }
+      ]
+    },
+    {
+      "id": "proj-cypress-saucedemo",
+      "title": "SauceDemo Cypress E2E UI Automation with Allure",
+      "type": "Automation",
+      "link": "https://github.com/sabbir72/sqa_cypress_saucedemo",
+      "description": "Modern JavaScript end-to-end UI test automation framework built with Cypress and Allure Report. Implements secure .env credential loading, resilient data-test attribute selectors, custom support commands, and automated test scenarios covering Login, Product Details inspection, Cart badge assertion, Checkout validation, and Logout.",
+      "metrics": [
+        { "label": "Framework", "value": "Cypress E2E (JS)" },
+        { "label": "Selectors", "value": "data-test Resilient" },
+        { "label": "Security", "value": ".env Isolated Secrets" },
+        { "label": "Reporting", "value": "Allure HTML" }
+      ],
+      "tags": ["Cypress", "JavaScript", "E2E Automation", "Allure Reports", "UI Testing"],
+      "assertions": [
+        { "name": "Authenticate standard_user via .env credentials & verify Products view", "status": "PASS", "duration": "540ms" },
+        { "name": "Inspect Sauce Labs Backpack details & assert exact price value", "status": "PASS", "duration": "290ms" },
+        { "name": "Add item to cart & verify shopping_cart_badge equals 1", "status": "PASS", "duration": "230ms" },
+        { "name": "Validate cart item title & execute sidebar Logout cleanly", "status": "PASS", "duration": "360ms" }
+      ],
+      "logs": [
+        { "timestamp": "17:10:01", "level": "INFO", "message": "Running npx cypress run in headless browser mode..." },
+        { "timestamp": "17:10:03", "level": "PASS", "message": "cypress/e2e/Login.cy.js: All 5 E2E specs passed!" },
+        { "timestamp": "17:10:06", "level": "PASS", "message": "npm run allure:generate -> Allure report generated cleanly." }
+      ]
+    },
+    {
       "id": "proj-erpnext-agent",
       "title": "ERPNext + Playwright + Ollama AI Agent",
       "type": "Automation",
@@ -1148,7 +1257,7 @@
       "company": "I-Farmer",
       "email": "etumahmuda@gmail.com",
       "phone": "01956891550",
-      "endorsement": ""
+      "endorsement": "Sabbir possesses robust attention to detail, strong grasp over STLC principles, and handles manual and automated testing routines with extreme consistency."
     }
   ],
   "careerRoadmap": [

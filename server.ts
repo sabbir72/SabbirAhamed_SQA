@@ -504,7 +504,7 @@ async function startServer(): Promise<void> {
 
   /**
    * API Route: POST /api/portfolio/data
-   * Saves updated portfolio data (Projects, Experience, Skills) to persistent storage
+   * Saves updated portfolio data (Projects, Blogs, Experience, Skills) non-destructively
    */
   app.post('/api/portfolio/data', (req: Request, res: Response) => {
     try {
@@ -520,7 +520,51 @@ async function startServer(): Promise<void> {
         return res.status(400).json({ success: false, error: 'Invalid portfolio data payload.' });
       }
 
-      fs.writeFileSync(PORTFOLIO_FILE, JSON.stringify(data, null, 2), 'utf-8');
+      let existing: Record<string, any> = {};
+      try {
+        if (fs.existsSync(PORTFOLIO_FILE)) {
+          existing = JSON.parse(fs.readFileSync(PORTFOLIO_FILE, 'utf-8')) || {};
+        }
+      } catch {
+        existing = {};
+      }
+
+      const mergeById = (primary: any[] | undefined, secondary: any[] | undefined, deletedIds: string[] = []) => {
+        const deleted = new Set(deletedIds);
+        const map = new Map<string, any>();
+        const order: string[] = [];
+        for (const item of [...(Array.isArray(primary) ? primary : []), ...(Array.isArray(secondary) ? secondary : [])]) {
+          if (!item || typeof item.id !== 'string' || deleted.has(item.id)) continue;
+          if (!map.has(item.id)) {
+            map.set(item.id, item);
+            order.push(item.id);
+          }
+        }
+        return order.map((id) => map.get(id));
+      };
+
+      const deletedProjectIds = Array.from(
+        new Set([...(data.deletedProjectIds || []), ...(existing.deletedProjectIds || [])])
+      );
+      const deletedBlogIds = Array.from(
+        new Set([...(data.deletedBlogIds || []), ...(existing.deletedBlogIds || [])])
+      );
+
+      const mergedPayload = {
+        ...existing,
+        ...data,
+        projects: Array.isArray(data.projects)
+          ? mergeById(data.projects, existing.projects, deletedProjectIds)
+          : existing.projects || [],
+        blogs: Array.isArray(data.blogs)
+          ? mergeById(data.blogs, existing.blogs, deletedBlogIds)
+          : existing.blogs || [],
+        deletedProjectIds,
+        deletedBlogIds,
+        lastModified: data.lastModified || new Date().toISOString(),
+      };
+
+      fs.writeFileSync(PORTFOLIO_FILE, JSON.stringify(mergedPayload, null, 2), 'utf-8');
       return res.json({ success: true, message: 'Portfolio data saved successfully.' });
     } catch (err) {
       console.error('[PORTFOLIO API POST ERROR]', err);

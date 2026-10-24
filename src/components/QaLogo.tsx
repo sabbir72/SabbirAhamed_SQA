@@ -93,7 +93,7 @@ export const QaLogo: React.FC<QaLogoProps> = ({
 
         {showSubtitle && !isCompact && (
           <span className="text-[10px] sm:text-[11px] text-[#9CA3AF] font-mono tracking-tight group-hover:text-[#D1D5DB] transition-colors mt-0.5">
-            {isFooter ? 'Software Quality Assurance Engineer' : 'SQA Specialist & SDET'}
+            {isFooter ? 'Software Quality Assurance Engineer' : 'Engineering Zero-Defect Quality'}
           </span>
         )}
       </div>

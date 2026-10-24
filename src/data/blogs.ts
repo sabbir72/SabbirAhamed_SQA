@@ -22,6 +22,7 @@ export interface BlogPost {
   tags: string[];
   featured?: boolean;
   status?: 'Published' | 'Draft';
+  updatedAt?: string;
   author: {
     name: string;
     role: string;
@@ -44,12 +45,189 @@ export const BLOG_CATEGORIES: string[] = [
 
 export const BLOG_POSTS: BlogPost[] = [
   {
+    id: 'post-erpnext-ollama-agent',
+    title: 'Autonomous Browser Testing for ERPNext Using Playwright & Local Ollama AI Agents',
+    slug: 'autonomous-erpnext-testing-playwright-ollama',
+    category: 'AI',
+    description: 'How to connect a local Ollama LLM (qwen2.5-coder:7b) with Playwright in Python to autonomously inspect DOM states, authenticate, navigate ERPNext modules, and execute smoke validations.',
+    featured: true,
+    publishDate: 'October 18, 2026',
+    readingTime: '9 min read',
+    tags: ['Playwright', 'Ollama AI', 'ERPNext', 'Python', 'Autonomous Testing', 'Pytest'],
+    coverImage: 'https://images.unsplash.com/photo-1620712943543-bcc4688e7485?auto=format&fit=crop&q=80&w=1200',
+    author: {
+      name: 'Sabbir Ahamed',
+      role: 'Software Quality Assurance Engineer',
+      avatar: '/sabbir_avatar.jpeg',
+      bio: 'SQA Engineer specializing in Manual & Automated Testing, API Validation, ERPNext QA, and CI/CD Quality Gates.',
+    },
+    content: `
+# Autonomous Browser Testing for ERPNext Using Playwright & Local Ollama AI Agents
+
+Traditional UI automation relies heavily on rigid selectors that often break when enterprise ERP layouts evolve. By pairing **Playwright (Python)** with a locally hosted **Ollama LLM (\`qwen2.5-coder:7b\`)**, we can build a privacy-preserving, autonomous QA agent capable of inspecting live ERPNext DOM trees and deciding atomic browser actions dynamically.
+
+---
+
+## Why Local LLMs Matter for Enterprise ERP Testing
+
+Enterprise systems like **ERPNext** contain sensitive HR, payroll, accounting, and inventory records. Sending DOM snapshots to external cloud APIs often violates data governance rules. Running \`qwen2.5-coder:7b\` locally via **Ollama** gives us:
+
+1. **Zero Data Leakage**: Every DOM snapshot and credential stays strictly inside your local test runner.
+2. **Dynamic Action Selection**: The agent chooses atomic actions (\`goto\`, \`fill\`, \`click\`, \`press\`, \`select\`, \`read_page\`, \`screenshot\`, \`wait\`) based on real-time page state.
+3. **Deterministic Pytest Verification**: Combine exploratory agent navigation with strict \`pytest -q\` assertions and screenshot artifacts.
+
+---
+
+## Architecture of the Autonomous QA Loop
+
+\`\`\`python
+from playwright.sync_api import sync_playwright
+import ollama
+
+ALLOWED_ACTIONS = ["goto", "click", "fill", "press", "select", "read_page", "screenshot", "wait"]
+
+def decide_next_step(goal: str, dom_summary: str) -> dict:
+    response = ollama.chat(
+        model="qwen2.5-coder:7b",
+        messages=[
+            {
+                "role": "system",
+                "content": f"You are an SQA browser agent. Return JSON using one of {ALLOWED_ACTIONS}."
+            },
+            {
+                "role": "user",
+                "content": f"Goal: {goal}\\nCurrent Page Elements:\\n{dom_summary}"
+            }
+        ]
+    )
+    return response["message"]["content"]
+\`\`\`
+
+---
+
+## Key Quality Safeguards
+
+- **Step Budgets & Timeouts**: Cap maximum autonomous turns (e.g., 15 actions per workflow) so runaway loops never hang CI pipelines.
+- **Audit Evidence Generation**: Capture full-page screenshots (such as \`users_list.png\`) at every milestone transition.
+- **Hybrid Smoke Assertions**: Follow agent navigation with deterministic \`pytest\` assertions on HTTP status codes and Frappe desk records.
+
+Combining AI autonomy with classic SQA discipline lets teams validate complex ERP workflows faster while keeping 100% control over test reliability!
+`,
+  },
+  {
+    id: 'post-playwright-security-audit',
+    title: 'Non-Intrusive Web Security & Link Auditing with Playwright Python',
+    slug: 'non-intrusive-web-security-testing-playwright',
+    category: 'Automation',
+    description: 'A practical SQA blueprint for automating HTTPS mixed-content checks, HTTP security headers, safe input sanitization, cookie flags, and media payload audits across live web applications.',
+    featured: false,
+    publishDate: 'October 09, 2026',
+    readingTime: '7 min read',
+    tags: ['Security Testing', 'Playwright', 'Python', 'OWASP', 'Link Validation', 'Performance'],
+    coverImage: 'https://images.unsplash.com/photo-1550751827-4bd374c3f58b?auto=format&fit=crop&q=80&w=1200',
+    author: {
+      name: 'Sabbir Ahamed',
+      role: 'Software Quality Assurance Engineer',
+      avatar: '/sabbir_avatar.jpeg',
+      bio: 'SQA Engineer specializing in Manual & Automated Testing, API Validation, ERPNext QA, and CI/CD Quality Gates.',
+    },
+    content: `
+# Non-Intrusive Web Security & Link Auditing with Playwright Python
+
+When auditing production or staging web portals, SQA Engineers need to uncover security misconfigurations and broken resources **without** disrupting live backend services or submitting destructive payloads.
+
+Here is how to structure a clean, non-intrusive 5-pillar security and asset validation suite using **Playwright + Pytest**.
+
+---
+
+## The 5 Non-Intrusive Security Checks (\`TC-SEC-01\` to \`TC-SEC-05\`)
+
+1. **HTTPS Enforcement & Mixed Content (\`TC-SEC-01\`)**: Listen to \`page.on("request")\` and \`page.on("response")\` events to flag any insecure \`http://\` sub-resources loaded on an \`https://\` page.
+2. **Security Response Headers (\`TC-SEC-02\`)**: Inspect main document responses for \`Strict-Transport-Security\`, \`Content-Security-Policy\`, \`X-Frame-Options\`, \`X-Content-Type-Options\`, and \`Referrer-Policy\`.
+3. **Safe Input Sanitization (\`TC-SEC-03\`)**: Populate public text fields to verify client-side encoding and max-length constraints **without triggering form submission** on live endpoints.
+4. **Redacted Sensitive Exposure (\`TC-SEC-04\`)**: Scan client bundles and DOM attributes for accidental API key or token patterns while redacting matched strings in generated reports.
+5. **Cookie Security Attributes (\`TC-SEC-05\`)**: Inspect \`context.cookies()\` to verify \`Secure\`, \`HttpOnly\`, and \`SameSite\` flags.
+
+---
+
+## Pairing Security Audits with Link & Media Payload Reports
+
+Using the same Playwright runner, QA teams can simultaneously audit:
+- Broken \`404\` internal/external links across header, body, and footer navigation.
+- Oversized image payloads and missing \`loading="lazy"\` attributes on below-the-fold media.
+- Video poster compression and consolidated \`.xlsx\` / Allure executive reporting.
+
+Building lightweight security and performance gates right into your Playwright suite catches high-impact release risks before customers ever see them.
+`,
+  },
+  {
+    id: 'post-postman-otp-token-chaining',
+    title: 'Enterprise API Validation in Postman: OTP Chaining, Token Revocation & Boundary Suites',
+    slug: 'enterprise-postman-otp-token-validation',
+    category: 'API Testing',
+    description: 'Structuring 60+ modular Postman API test cases covering OTP login flows, post-logout token invalidation, boundary parameters, quota limits, and secure environment templates.',
+    featured: false,
+    publishDate: 'October 02, 2026',
+    readingTime: '8 min read',
+    tags: ['Postman', 'API Testing', 'Authentication', 'Security', 'Boundary Value Analysis'],
+    coverImage: 'https://images.unsplash.com/photo-1558494949-ef010cbdcc31?auto=format&fit=crop&q=80&w=1200',
+    author: {
+      name: 'Sabbir Ahamed',
+      role: 'Software Quality Assurance Engineer',
+      avatar: '/sabbir_avatar.jpeg',
+      bio: 'SQA Engineer specializing in Manual & Automated Testing, API Validation, ERPNext QA, and CI/CD Quality Gates.',
+    },
+    content: `
+# Enterprise API Validation in Postman: OTP Chaining, Token Revocation & Boundary Suites
+
+Testing modern AI and SaaS backends requires much more than checking \`200 OK\` on happy-path endpoints. A production-ready Postman collection must validate **stateful authentication lifecycles**, **post-logout token revocation**, **quota boundaries**, and **multipart file integrity**.
+
+---
+
+## Designing a 5-Step Stateful Auth Verification Chain
+
+A frequent security bug in REST APIs occurs when logging out clears client state on the frontend, but the old JWT/session token remains valid on the server. Always automate this exact sequence:
+
+\`\`\`text
+Q1_auth_request_otp
+   ↓
+Q2_auth_verify_otp  (stores thaura_token & copies to old_thaura_token)
+   ↓
+Q3_auth_validate_session_before_logout  (expects 200 OK)
+   ↓
+Q4_auth_logout  (invalidates active session)
+   ↓
+Q5_auth_validate_old_token_after_logout  (expects 401 Unauthorized!)
+\`\`\`
+
+---
+
+## Organizing Large Collections by Functional Risk
+
+Grouping 60+ test cases into domain folders keeps execution modular in Postman Collection Runner and Newman CLI:
+
+- \`01_Auth_Session\` — OTP lifecycle & session revocation
+- \`02_Chat_Completions_Validation\` — Schema & streaming contract checks
+- \`03_Boundary_Parameters_Authentication\` — Missing headers, malformed tokens, min/max payload limits
+- \`04_Response_Usage_Chat_Edge_Cases\` — Empty prompts, special Unicode characters, concurrency
+- \`05_User_Profile_Account\` — Profile mutation & RBAC isolation
+- \`06_Free_Tier_Quota\` — Rate-limiting & quota exhaustion status codes (\`429\`)
+- \`07_File_Upload_Data_Integrity\` — MIME restrictions, size caps, and payload integrity
+
+---
+
+## Credential Hygiene Rule
+
+Never commit live API keys, OTP codes, or Bearer tokens to Git! Commit a clean \`*.Environment.template.json\` with empty secret placeholders and populate sensitive values exclusively inside your local untracked environment or CI secret store.
+`,
+  },
+  {
     id: '1',
     title: 'Mastering API Automation with Playwright & TypeScript: A Complete Guide',
     slug: 'playwright-api-testing',
     category: 'Playwright',
     description: 'Learn how to build a scalable API testing framework using Playwright APIRequestContext, handle JWT authentication tokens, validate JSON schemas, and run parallel CI/CD test pipelines.',
-    featured: true,
+    featured: false,
     publishDate: 'July 28, 2026',
     readingTime: '8 min read',
     tags: ['Playwright', 'API Testing', 'TypeScript', 'CI/CD', 'Automation'],
