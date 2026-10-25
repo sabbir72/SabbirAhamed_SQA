@@ -21,7 +21,6 @@ import {
   CAREER_ROADMAP as DEFAULT_CAREER_ROADMAP,
 } from '../data';
 import type { BlogPost } from '../data/blogs';
-import { getAdminToken } from './adminAuth';
 import {
   CloudPortfolioSnapshotPayload,
   deleteExperienceFromCloud,
@@ -311,7 +310,6 @@ export function savePortfolioData(data: PortfolioData): void {
 
   window.dispatchEvent(new CustomEvent(PORTFOLIO_UPDATED_EVENT, { detail: updatedData }));
   if (!isCurrentlyApplyingCloudSnapshot()) {
-    syncWithServer(updatedData);
     void pushPortfolioMetaToCloud(updatedData).catch((err) => {
       console.error('Cloud meta sync error:', err);
     });
@@ -320,7 +318,7 @@ export function savePortfolioData(data: PortfolioData): void {
 
 /**
  * Called by blogStore whenever blogs or blog categories change so they are persisted
- * alongside portfolio data on the server/cloud as well.
+ * directly to Google Cloud Firestore (never mutating Git repository files).
  */
 export function syncBlogStateToPortfolioServer(
   blogs: BlogPost[],
@@ -344,30 +342,9 @@ export function syncBlogStateToPortfolioServer(
   }
 
   if (!isCurrentlyApplyingCloudSnapshot()) {
-    syncWithServer(updatedData);
     void pushPortfolioMetaToCloud(updatedData, blogCategories).catch((err) => {
       console.error('Cloud blog meta sync error:', err);
     });
-  }
-}
-
-/**
- * Async background sync with backend server
- */
-async function syncWithServer(data: PortfolioData): Promise<void> {
-  const token = getAdminToken();
-  if (!token) return;
-  try {
-    await fetch('/api/portfolio/data', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-admin-token': token,
-      },
-      body: JSON.stringify({ data, token }),
-    });
-  } catch {
-    // Local storage + cloud store act as fallback
   }
 }
 
@@ -465,17 +442,6 @@ export async function initializePortfolioStoreFromServer(): Promise<void> {
       );
     }
 
-    // If local browser had custom projects/blogs not yet on server and admin is logged in, push merged state back up
-    if (getAdminToken()) {
-      const serverProjectCount = Array.isArray(serverData.projects) ? serverData.projects.length : 0;
-      const serverBlogCount = Array.isArray(serverData.blogs) ? serverData.blogs.length : 0;
-      if (
-        mergedProjects.length > serverProjectCount ||
-        (Array.isArray(mergedData.blogs) && mergedData.blogs.length > serverBlogCount)
-      ) {
-        syncWithServer(mergedData);
-      }
-    }
   } catch {
     // Keep localStorage safely intact if offline
   }
@@ -944,15 +910,6 @@ export function resetPortfolioToDefault(): void {
   savePortfolioData(defaultData);
   void pushAllProjectsToCloud(defaultData.projects).catch(() => {});
   void pushAllExperiencesToCloud(defaultData.experiences).catch(() => {});
-
-  const token = getAdminToken();
-  fetch('/api/portfolio/reset', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-admin-token': token || '',
-    },
-  }).catch(() => {});
 }
 
 export function exportPortfolioDataJson(): string {

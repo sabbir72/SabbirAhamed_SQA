@@ -10,8 +10,6 @@
  * -----------------------------------------
  */
 
-import { getAdminToken } from './adminAuth';
-
 export interface ImageUploadOptions {
   maxWidth?: number;
   maxHeight?: number;
@@ -116,21 +114,6 @@ export async function uploadPortfolioImageFile(
   }
 
   const optimizedDataUrl = await optimizeImageDataUrl(file, options);
-  const token = getAdminToken() || '';
-
-  // Mirror asynchronously to backend /uploads without relying on ephemeral disk URLs
-  fetch('/api/upload-image', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-admin-token': token,
-    },
-    body: JSON.stringify({
-      dataUrl: optimizedDataUrl,
-      fileName: file.name,
-      token,
-    }),
-  }).catch(() => {});
-
   return optimizedDataUrl;
 }
+

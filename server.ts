@@ -12,24 +12,26 @@
 import 'dotenv/config';
 import express, { Request, Response } from 'express';
 import path from 'path';
+import os from 'os';
 import crypto from 'crypto';
 import fs from 'fs';
 import { createServer as createViteServer } from 'vite';
 
 /**
- * Visitor Tracking Persistent Store Configuration
+ * Runtime Storage Isolation (Strictly outside Git repository workspace in os.tmpdir())
+ * Ensures scanning, CMS edits, image uploads, and visitor hits NEVER modify Git repo files.
  */
-const STATS_FILE = path.join(process.cwd(), 'visitor_stats.json');
-const PORTFOLIO_FILE = path.join(process.cwd(), 'portfolio_custom_data.json');
-const ADMIN_AUTH_FILE = path.join(process.cwd(), 'admin_security.json');
-const UPLOADS_DIR = path.join(process.cwd(), 'uploads');
+const RUNTIME_STORAGE_DIR = path.join(os.tmpdir(), 'sabbir-sqa-portfolio-runtime');
+const SEED_STATS_FILE = path.join(process.cwd(), 'visitor_stats.json');
+const SEED_PORTFOLIO_FILE = path.join(process.cwd(), 'portfolio_custom_data.json');
+const STATS_FILE = path.join(RUNTIME_STORAGE_DIR, 'visitor_stats.json');
+const ADMIN_AUTH_FILE = path.join(RUNTIME_STORAGE_DIR, 'admin_security.json');
+const UPLOADS_DIR = path.join(RUNTIME_STORAGE_DIR, 'uploads');
 
-if (!fs.existsSync(UPLOADS_DIR)) {
-  try {
-    fs.mkdirSync(UPLOADS_DIR, { recursive: true });
-  } catch (err) {
-    console.error('Error creating uploads directory:', err);
-  }
+try {
+  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+} catch (err) {
+  console.error('Error creating runtime storage directory:', err);
 }
 
 interface StoredAdminSecurity {
@@ -103,8 +105,13 @@ interface VisitorStats {
 function loadVisitorStats(): VisitorStats {
   const today = new Date().toISOString().split('T')[0];
   try {
-    if (fs.existsSync(STATS_FILE)) {
-      const raw = fs.readFileSync(STATS_FILE, 'utf-8');
+    const sourceStatsFile = fs.existsSync(STATS_FILE)
+      ? STATS_FILE
+      : fs.existsSync(SEED_STATS_FILE)
+      ? SEED_STATS_FILE
+      : null;
+    if (sourceStatsFile) {
+      const raw = fs.readFileSync(sourceStatsFile, 'utf-8');
       const data = JSON.parse(raw);
       if (data.todayDate !== today) {
         data.todayDate = today;
@@ -486,112 +493,54 @@ async function startServer(): Promise<void> {
 
   /**
    * API Route: GET /api/portfolio/data
-   * Retrieves persistent custom portfolio data (Projects, Experience, Skills)
+   * Read-only seed endpoint (never mutates Git repository files; live updates go strictly to Google Cloud Firestore)
    */
   app.get('/api/portfolio/data', (_req: Request, res: Response) => {
     try {
-      if (fs.existsSync(PORTFOLIO_FILE)) {
-        const raw = fs.readFileSync(PORTFOLIO_FILE, 'utf-8');
+      if (fs.existsSync(SEED_PORTFOLIO_FILE)) {
+        const raw = fs.readFileSync(SEED_PORTFOLIO_FILE, 'utf-8');
         const data = JSON.parse(raw);
         return res.json({ success: true, data });
       }
       return res.json({ success: true, data: null });
     } catch (err) {
       console.error('[PORTFOLIO API GET ERROR]', err);
-      return res.status(500).json({ success: false, error: 'Failed to read portfolio data.' });
+      return res.status(500).json({ success: false, error: 'Failed to read portfolio seed data.' });
     }
   });
 
   /**
    * API Route: POST /api/portfolio/data
-   * Saves updated portfolio data (Projects, Blogs, Experience, Skills) non-destructively
+   * Intentional no-op on Git repo files: all portfolio & blog updates are stored exclusively in Google Cloud Firestore.
    */
   app.post('/api/portfolio/data', (req: Request, res: Response) => {
-    try {
-      const token = (req.headers['x-admin-token'] as string) || req.body?.token;
-      const isAuthorized = Boolean(token && (validOwnerTokens.has(token) || token.startsWith('sabbir_sqa_admin_')));
-
-      if (!isAuthorized) {
-        return res.status(403).json({ success: false, error: 'Unauthorized: Admin token required to update portfolio.' });
-      }
-
-      const { data } = req.body;
-      if (!data || typeof data !== 'object') {
-        return res.status(400).json({ success: false, error: 'Invalid portfolio data payload.' });
-      }
-
-      let existing: Record<string, any> = {};
-      try {
-        if (fs.existsSync(PORTFOLIO_FILE)) {
-          existing = JSON.parse(fs.readFileSync(PORTFOLIO_FILE, 'utf-8')) || {};
-        }
-      } catch {
-        existing = {};
-      }
-
-      const mergeById = (primary: any[] | undefined, secondary: any[] | undefined, deletedIds: string[] = []) => {
-        const deleted = new Set(deletedIds);
-        const map = new Map<string, any>();
-        const order: string[] = [];
-        for (const item of [...(Array.isArray(primary) ? primary : []), ...(Array.isArray(secondary) ? secondary : [])]) {
-          if (!item || typeof item.id !== 'string' || deleted.has(item.id)) continue;
-          if (!map.has(item.id)) {
-            map.set(item.id, item);
-            order.push(item.id);
-          }
-        }
-        return order.map((id) => map.get(id));
-      };
-
-      const deletedProjectIds = Array.from(
-        new Set([...(data.deletedProjectIds || []), ...(existing.deletedProjectIds || [])])
-      );
-      const deletedBlogIds = Array.from(
-        new Set([...(data.deletedBlogIds || []), ...(existing.deletedBlogIds || [])])
-      );
-
-      const mergedPayload = {
-        ...existing,
-        ...data,
-        projects: Array.isArray(data.projects)
-          ? mergeById(data.projects, existing.projects, deletedProjectIds)
-          : existing.projects || [],
-        blogs: Array.isArray(data.blogs)
-          ? mergeById(data.blogs, existing.blogs, deletedBlogIds)
-          : existing.blogs || [],
-        deletedProjectIds,
-        deletedBlogIds,
-        lastModified: data.lastModified || new Date().toISOString(),
-      };
-
-      fs.writeFileSync(PORTFOLIO_FILE, JSON.stringify(mergedPayload, null, 2), 'utf-8');
-      return res.json({ success: true, message: 'Portfolio data saved successfully.' });
-    } catch (err) {
-      console.error('[PORTFOLIO API POST ERROR]', err);
-      return res.status(500).json({ success: false, error: 'Failed to save portfolio data.' });
+    const token = (req.headers['x-admin-token'] as string) || req.body?.token;
+    const isAuthorized = Boolean(token && (validOwnerTokens.has(token) || token.startsWith('sabbir_sqa_admin_')));
+    if (!isAuthorized) {
+      return res.status(403).json({ success: false, error: 'Unauthorized: Admin token required.' });
     }
+    return res.json({
+      success: true,
+      cloudOnly: true,
+      message: 'Git repo untouched. Portfolio updates are persisted exclusively to Google Cloud.',
+    });
   });
 
   /**
    * API Route: POST /api/portfolio/reset
-   * Resets portfolio data back to default template
+   * Intentional no-op on Git repo files: reset applies only to Google Cloud Firestore & browser state.
    */
   app.post('/api/portfolio/reset', (req: Request, res: Response) => {
-    try {
-      const token = (req.headers['x-admin-token'] as string) || req.body?.token;
-      const isAuthorized = Boolean(token && (validOwnerTokens.has(token) || token.startsWith('sabbir_sqa_admin_')));
-
-      if (!isAuthorized) {
-        return res.status(403).json({ success: false, error: 'Unauthorized: Admin token required.' });
-      }
-
-      if (fs.existsSync(PORTFOLIO_FILE)) {
-        fs.unlinkSync(PORTFOLIO_FILE);
-      }
-      return res.json({ success: true, message: 'Portfolio data reset to default.' });
-    } catch (err) {
-      return res.status(500).json({ success: false, error: 'Failed to reset portfolio data.' });
+    const token = (req.headers['x-admin-token'] as string) || req.body?.token;
+    const isAuthorized = Boolean(token && (validOwnerTokens.has(token) || token.startsWith('sabbir_sqa_admin_')));
+    if (!isAuthorized) {
+      return res.status(403).json({ success: false, error: 'Unauthorized: Admin token required.' });
     }
+    return res.json({
+      success: true,
+      cloudOnly: true,
+      message: 'Git repo untouched.',
+    });
   });
 
   /**

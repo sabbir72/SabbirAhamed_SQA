@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
   Cloud,
-  GitBranch,
   CheckCircle2,
   AlertTriangle,
   RefreshCw,
@@ -30,10 +29,7 @@ import {
   signOutOwnerFromGoogle,
   syncAllLocalDataToCloud,
 } from '../utils/cloudSync';
-import {
-  OWNER_ADMIN_EMAILS,
-  PRIMARY_OWNER_EMAIL,
-} from '../firebase';
+import { PRIMARY_OWNER_EMAIL } from '../firebase';
 import {
   getStoredPortfolioData,
   PORTFOLIO_UPDATED_EVENT,
@@ -56,7 +52,6 @@ export default function AdminCloudScanModal({
   const [cloudStatus, setCloudStatus] = useState<CloudSyncStatus>(() =>
     getCloudSyncStatus()
   );
-  const [selectedEmail, setSelectedEmail] = useState<string>(PRIMARY_OWNER_EMAIL);
   const [localCounts, setLocalCounts] = useState(() => {
     const portfolio = getStoredPortfolioData();
     const blogs = getStoredBlogPosts();
@@ -174,10 +169,10 @@ export default function AdminCloudScanModal({
     // Trigger signInOwnerWithGoogle FIRST on the synchronous tap tick before React state updates
     // so iOS Safari and Android Chrome never block the Google OAuth popup!
     const signInPromise = !cloudStatus.isOwnerConnected
-      ? signInOwnerWithGoogle(selectedEmail, forceAccountPicker)
+      ? signInOwnerWithGoogle(PRIMARY_OWNER_EMAIL, forceAccountPicker)
       : Promise.resolve({
           success: true,
-          email: cloudStatus.ownerEmail || selectedEmail,
+          email: PRIMARY_OWNER_EMAIL,
           redirecting: false,
           error: undefined,
           errorCode: undefined,
@@ -208,7 +203,7 @@ export default function AdminCloudScanModal({
       if (syncRes.success) {
         setFeedback({
           type: 'success',
-          message: `স্ক্যান ও ব্যাকআপ সম্পন্ন হয়েছে (${syncRes.projectsSynced} Projects · ${syncRes.blogsSynced} Blogs)। এখন নিশ্চিন্তে নতুন Git Version / Commit করতে পারেন।`,
+          message: `স্ক্যান সফলভাবে সম্পন্ন হয়েছে (${syncRes.projectsSynced} Projects · ${syncRes.blogsSynced} Blogs Google Cloud-এ সিঙ্ক হয়েছে)।`,
         });
       } else {
         setFeedback({
@@ -230,7 +225,7 @@ export default function AdminCloudScanModal({
 
   const handleMobileSameTabRedirect = async () => {
     if (isScanning || cloudStatus.isSyncing) return;
-    const redirectPromise = signInOwnerWithGoogleRedirect(selectedEmail, false);
+    const redirectPromise = signInOwnerWithGoogleRedirect(PRIMARY_OWNER_EMAIL, false);
     setFeedback(null);
     setLastErrorCode('');
     setIsScanning(true);
@@ -286,56 +281,39 @@ export default function AdminCloudScanModal({
                 <span>Admin Exclusive</span>
               </span>
               <span aria-hidden="true">·</span>
-              <span className="inline-flex items-center gap-1">
-                <GitBranch className="w-3.5 h-3.5 shrink-0 text-indigo-400" />
-                <span>Pre-Git Backup</span>
+              <span className="inline-flex items-center gap-1 text-sky-300 font-medium">
+                <Cloud className="w-3.5 h-3.5 shrink-0 text-sky-400" />
+                <span>Google Cloud Only</span>
               </span>
             </div>
             <h2
               id="admin-cloud-scan-title"
               className="font-display font-bold text-lg sm:text-xl text-white tracking-tight"
             >
-              Pre-Git Cloud Scan &amp; Backup
+              Google Cloud Scan &amp; Sync
             </h2>
           </div>
         </div>
 
-        {/* Bengali Pre-Git Scan Reminder */}
+        {/* Bengali Cloud Scan Description */}
         <div className="p-3.5 sm:p-4 rounded-xl bg-white/[0.03] border border-white/10 space-y-1.5">
           <p className="text-[13px] text-slate-200 leading-relaxed">
-            নতুন <strong className="text-white font-semibold">Git Version / Commit</strong> করার আগে অবশ্যই একবার <strong className="text-emerald-300 font-semibold">স্ক্যান (Cloud Scan &amp; Backup)</strong> করে নিন—যাতে সব প্রজেক্ট, ব্লগ ও আপলোড করা ছবি স্থায়ীভাবে Google Cloud Database-এ সুরক্ষিত থাকে।
+            আপনার অনুমোদিত <strong className="text-white font-semibold">Google Account</strong> দিয়ে লগইন করে স্ক্যান করুন—যাতে সব প্রজেক্ট, ব্লগ এবং আপলোড করা ছবি সরাসরি <strong className="text-emerald-300 font-semibold">Google Cloud Database</strong>-এ স্থায়ীভাবে সিঙ্ক ও সুরক্ষিত থাকে।
           </p>
         </div>
 
-        {/* Target Owner Email Selector (Pre-selected to sabbircse72@gmail.com) */}
+        {/* Fixed Exclusive Owner Email (sabbircse72@gmail.com Only) */}
         {!cloudStatus.isOwnerConnected && (
-          <div className="space-y-2">
-            <div className="flex items-center justify-between text-xs text-slate-400">
-              <span className="inline-flex items-center gap-1.5 font-medium text-slate-300">
-                <Mail className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                <span>Google Cloud Owner Email</span>
+          <div className="flex items-center justify-between gap-3 px-3.5 py-2.5 rounded-xl bg-[#090D16] border border-emerald-500/30">
+            <span className="inline-flex items-center gap-2 text-xs text-slate-300 min-w-0">
+              <Mail className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+              <span className="font-mono text-emerald-200 font-semibold truncate">
+                {PRIMARY_OWNER_EMAIL}
               </span>
-              <span className="text-[11px] text-emerald-400">Pre-configured</span>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 p-1 rounded-xl bg-[#090D16] border border-white/10">
-              {OWNER_ADMIN_EMAILS.map((email) => {
-                const active = selectedEmail === email;
-                return (
-                  <button
-                    key={email}
-                    type="button"
-                    onClick={() => setSelectedEmail(email)}
-                    className={`min-h-[42px] px-3 py-2 rounded-lg text-xs font-mono truncate transition-colors cursor-pointer ${
-                      active
-                        ? 'bg-emerald-600/25 border border-emerald-500/40 text-emerald-200 font-semibold'
-                        : 'text-slate-400 hover:text-white border border-transparent'
-                    }`}
-                  >
-                    {email}
-                  </button>
-                );
-              })}
-            </div>
+            </span>
+            <span className="text-[11px] font-medium text-emerald-400 shrink-0">
+              Authorized Owner
+            </span>
           </div>
         )}
 
@@ -371,8 +349,8 @@ export default function AdminCloudScanModal({
               }`}
             >
               {cloudStatus.isOwnerConnected
-                ? cloudStatus.ownerEmail || PRIMARY_OWNER_EMAIL
-                : `${selectedEmail} (Ready to link)`}
+                ? PRIMARY_OWNER_EMAIL
+                : `${PRIMARY_OWNER_EMAIL} (Not logged in)`}
             </span>
           </div>
 
@@ -386,7 +364,7 @@ export default function AdminCloudScanModal({
           </div>
 
           <div className="flex items-center justify-between gap-3">
-            <span className="text-slate-400 shrink-0">Git Readiness</span>
+            <span className="text-slate-400 shrink-0">Cloud Sync Status</span>
             <span
               className={`inline-flex items-center gap-1.5 font-medium truncate ${
                 hasUnsyncedEdits || !cloudStatus.isOwnerConnected
@@ -397,12 +375,14 @@ export default function AdminCloudScanModal({
               {hasUnsyncedEdits || !cloudStatus.isOwnerConnected ? (
                 <>
                   <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-                  <span className="truncate">Scan before Git push</span>
+                  <span className="truncate">
+                    {cloudStatus.isOwnerConnected ? 'Ready to Scan' : 'Login & Scan Required'}
+                  </span>
                 </>
               ) : (
                 <>
                   <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
-                  <span className="truncate">Synced &amp; safe for Git</span>
+                  <span className="truncate">Synced with Google Cloud</span>
                 </>
               )}
             </span>
@@ -497,10 +477,10 @@ export default function AdminCloudScanModal({
             <RefreshCw className={`w-4 h-4 shrink-0 ${busy ? 'animate-spin' : ''}`} />
             <span className="truncate">
               {busy
-                ? 'Connecting & Scanning...'
+                ? 'Logging in & Scanning...'
                 : cloudStatus.isOwnerConnected
-                ? 'Scan & Backup Now'
-                : `Connect ${selectedEmail} & Scan`}
+                ? 'Scan Now to Google Cloud'
+                : `Login (${PRIMARY_OWNER_EMAIL}) & Scan`}
             </span>
           </button>
 
@@ -552,7 +532,7 @@ export default function AdminCloudScanModal({
               Later
             </button>
 
-            {cloudStatus.isOwnerConnected ? (
+            {cloudStatus.isOwnerConnected && (
               <button
                 type="button"
                 onClick={handleDisconnectOwner}
@@ -562,15 +542,6 @@ export default function AdminCloudScanModal({
               >
                 <LogOut className="w-3.5 h-3.5 shrink-0" />
                 <span>Disconnect</span>
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={() => handleConnectAndScan(true)}
-                disabled={busy}
-                className="min-h-[44px] px-3.5 py-2 rounded-xl bg-white/[0.03] hover:bg-white/[0.08] text-slate-400 hover:text-white text-xs font-medium transition-colors cursor-pointer disabled:opacity-50 whitespace-nowrap shrink-0"
-              >
-                Choose Account
               </button>
             )}
           </div>

@@ -38,10 +38,16 @@ import {
   browserPopupRedirectResolver,
   createOwnerGoogleProvider,
   db,
+  getOwnerTokenExpiryMs,
   handleFirestoreError,
+  hasFreshOwnerAuthToken,
+  isTokenServiceDisabledError,
   isVerifiedFirebaseOwner,
   OperationType,
   PRIMARY_OWNER_EMAIL,
+  publicDb,
+  purgeExpiredRuntimeAuthSession,
+  TOKEN_SAFETY_BUFFER_MS,
 } from '../firebase';
 import type { Project, Experience, Skill, Reference, CareerRoadmapItem } from '../types';
 import type { BlogPost } from '../data/blogs';
@@ -57,7 +63,11 @@ import {
 } from './adminAuth';
 
 function canAdminWriteToCloud(): boolean {
-  return isAdminAuthenticated() && isVerifiedFirebaseOwner(auth.currentUser);
+  return (
+    isAdminAuthenticated() &&
+    isVerifiedFirebaseOwner(auth.currentUser) &&
+    hasFreshOwnerAuthToken(auth.currentUser)
+  );
 }
 
 export function isMobileBrowserDevice(): boolean {
@@ -477,8 +487,11 @@ async function upsertProtectedDocument(
 
   return enqueuePathWrite(path, async () => {
     const user = auth.currentUser;
-    if (!isAdminAuthenticated() || !isVerifiedFirebaseOwner(user) || !user) return;
+    if (!isAdminAuthenticated() || !isVerifiedFirebaseOwner(user) || !hasFreshOwnerAuthToken(user) || !user) {
+      return;
+    }
 
+    // Read existence via publicDb when possible so reads never depend on token refresh
     const docRef = doc(db, collectionName, cleanId);
     const exists = await checkServerDocExists(docRef, path);
 
@@ -527,7 +540,9 @@ async function deleteProtectedDocument(collectionName: string, docId: string): P
 
   return enqueuePathWrite(path, async () => {
     const user = auth.currentUser;
-    if (!isAdminAuthenticated() || !isVerifiedFirebaseOwner(user)) return;
+    if (!isAdminAuthenticated() || !isVerifiedFirebaseOwner(user) || !hasFreshOwnerAuthToken(user)) {
+      return;
+    }
 
     try {
       await deleteDoc(doc(db, collectionName, cleanId));
@@ -673,12 +688,16 @@ export async function syncAllLocalDataToCloud(): Promise<FullSyncResult> {
   if (!bridge) {
     return { success: false, projectsSynced: 0, blogsSynced: 0, error: 'Cloud bridge not ready.' };
   }
-  if (!isVerifiedFirebaseOwner(auth.currentUser)) {
+  if (!isVerifiedFirebaseOwner(auth.currentUser) || !hasFreshOwnerAuthToken(auth.currentUser)) {
+    if (auth.currentUser && !hasFreshOwnerAuthToken(auth.currentUser)) {
+      await purgeExpiredRuntimeAuthSession();
+      emitStatus({ isOwnerConnected: false, ownerEmail: null });
+    }
     return {
       success: false,
       projectsSynced: 0,
       blogsSynced: 0,
-      error: 'Connect Google Cloud Sync with owner account first.',
+      error: 'Google সেশনের মেয়াদ শেষ হয়েছে বা এখনো কানেক্ট করা হয়নি। অনুগ্রহ করে আবার "Connect & Scan" বাটনে ক্লিক করে লগইন করুন।',
     };
   }
 
@@ -741,6 +760,18 @@ export async function syncAllLocalDataToCloud(): Promise<FullSyncResult> {
         blogsSynced: activeBlogs.length,
       };
     } catch (err) {
+      if (isTokenServiceDisabledError(err)) {
+        await purgeExpiredRuntimeAuthSession();
+        const reconnectMsg =
+          'পূর্বের Google সেশনের মেয়াদ শেষ হয়েছিল। অনুগ্রহ করে আবার "Connect & Scan" বাটনে ক্লিক করে নতুন করে Google লগইন করুন।';
+        emitStatus({
+          isSyncing: false,
+          isOwnerConnected: false,
+          ownerEmail: null,
+          error: reconnectMsg,
+        });
+        return { success: false, projectsSynced: 0, blogsSynced: 0, error: reconnectMsg };
+      }
       const msg = err instanceof Error ? err.message : 'Cloud synchronization failed.';
       emitStatus({ isSyncing: false, error: msg });
       return { success: false, projectsSynced: 0, blogsSynced: 0, error: msg };
@@ -910,11 +941,14 @@ export async function signInOwnerWithGoogle(
       error: null,
     });
 
-    // Deduped full two-way sync
+    // Trigger full two-way scan immediately upon fresh login
     void syncAllLocalDataToCloud();
 
     return { success: true, email: user.email || undefined };
   } catch (err) {
+    if (isTokenServiceDisabledError(err)) {
+      await purgeExpiredRuntimeAuthSession();
+    }
     const formatted = formatMobileAwareAuthError(err);
 
     // Automatic seamless fallback to same-tab redirect on mobile when popup is blocked by OS/browser!
@@ -952,7 +986,7 @@ export async function signInOwnerWithGoogle(
 
 export async function signOutOwnerFromGoogle(): Promise<void> {
   try {
-    await signOut(auth);
+    await purgeExpiredRuntimeAuthSession();
   } finally {
     emitStatus({
       isOwnerConnected: false,
@@ -984,9 +1018,9 @@ function notifyBridgeSnapshot(): void {
 }
 
 async function pullCloudSnapshotOnce(): Promise<void> {
-  // 1. portfolio_meta/main
+  // 1. portfolio_meta/main (read via unauthenticated publicDb so reads never block on Auth tokens)
   try {
-    const metaSnap = await getDoc(doc(db, 'portfolio_meta', 'main'));
+    const metaSnap = await getDoc(doc(publicDb, 'portfolio_meta', 'main'));
     if (metaSnap.exists()) {
       const d = metaSnap.data();
       latestCloudMeta = {
@@ -1013,7 +1047,7 @@ async function pullCloudSnapshotOnce(): Promise<void> {
 
   // 2. projects
   try {
-    const projQuery = query(collection(db, 'projects'), where('visibility', '==', 'public'));
+    const projQuery = query(collection(publicDb, 'projects'), where('visibility', '==', 'public'));
     const projSnap = await getDocs(projQuery);
     const parsedProjects = projSnap.docs
       .map((docItem) => docToProject(docItem.data() as Record<string, unknown>))
@@ -1028,7 +1062,7 @@ async function pullCloudSnapshotOnce(): Promise<void> {
 
   // 3. experiences
   try {
-    const expQuery = query(collection(db, 'experiences'), where('visibility', '==', 'public'));
+    const expQuery = query(collection(publicDb, 'experiences'), where('visibility', '==', 'public'));
     const expSnap = await getDocs(expQuery);
     const parsedExp = expSnap.docs
       .map((docItem) => docToExperience(docItem.data() as Record<string, unknown>))
@@ -1043,10 +1077,10 @@ async function pullCloudSnapshotOnce(): Promise<void> {
 
   // 4. blogs
   try {
-    const ownerSignedIn = isAdminAuthenticated() && isVerifiedFirebaseOwner(auth.currentUser);
+    const ownerSignedIn = canAdminWriteToCloud();
     const blogQuery = ownerSignedIn
       ? collection(db, 'blogs')
-      : query(collection(db, 'blogs'), where('status', '==', 'Published'));
+      : query(collection(publicDb, 'blogs'), where('status', '==', 'Published'));
     const blogSnap = await getDocs(blogQuery);
     const parsedBlogs = blogSnap.docs
       .map((docItem) => docToBlog(docItem.data() as Record<string, unknown>))
@@ -1056,10 +1090,23 @@ async function pullCloudSnapshotOnce(): Promise<void> {
       latestCloudBlogs = parsedBlogs;
     }
   } catch (error) {
-    handleFirestoreError(error, OperationType.LIST, 'blogs');
+    if (isTokenServiceDisabledError(error)) {
+      await purgeExpiredRuntimeAuthSession();
+    } else {
+      handleFirestoreError(error, OperationType.LIST, 'blogs');
+    }
   }
 
   notifyBridgeSnapshot();
+}
+
+let tokenExpiryTimerId: number | null = null;
+
+function clearTokenExpiryTimer(): void {
+  if (tokenExpiryTimerId !== null && typeof window !== 'undefined') {
+    window.clearTimeout(tokenExpiryTimerId);
+    tokenExpiryTimerId = null;
+  }
 }
 
 export function initializeCloudRealtimeSync(callbacks: CloudBridgeCallbacks): void {
@@ -1069,9 +1116,9 @@ export function initializeCloudRealtimeSync(callbacks: CloudBridgeCallbacks): vo
 
   let unsubBlogs: Unsubscribe | null = null;
 
-  // 1. Real-time portfolio_meta/main listener (publicly readable)
+  // 1. Real-time portfolio_meta/main listener via isolated publicDb
   onSnapshot(
-    doc(db, 'portfolio_meta', 'main'),
+    doc(publicDb, 'portfolio_meta', 'main'),
     (snap) => {
       if (!snap.exists()) return;
       const d = snap.data();
@@ -1099,9 +1146,9 @@ export function initializeCloudRealtimeSync(callbacks: CloudBridgeCallbacks): vo
     }
   );
 
-  // 2. Real-time projects listener (publicly readable via visibility == 'public')
+  // 2. Real-time projects listener via isolated publicDb
   onSnapshot(
-    query(collection(db, 'projects'), where('visibility', '==', 'public')),
+    query(collection(publicDb, 'projects'), where('visibility', '==', 'public')),
     (snap) => {
       const parsedProjects = snap.docs
         .map((docItem) => docToProject(docItem.data() as Record<string, unknown>))
@@ -1119,9 +1166,9 @@ export function initializeCloudRealtimeSync(callbacks: CloudBridgeCallbacks): vo
     }
   );
 
-  // 3. Real-time experiences listener (publicly readable via visibility == 'public')
+  // 3. Real-time experiences listener via isolated publicDb
   onSnapshot(
-    query(collection(db, 'experiences'), where('visibility', '==', 'public')),
+    query(collection(publicDb, 'experiences'), where('visibility', '==', 'public')),
     (snap) => {
       const parsedExp = snap.docs
         .map((docItem) => docToExperience(docItem.data() as Record<string, unknown>))
@@ -1138,14 +1185,14 @@ export function initializeCloudRealtimeSync(callbacks: CloudBridgeCallbacks): vo
     }
   );
 
-  const attachBlogsListener = (ownerSignedIn: boolean) => {
+  const attachBlogsListener = (ownerSignedInWithFreshToken: boolean) => {
     if (unsubBlogs) {
       unsubBlogs();
       unsubBlogs = null;
     }
-    const blogQuery = ownerSignedIn
+    const blogQuery = ownerSignedInWithFreshToken
       ? collection(db, 'blogs')
-      : query(collection(db, 'blogs'), where('status', '==', 'Published'));
+      : query(collection(publicDb, 'blogs'), where('status', '==', 'Published'));
 
     unsubBlogs = onSnapshot(
       blogQuery,
@@ -1162,19 +1209,29 @@ export function initializeCloudRealtimeSync(callbacks: CloudBridgeCallbacks): vo
         }
       },
       (error) => {
+        if (ownerSignedInWithFreshToken && isTokenServiceDisabledError(error)) {
+          void purgeExpiredRuntimeAuthSession();
+          emitStatus({ isOwnerConnected: false, ownerEmail: null });
+          attachBlogsListener(false);
+          return;
+        }
         handleFirestoreError(error, OperationType.LIST, 'blogs');
       }
     );
   };
 
   // Start public blogs listener immediately for fast first paint
-  attachBlogsListener(isAdminAuthenticated() && isVerifiedFirebaseOwner(auth.currentUser));
+  attachBlogsListener(canAdminWriteToCloud());
 
   // Complete any returning mobile same-tab Google OAuth redirect cleanly
   getRedirectResult(auth, browserPopupRedirectResolver)
     .then(async (redirectRes) => {
       if (!redirectRes || !redirectRes.user) {
-        if (isAdminOAuthGraceActive() && isVerifiedFirebaseOwner(auth.currentUser)) {
+        if (
+          isAdminOAuthGraceActive() &&
+          isVerifiedFirebaseOwner(auth.currentUser) &&
+          hasFreshOwnerAuthToken(auth.currentUser)
+        ) {
           completeAdminOAuthRedirectSession();
         }
         return;
@@ -1182,7 +1239,7 @@ export function initializeCloudRealtimeSync(callbacks: CloudBridgeCallbacks): vo
 
       if (!isVerifiedFirebaseOwner(redirectRes.user)) {
         const wrongEmail = redirectRes.user.email || 'Unknown email';
-        await signOut(auth);
+        await purgeExpiredRuntimeAuthSession();
         clearAdminOAuthGracePeriod();
         emitStatus({
           isOwnerConnected: false,
@@ -1203,25 +1260,57 @@ export function initializeCloudRealtimeSync(callbacks: CloudBridgeCallbacks): vo
         await syncAllLocalDataToCloud();
       }
     })
-    .catch((err) => {
+    .catch(async (err) => {
       clearAdminOAuthGracePeriod();
+      if (isTokenServiceDisabledError(err)) {
+        await purgeExpiredRuntimeAuthSession();
+        return;
+      }
       const formatted = formatMobileAwareAuthError(err);
       emitStatus({ error: formatted.message });
     });
 
   // Refresh blog query privileges when Admin unlocks or locks System Security
   window.addEventListener(ADMIN_AUTH_CHANGED_EVENT, () => {
-    const ownerConnected = isVerifiedFirebaseOwner(auth.currentUser);
-    attachBlogsListener(isAdminAuthenticated() && ownerConnected);
+    attachBlogsListener(canAdminWriteToCloud());
   });
 
-  // 4. Listen to Firebase Auth state changes for Owner Cloud connection status
+  // 4. Listen to Firebase Auth state changes & schedule clean sign-out BEFORE 5-min refresh offset
   onAuthStateChanged(auth, (user) => {
-    const ownerConnected = isVerifiedFirebaseOwner(user);
+    clearTokenExpiryTimer();
+
+    if (user && !hasFreshOwnerAuthToken(user)) {
+      // Stale token detected: purge immediately so @firebase/auth never hits securetoken.googleapis.com
+      void purgeExpiredRuntimeAuthSession();
+      emitStatus({
+        isOwnerConnected: false,
+        ownerEmail: null,
+      });
+      attachBlogsListener(false);
+      return;
+    }
+
+    const ownerConnected = isVerifiedFirebaseOwner(user) && hasFreshOwnerAuthToken(user);
     emitStatus({
       isOwnerConnected: ownerConnected,
       ownerEmail: ownerConnected && user ? user.email : null,
     });
+
+    if (ownerConnected && user) {
+      const msUntilSafeCutoff = Math.max(
+        5_000,
+        getOwnerTokenExpiryMs(user) - Date.now() - TOKEN_SAFETY_BUFFER_MS
+      );
+      tokenExpiryTimerId = window.setTimeout(() => {
+        void purgeExpiredRuntimeAuthSession().then(() => {
+          emitStatus({
+            isOwnerConnected: false,
+            ownerEmail: null,
+          });
+          attachBlogsListener(false);
+        });
+      }, msUntilSafeCutoff);
+    }
 
     attachBlogsListener(isAdminAuthenticated() && ownerConnected);
 

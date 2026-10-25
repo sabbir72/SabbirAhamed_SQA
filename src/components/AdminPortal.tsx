@@ -1343,10 +1343,10 @@ ${profile.title || PERSONAL_INFO.title}`;
                     type="button"
                     onClick={onOpenCloudScan}
                     className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow-sm transition-colors cursor-pointer whitespace-nowrap shrink-0"
-                    title="Open Pre-Git Cloud Scan & Backup"
+                    title="Open Google Cloud Scan & Sync (Git Repo Untouched)"
                   >
                     <Cloud className="w-3.5 h-3.5 shrink-0" />
-                    <span>Pre-Git Cloud Scan</span>
+                    <span>Google Cloud Scan</span>
                   </button>
                 )}
 
@@ -1422,7 +1422,7 @@ ${profile.title || PERSONAL_INFO.title}`;
           {/* ==================================================================== */}
           {activeTab === 'overview' && (
             <div className="space-y-6 animate-fadeIn">
-              {/* Pre-Git Version Cloud Scan & Backup Notice (Admin Exclusive) */}
+              {/* Google Cloud Scan & Sync Notice (Admin Exclusive · Git Repo Untouched) */}
               <div className="bg-[#0E1320] border border-emerald-500/25 rounded-2xl p-4 sm:p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                 <div className="flex items-start gap-3.5 min-w-0">
                   <div className="w-10 h-10 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0">
@@ -1431,7 +1431,7 @@ ${profile.title || PERSONAL_INFO.title}`;
                   <div className="space-y-1 min-w-0">
                     <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
                       <span className="font-semibold text-white text-sm">
-                        Pre-Git Cloud Scan &amp; Backup
+                        Google Cloud Scan &amp; Sync (Cloud Only)
                       </span>
                       <span aria-hidden="true">·</span>
                       <span className={cloudStatus.isOwnerConnected ? 'text-emerald-400' : 'text-amber-300'}>
@@ -1449,7 +1449,7 @@ ${profile.title || PERSONAL_INFO.title}`;
                       )}
                     </div>
                     <p className="text-xs text-slate-300 leading-relaxed">
-                      নতুন Git Version বা Commit করার আগে একবার স্ক্যান করে নিন—যাতে সব প্রজেক্ট, ব্লগ এবং আপলোড করা ছবি Cloud Database-এ স্থায়ীভাবে ব্যাকআপ থাকে।
+                      স্ক্যান করলে Git Repository-তে কোনো পরিবর্তন হবে না—শুধুমাত্র Google Cloud Database-এ সব প্রজেক্ট, ব্লগ ও আপলোড করা ছবি স্থায়ীভাবে আপডেট হবে।
                     </p>
                   </div>
                 </div>
@@ -1463,7 +1463,7 @@ ${profile.title || PERSONAL_INFO.title}`;
                     >
                       <Cloud className="w-3.5 h-3.5 shrink-0" />
                       <span>
-                        {cloudStatus.isOwnerConnected ? 'Scan & Backup Now' : 'Connect Google & Scan'}
+                        {cloudStatus.isOwnerConnected ? 'Scan to Google Cloud' : 'Connect Google & Scan'}
                       </span>
                     </button>
                   ) : null}

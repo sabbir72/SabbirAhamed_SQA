@@ -6,3 +6,8 @@ coverage/
 *.log
 .env*
 !.env.example
+portfolio_custom_data.json
+visitor_stats.json
+admin_security.json
+uploads/
+
