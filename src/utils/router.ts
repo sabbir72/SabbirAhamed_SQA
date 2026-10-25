@@ -10,6 +10,7 @@
 
 export type AppRoute = 
   | { type: 'home'; sectionHash?: string }
+  | { type: 'auth-bridge' }
   | { type: 'vcard' }
   | { type: 'blog-list' }
   | { type: 'blog-post'; slug: string }
@@ -24,6 +25,10 @@ export function getCurrentRoute(): AppRoute {
   
   const search = window.location.search.toLowerCase();
   const lowerHash = hash.toLowerCase();
+
+  if (path === '/auth-bridge') {
+    return { type: 'auth-bridge' };
+  }
 
   if (path === '/admin' || lowerHash === 'admin') {
     const params = new URLSearchParams(window.location.search);
@@ -61,9 +66,12 @@ export function getCurrentRoute(): AppRoute {
     };
   }
 
+  const isAuthHash = lowerHash.includes('cloud_auth_');
+
   // Detect any visiting card access (QR scan query parameter ?card=1, ?vcard, #vcard, /vcard, /card)
   const isVCardRoute =
-    path === '/vcard' || 
+    !isAuthHash &&
+    (path === '/vcard' || 
     path === '/card' || 
     path.startsWith('/card/') ||
     path.startsWith('/vcard/') ||
@@ -72,7 +80,7 @@ export function getCurrentRoute(): AppRoute {
     lowerHash === 'visiting-card' ||
     lowerHash.includes('card') ||
     search.includes('card') ||
-    search.includes('vcard');
+    search.includes('vcard'));
 
   if (isVCardRoute) {
     return { type: 'vcard' };

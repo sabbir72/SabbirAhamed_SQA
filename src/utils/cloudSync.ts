@@ -28,11 +28,14 @@ import {
 } from 'firebase/firestore';
 import {
   getRedirectResult,
+  GoogleAuthProvider,
   onAuthStateChanged,
+  signInWithCredential,
   signInWithPopup,
   signInWithRedirect,
   signOut,
 } from 'firebase/auth';
+import firebaseConfig from '../../firebase-applet-config.json';
 import {
   auth,
   browserPopupRedirectResolver,
@@ -61,6 +64,114 @@ import {
   recordAdminActivity,
   startAdminOAuthGracePeriod,
 } from './adminAuth';
+
+export const AUTHORIZED_AUTH_BRIDGE_ORIGIN =
+  'https://ais-pre-f7abqgvus7ali36cbsgtcy-609487281458.asia-southeast1.run.app';
+
+const knownAuthorizedDomains = new Set<string>([
+  'splendid-meridian-64mm2.firebaseapp.com',
+  'splendid-meridian-64mm2.web.app',
+  'ais-dev-f7abqgvus7ali36cbsgtcy-609487281458.asia-southeast1.run.app',
+  'ais-pre-f7abqgvus7ali36cbsgtcy-609487281458.asia-southeast1.run.app',
+  'ais-mob-f7abqgvus7ali36cbsgtcy-609487281458.asia-southeast1.run.app',
+]);
+
+let authorizedDomainsFetched = false;
+
+export async function refreshKnownAuthorizedDomains(): Promise<void> {
+  if (authorizedDomainsFetched || typeof window === 'undefined' || !firebaseConfig.apiKey) return;
+  authorizedDomainsFetched = true;
+  try {
+    const res = await fetch(
+      `https://identitytoolkit.googleapis.com/v1/projects?key=${encodeURIComponent(firebaseConfig.apiKey)}`
+    );
+    if (!res.ok) return;
+    const data = (await res.json()) as { authorizedDomains?: unknown };
+    if (Array.isArray(data?.authorizedDomains)) {
+      knownAuthorizedDomains.clear();
+      for (const dom of data.authorizedDomains) {
+        if (typeof dom === 'string' && dom.trim()) {
+          knownAuthorizedDomains.add(dom.trim().toLowerCase());
+        }
+      }
+    }
+  } catch {
+    // Keep static fallback list if offline
+  }
+}
+
+export function isCurrentHostFirebaseAuthorized(): boolean {
+  if (typeof window === 'undefined') return true;
+  return knownAuthorizedDomains.has(window.location.hostname.toLowerCase());
+}
+
+export function validateAuthBridgeReturnUrl(rawUrl: string | null | undefined): string | null {
+  if (!rawUrl || typeof rawUrl !== 'string') return null;
+  try {
+    const parsed = new URL(rawUrl.trim());
+    if (parsed.username || parsed.password) return null;
+    const host = parsed.hostname.toLowerCase();
+    const isLocal = host === 'localhost' || host === '127.0.0.1';
+    if (isLocal) {
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
+    } else {
+      if (parsed.protocol !== 'https:') return null;
+      const isTrustedHost =
+        host === 'sabbir-sqa.vercel.app' ||
+        host.includes('sabbir') ||
+        host.endsWith('.vercel.app') ||
+        host.endsWith('.onrender.com') ||
+        host.endsWith('.netlify.app') ||
+        host.endsWith('.github.io') ||
+        host.endsWith('.run.app') ||
+        host.endsWith('.web.app') ||
+        host.endsWith('.firebaseapp.com');
+      if (!isTrustedHost) return null;
+    }
+    return `${parsed.origin}${parsed.pathname || '/admin'}${parsed.search || ''}`;
+  } catch {
+    return null;
+  }
+}
+
+interface PendingBridgeAuthPayload {
+  idToken: string | null;
+  accessToken: string | null;
+  bridgeError: string | null;
+}
+
+let pendingBridgeAuthPayload: PendingBridgeAuthPayload | null = null;
+
+function capturePendingBridgeAuthTokens(): void {
+  if (typeof window === 'undefined') return;
+  const rawHash = window.location.hash || '';
+  if (
+    !rawHash.includes('cloud_auth_id_token=') &&
+    !rawHash.includes('cloud_auth_access_token=') &&
+    !rawHash.includes('cloud_auth_error=')
+  ) {
+    return;
+  }
+
+  const params = new URLSearchParams(rawHash.replace(/^#/, ''));
+  const idToken = params.get('cloud_auth_id_token');
+  const accessToken = params.get('cloud_auth_access_token');
+  const bridgeError = params.get('cloud_auth_error');
+
+  // Scrub OAuth tokens from URL bar & browser history immediately
+  const cleanUrl = `${window.location.pathname}${window.location.search}`;
+  window.history.replaceState(null, '', cleanUrl);
+
+  if (idToken || accessToken || bridgeError) {
+    pendingBridgeAuthPayload = { idToken, accessToken, bridgeError };
+    if ((idToken || accessToken) && (isAdminOAuthGraceActive() || isAdminAuthenticated())) {
+      completeAdminOAuthRedirectSession();
+    }
+  }
+}
+
+// Execute synchronously on module load so tokens are scrubbed before router/React mount
+capturePendingBridgeAuthTokens();
 
 function canAdminWriteToCloud(): boolean {
   return (
@@ -94,7 +205,25 @@ export function isTopLevelBrowserWindow(): boolean {
   }
 }
 
+export function launchCrossDomainAuthBridge(forceAccountSelect = false): boolean {
+  if (typeof window === 'undefined') return false;
+  if (!isTopLevelBrowserWindow() || isEmbeddedInAppWebView()) return false;
+  if (window.location.origin === AUTHORIZED_AUTH_BRIDGE_ORIGIN) return false;
+
+  const returnTarget = `${window.location.origin}/admin${window.location.search || ''}`;
+  const validReturn = validateAuthBridgeReturnUrl(returnTarget);
+  if (!validReturn) return false;
+
+  startAdminOAuthGracePeriod();
+  const bridgeUrl = `${AUTHORIZED_AUTH_BRIDGE_ORIGIN}/auth-bridge?returnTo=${encodeURIComponent(
+    validReturn
+  )}&select=${forceAccountSelect ? '1' : '0'}`;
+  window.location.assign(bridgeUrl);
+  return true;
+}
+
 export const CLOUD_SYNC_STATUS_EVENT = 'sabbir_cloud_sync_status';
+export const CLOUD_AUTO_SCAN_COMPLETED_EVENT = 'sabbir_cloud_auto_scan_completed';
 
 export interface CloudSyncStatus {
   isOwnerConnected: boolean;
@@ -787,7 +916,7 @@ export async function syncAllLocalDataToCloud(): Promise<FullSyncResult> {
 // Google Owner Sign-In / Sign-Out Actions
 // ------------------------------------------------------------------------
 
-function formatMobileAwareAuthError(err: unknown): {
+export function formatMobileAwareAuthError(err: unknown): {
   code: string;
   message: string;
   canUseSameTabRedirect: boolean;
@@ -814,8 +943,8 @@ function formatMobileAwareAuthError(err: unknown): {
   if (code.includes('unauthorized-domain') || rawMsg.includes('unauthorized-domain')) {
     return {
       code: 'auth/unauthorized-domain',
-      message: `এই ডোমেইনটি (${host}) এখনো Firebase Authorized Domains-এ যুক্ত নেই। Firebase Console → Authentication → Settings → Authorized domains-এ "${host}" যোগ করুন।`,
-      canUseSameTabRedirect: false,
+      message: `এই ডোমেইনটি (${host}) এখনো Firebase Authorized Domains-এ যুক্ত নেই। নিচের বাটনে ট্যাপ করে ভেরিফায়েড ক্লাউড ব্রিজ দিয়ে স্ক্যান করুন অথবা Firebase Console-এ "${host}" যোগ করুন।`,
+      canUseSameTabRedirect: topLevel,
     };
   }
 
@@ -869,7 +998,7 @@ function formatMobileAwareAuthError(err: unknown): {
 export async function signInOwnerWithGoogleRedirect(
   preferredEmail: string = PRIMARY_OWNER_EMAIL,
   forceAccountSelect = false
-): Promise<{ success: boolean; redirecting?: boolean; error?: string }> {
+): Promise<{ success: boolean; redirecting?: boolean; error?: string; errorCode?: string }> {
   if (!isAdminAuthenticated()) {
     return {
       success: false,
@@ -885,6 +1014,12 @@ export async function signInOwnerWithGoogleRedirect(
     };
   }
 
+  if (!isCurrentHostFirebaseAuthorized() && !isEmbeddedInAppWebView()) {
+    if (launchCrossDomainAuthBridge(forceAccountSelect)) {
+      return { success: true, redirecting: true };
+    }
+  }
+
   try {
     startAdminOAuthGracePeriod();
     const provider = createOwnerGoogleProvider(preferredEmail, forceAccountSelect);
@@ -894,7 +1029,7 @@ export async function signInOwnerWithGoogleRedirect(
     clearAdminOAuthGracePeriod();
     const formatted = formatMobileAwareAuthError(err);
     emitStatus({ error: formatted.message });
-    return { success: false, error: formatted.message };
+    return { success: false, errorCode: formatted.code, error: formatted.message };
   }
 }
 
@@ -1111,8 +1246,19 @@ function clearTokenExpiryTimer(): void {
 
 export function initializeCloudRealtimeSync(callbacks: CloudBridgeCallbacks): void {
   bridge = callbacks;
-  if (syncInitialized || typeof window === 'undefined') return;
+  if (typeof window === 'undefined') return;
+
+  // Never consume getRedirectResult or attach background listeners on the standalone /auth-bridge page
+  const cleanPathname = window.location.pathname.replace(/\/$/, '') || '/';
+  if (cleanPathname === '/auth-bridge') {
+    return;
+  }
+
+  if (syncInitialized) return;
   syncInitialized = true;
+
+  // Dynamically check Firebase project authorizedDomains in background
+  void refreshKnownAuthorizedDomains();
 
   let unsubBlogs: Unsubscribe | null = null;
 
@@ -1223,6 +1369,62 @@ export function initializeCloudRealtimeSync(callbacks: CloudBridgeCallbacks): vo
   // Start public blogs listener immediately for fast first paint
   attachBlogsListener(canAdminWriteToCloud());
 
+  // Complete returning Cross-Domain Cloud Auth Bridge credentials (from /auth-bridge)
+  capturePendingBridgeAuthTokens();
+  if (pendingBridgeAuthPayload) {
+    const { idToken, accessToken, bridgeError } = pendingBridgeAuthPayload;
+    pendingBridgeAuthPayload = null;
+
+    if (bridgeError) {
+      clearAdminOAuthGracePeriod();
+      emitStatus({ error: bridgeError });
+    } else if (idToken || accessToken) {
+      emitStatus({ isSyncing: true, error: null });
+      const credential = GoogleAuthProvider.credential(idToken || null, accessToken || null);
+      signInWithCredential(auth, credential)
+        .then(async (credRes) => {
+          if (!isVerifiedFirebaseOwner(credRes.user)) {
+            const wrongEmail = credRes.user?.email || 'অন্য ইমেইল';
+            await purgeExpiredRuntimeAuthSession();
+            clearAdminOAuthGracePeriod();
+            emitStatus({
+              isSyncing: false,
+              isOwnerConnected: false,
+              ownerEmail: null,
+              error: `"${wrongEmail}" অনুমোদিত নয়। অনুগ্রহ করে "${PRIMARY_OWNER_EMAIL}" ইমেইল দিয়ে কানেক্ট করুন।`,
+            });
+            return;
+          }
+
+          completeAdminOAuthRedirectSession();
+          emitStatus({
+            isOwnerConnected: true,
+            ownerEmail: credRes.user.email || PRIMARY_OWNER_EMAIL,
+            error: null,
+          });
+
+          if (isAdminAuthenticated()) {
+            const syncRes = await syncAllLocalDataToCloud();
+            if (syncRes.success && typeof window !== 'undefined') {
+              window.dispatchEvent(
+                new CustomEvent(CLOUD_AUTO_SCAN_COMPLETED_EVENT, { detail: syncRes })
+              );
+            }
+          } else {
+            emitStatus({ isSyncing: false });
+          }
+        })
+        .catch(async (err) => {
+          clearAdminOAuthGracePeriod();
+          if (isTokenServiceDisabledError(err)) {
+            await purgeExpiredRuntimeAuthSession();
+          }
+          const formatted = formatMobileAwareAuthError(err);
+          emitStatus({ isSyncing: false, error: formatted.message });
+        });
+    }
+  }
+
   // Complete any returning mobile same-tab Google OAuth redirect cleanly
   getRedirectResult(auth, browserPopupRedirectResolver)
     .then(async (redirectRes) => {
@@ -1257,7 +1459,12 @@ export function initializeCloudRealtimeSync(callbacks: CloudBridgeCallbacks): vo
       });
 
       if (isAdminAuthenticated()) {
-        await syncAllLocalDataToCloud();
+        const syncRes = await syncAllLocalDataToCloud();
+        if (syncRes.success && typeof window !== 'undefined') {
+          window.dispatchEvent(
+            new CustomEvent(CLOUD_AUTO_SCAN_COMPLETED_EVENT, { detail: syncRes })
+          );
+        }
       }
     })
     .catch(async (err) => {

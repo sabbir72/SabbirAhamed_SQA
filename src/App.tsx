@@ -28,6 +28,7 @@ import BlogPost from './components/BlogPost';
 import AdminPortal from './components/AdminPortal';
 import AdminQuickAccess from './components/AdminQuickAccess';
 import AdminCloudScanModal from './components/AdminCloudScanModal';
+import AuthBridgePage from './components/AuthBridgePage';
 import { getCurrentRoute, navigateTo, navigateToHomeSection, AppRoute } from './utils/router';
 import {
   ADMIN_OAUTH_REDIRECT_COMPLETED_EVENT,
@@ -187,6 +188,10 @@ export default function App(): React.ReactNode {
   };
 
   const currentPath = window.location.pathname;
+
+  if (route.type === 'auth-bridge') {
+    return <AuthBridgePage />;
+  }
 
   return (
     <div className="min-h-screen bg-[var(--color-dark-bg,#080B11)] text-[#F3F4F6] flex flex-col font-sans selection:bg-[var(--color-accent,#00D2FF)] selection:text-black transition-colors duration-300">

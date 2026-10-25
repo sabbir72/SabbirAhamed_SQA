@@ -11,6 +11,7 @@ import {
   Copy,
   Check,
   Mail,
+  ExternalLink,
 } from 'lucide-react';
 import {
   isAdminAuthenticated,
@@ -18,12 +19,15 @@ import {
   ADMIN_AUTH_CHANGED_EVENT,
 } from '../utils/adminAuth';
 import {
+  CLOUD_AUTO_SCAN_COMPLETED_EVENT,
   CLOUD_SYNC_STATUS_EVENT,
   CloudSyncStatus,
   getCloudSyncStatus,
+  isCurrentHostFirebaseAuthorized,
   isEmbeddedInAppWebView,
   isMobileBrowserDevice,
   isTopLevelBrowserWindow,
+  launchCrossDomainAuthBridge,
   signInOwnerWithGoogle,
   signInOwnerWithGoogleRedirect,
   signOutOwnerFromGoogle,
@@ -99,28 +103,48 @@ export default function AdminCloudScanModal({
       }
     };
 
+    const handleAutoScanCompleted = (e: Event) => {
+      const custom = e as CustomEvent<{
+        projectsSynced?: number;
+        blogsSynced?: number;
+      }>;
+      const projCount = custom.detail?.projectsSynced ?? 0;
+      const blogCount = custom.detail?.blogsSynced ?? 0;
+      setIsScanning(false);
+      setLastErrorCode('');
+      setFeedback({
+        type: 'success',
+        message: `স্ক্যান সফলভাবে সম্পন্ন হয়েছে (${projCount} Projects · ${blogCount} Blogs Google Cloud-এ সিঙ্ক হয়েছে)।`,
+      });
+    };
+
     syncLocalCounts();
     setCloudStatus(getCloudSyncStatus());
 
     window.addEventListener(PORTFOLIO_UPDATED_EVENT, syncLocalCounts);
     window.addEventListener(BLOGS_UPDATED_EVENT, syncLocalCounts);
     window.addEventListener(CLOUD_SYNC_STATUS_EVENT, handleCloudStatus);
+    window.addEventListener(CLOUD_AUTO_SCAN_COMPLETED_EVENT, handleAutoScanCompleted);
     window.addEventListener(ADMIN_AUTH_CHANGED_EVENT, handleAuthChanged);
 
     return () => {
       window.removeEventListener(PORTFOLIO_UPDATED_EVENT, syncLocalCounts);
       window.removeEventListener(BLOGS_UPDATED_EVENT, syncLocalCounts);
       window.removeEventListener(CLOUD_SYNC_STATUS_EVENT, handleCloudStatus);
+      window.removeEventListener(CLOUD_AUTO_SCAN_COMPLETED_EVENT, handleAutoScanCompleted);
       window.removeEventListener(ADMIN_AUTH_CHANGED_EVENT, handleAuthChanged);
     };
   }, [onClose]);
 
   useEffect(() => {
     if (isOpen) {
-      setFeedback(null);
       setLastErrorCode('');
       setIsAdmin(isAdminAuthenticated());
-      setCloudStatus(getCloudSyncStatus());
+      const current = getCloudSyncStatus();
+      setCloudStatus(current);
+      if (!current.isSyncing && !current.isOwnerConnected) {
+        setFeedback(null);
+      }
       const portfolio = getStoredPortfolioData();
       const blogs = getStoredBlogPosts();
       setLocalCounts({
@@ -434,23 +458,49 @@ export default function AdminCloudScanModal({
             </div>
 
             {lastErrorCode === 'auth/unauthorized-domain' && currentHost && (
-              <button
-                type="button"
-                onClick={() => handleCopyText(currentHost, 'domain')}
-                className="w-full min-h-[40px] px-3 py-2 rounded-lg bg-white/10 hover:bg-white/15 text-white font-mono text-xs flex items-center justify-center gap-2 cursor-pointer whitespace-nowrap"
-              >
-                {copiedKey === 'domain' ? (
-                  <>
-                    <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                    <span>Copied: {currentHost}</span>
-                  </>
-                ) : (
-                  <>
-                    <Copy className="w-3.5 h-3.5 shrink-0" />
-                    <span>Copy Domain ({currentHost})</span>
-                  </>
+              <div className="space-y-2 pt-1">
+                {isTopLevel && !isInAppWebView && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsScanning(true);
+                      launchCrossDomainAuthBridge(false);
+                    }}
+                    className="w-full min-h-[42px] px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs flex items-center justify-center gap-2 cursor-pointer whitespace-nowrap"
+                  >
+                    <Cloud className="w-3.5 h-3.5 shrink-0" />
+                    <span>ভেরিফায়েড ক্লাউড ব্রিজ দিয়ে লগইন ও স্ক্যান করুন</span>
+                  </button>
                 )}
-              </button>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleCopyText(currentHost, 'domain')}
+                    className="w-full min-h-[40px] px-3 py-2 rounded-lg bg-white/10 hover:bg-white/15 text-white font-mono text-xs flex items-center justify-center gap-2 cursor-pointer whitespace-nowrap"
+                  >
+                    {copiedKey === 'domain' ? (
+                      <>
+                        <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                        <span className="truncate">Copied: {currentHost}</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3.5 h-3.5 shrink-0" />
+                        <span className="truncate">Copy: {currentHost}</span>
+                      </>
+                    )}
+                  </button>
+                  <a
+                    href="https://console.firebase.google.com/project/splendid-meridian-64mm2/authentication/settings"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full min-h-[40px] px-3 py-2 rounded-lg bg-white/10 hover:bg-white/15 text-sky-200 font-medium text-xs flex items-center justify-center gap-1.5 whitespace-nowrap"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5 shrink-0" />
+                    <span className="truncate">Firebase Authorized Domains</span>
+                  </a>
+                </div>
+              </div>
             )}
 
             {lastErrorCode === 'auth/wrong-owner-email' && (
@@ -484,7 +534,7 @@ export default function AdminCloudScanModal({
             </span>
           </button>
 
-          {/* Mobile Same-Tab Redirect (No Popup Needed) when opened directly in Mobile Browser */}
+          {/* Mobile Same-Tab Redirect / Verified Bridge when opened directly in Mobile Browser */}
           {!cloudStatus.isOwnerConnected && isTopLevel && !isInAppWebView && (
             <button
               type="button"
@@ -493,7 +543,11 @@ export default function AdminCloudScanModal({
               className="w-full min-h-[44px] px-4 py-2.5 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/35 text-indigo-200 text-xs font-medium inline-flex items-center justify-center gap-2 transition-colors cursor-pointer disabled:opacity-50 whitespace-nowrap"
             >
               <Smartphone className="w-4 h-4 text-indigo-400 shrink-0" />
-              <span className="truncate">মোবাইল ডাইরেক্ট কানেক্ট (পপআপ ছাড়া · Same-Tab)</span>
+              <span className="truncate">
+                {!isCurrentHostFirebaseAuthorized()
+                  ? 'মোবাইল ক্লাউড ব্রিজ কানেক্ট (পপআপ ছাড়া · Auto Scan)'
+                  : 'মোবাইল ডাইরেক্ট কানেক্ট (পপআপ ছাড়া · Same-Tab)'}
+              </span>
             </button>
           )}
 
