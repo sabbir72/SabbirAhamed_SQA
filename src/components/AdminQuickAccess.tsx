@@ -10,7 +10,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { ShieldCheck, Lock, KeyRound, X, ChevronRight, Globe } from 'lucide-react';
+import { ShieldCheck, Lock, KeyRound, X, ChevronRight, Globe, Cloud } from 'lucide-react';
 import { isAdminAuthenticated } from '../utils/adminAuth';
 import { navigateTo } from '../utils/router';
 import { SecurityModalMode } from './AdminPasscodeModal';
@@ -18,12 +18,14 @@ import { SecurityModalMode } from './AdminPasscodeModal';
 interface AdminQuickAccessProps {
   currentPath?: string;
   onOpenSecurityModal?: (mode?: SecurityModalMode) => void;
+  onOpenCloudScan?: () => void;
   onLogout?: () => void;
 }
 
 export default function AdminQuickAccess({
   currentPath = '/',
   onOpenSecurityModal,
+  onOpenCloudScan,
   onLogout,
 }: AdminQuickAccessProps) {
   const [isAdmin, setIsAdmin] = useState<boolean>(() => isAdminAuthenticated());
@@ -150,6 +152,22 @@ export default function AdminQuickAccess({
 
             <ChevronRight className="w-3.5 h-3.5 text-[#9CA3AF] group-hover:text-white group-hover:translate-x-0.5 transition-all shrink-0" />
           </button>
+
+          {/* Pre-Git Cloud Scan Button (Admin Only) */}
+          {onOpenCloudScan && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpenCloudScan();
+              }}
+              className="min-w-[36px] min-h-[36px] flex items-center justify-center rounded-full text-emerald-400 hover:bg-emerald-500/15 transition-colors cursor-pointer shrink-0"
+              title="Pre-Git Cloud Scan & Backup"
+              aria-label="Pre-Git Cloud Scan & Backup"
+            >
+              <Cloud className="w-3.5 h-3.5" />
+            </button>
+          )}
 
           {/* Update Password Button */}
           <button

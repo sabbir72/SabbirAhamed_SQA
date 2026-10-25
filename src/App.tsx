@@ -11,7 +11,7 @@
  * -----------------------------------------
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Navbar from './components/Navbar';
 import Hero from './components/Hero';
 import SkillsGrid from './components/SkillsGrid';
@@ -27,6 +27,7 @@ import BlogList from './components/BlogList';
 import BlogPost from './components/BlogPost';
 import AdminPortal from './components/AdminPortal';
 import AdminQuickAccess from './components/AdminQuickAccess';
+import AdminCloudScanModal from './components/AdminCloudScanModal';
 import { getCurrentRoute, navigateTo, navigateToHomeSection, AppRoute } from './utils/router';
 import { isAdminAuthenticated, verifyOwnerWithServer, logoutAdmin } from './utils/adminAuth';
 import {
@@ -51,11 +52,25 @@ export default function App(): React.ReactNode {
   const [, setIsOwnerVerified] = useState<boolean>(false);
   const [isAdminPasscodeModalOpen, setIsAdminPasscodeModalOpen] = useState<boolean>(false);
   const [securityModalMode, setSecurityModalMode] = useState<SecurityModalMode>('unlock');
+  const [isCloudScanModalOpen, setIsCloudScanModalOpen] = useState<boolean>(false);
+  const wasOnAdminRouteRef = useRef<boolean>(false);
 
   useEffect(() => {
     document.documentElement.classList.add('dark');
     initializeTheme();
   }, [dark]);
+
+  // Show Pre-Git Cloud Scan & Backup reminder popup every time an authenticated Admin enters /admin
+  useEffect(() => {
+    const isNowOnAdmin = route.type === 'admin';
+    if (isAdmin && isNowOnAdmin && !wasOnAdminRouteRef.current) {
+      setIsCloudScanModalOpen(true);
+    }
+    if (!isAdmin) {
+      setIsCloudScanModalOpen(false);
+    }
+    wasOnAdminRouteRef.current = isAdmin && isNowOnAdmin;
+  }, [isAdmin, route.type]);
 
   useEffect(() => {
     const handlePopState = () => {
@@ -70,6 +85,7 @@ export default function App(): React.ReactNode {
         setIsOwnerVerified(verified);
       } else {
         setIsOwnerVerified(false);
+        setIsCloudScanModalOpen(false);
       }
     };
 
@@ -90,6 +106,7 @@ export default function App(): React.ReactNode {
       setIsAdmin(authenticated);
       if (!authenticated) {
         setIsOwnerVerified(false);
+        setIsCloudScanModalOpen(false);
       }
     }, 4000);
 
@@ -125,7 +142,14 @@ export default function App(): React.ReactNode {
     setIsAdminPasscodeModalOpen(true);
   };
 
+  const handleOpenCloudScanModal = () => {
+    if (isAdminAuthenticated()) {
+      setIsCloudScanModalOpen(true);
+    }
+  };
+
   const handleLogoutAdmin = () => {
+    setIsCloudScanModalOpen(false);
     logoutAdmin();
     setIsAdmin(false);
     setIsOwnerVerified(false);
@@ -137,8 +161,11 @@ export default function App(): React.ReactNode {
   const handleSecurityModalSuccess = (completedMode: SecurityModalMode) => {
     setIsAdmin(true);
     setIsAdminPasscodeModalOpen(false);
-    if (completedMode === 'unlock' && route.type !== 'admin') {
-      navigateTo('/admin');
+    if (completedMode === 'unlock') {
+      if (route.type !== 'admin') {
+        navigateTo('/admin');
+      }
+      setIsCloudScanModalOpen(true);
     }
   };
 
@@ -167,6 +194,7 @@ export default function App(): React.ReactNode {
             onOpenResumeBuilder={handleOpenResumeBuilder}
             onOpenCoverLetter={handleOpenCoverLetter}
             onOpenMainSecurity={handleOpenSecurityModal}
+            onOpenCloudScan={handleOpenCloudScanModal}
           />
         )}
 
@@ -260,6 +288,14 @@ export default function App(): React.ReactNode {
         />
       )}
 
+      {/* Admin-Exclusive Pre-Git Cloud Scan & Backup Reminder Modal */}
+      {isAdmin && isCloudScanModalOpen && (
+        <AdminCloudScanModal
+          isOpen={isCloudScanModalOpen}
+          onClose={() => setIsCloudScanModalOpen(false)}
+        />
+      )}
+
       {/* Rich Executive Glassmorphism Footer (hidden inside full-screen Admin Dashboard) */}
       {route.type !== 'admin' && (
         <Footer
@@ -274,6 +310,7 @@ export default function App(): React.ReactNode {
         <AdminQuickAccess
           currentPath={currentPath}
           onOpenSecurityModal={handleOpenSecurityModal}
+          onOpenCloudScan={handleOpenCloudScanModal}
           onLogout={handleLogoutAdmin}
         />
       )}

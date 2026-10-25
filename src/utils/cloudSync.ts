@@ -38,7 +38,11 @@ import {
 import type { Project, Experience, Skill, Reference, CareerRoadmapItem } from '../types';
 import type { BlogPost } from '../data/blogs';
 import type { PortfolioData, ProfileData } from './portfolioStore';
-import { grantAdminSessionFromGoogleOwner } from './adminAuth';
+import { ADMIN_AUTH_CHANGED_EVENT, isAdminAuthenticated } from './adminAuth';
+
+function canAdminWriteToCloud(): boolean {
+  return isAdminAuthenticated() && isVerifiedFirebaseOwner(auth.currentUser);
+}
 
 export const CLOUD_SYNC_STATUS_EVENT = 'sabbir_cloud_sync_status';
 
@@ -433,7 +437,7 @@ async function upsertProtectedDocument(
 
   return enqueuePathWrite(path, async () => {
     const user = auth.currentUser;
-    if (!isVerifiedFirebaseOwner(user) || !user) return;
+    if (!isAdminAuthenticated() || !isVerifiedFirebaseOwner(user) || !user) return;
 
     const docRef = doc(db, collectionName, cleanId);
     const exists = await checkServerDocExists(docRef, path);
@@ -483,7 +487,7 @@ async function deleteProtectedDocument(collectionName: string, docId: string): P
 
   return enqueuePathWrite(path, async () => {
     const user = auth.currentUser;
-    if (!isVerifiedFirebaseOwner(user)) return;
+    if (!isAdminAuthenticated() || !isVerifiedFirebaseOwner(user)) return;
 
     try {
       await deleteDoc(doc(db, collectionName, cleanId));
@@ -501,7 +505,7 @@ export async function pushPortfolioMetaToCloud(
   data: PortfolioData,
   blogCategories?: string[]
 ): Promise<void> {
-  if (isApplyingSnapshot || !isVerifiedFirebaseOwner(auth.currentUser)) return;
+  if (isApplyingSnapshot || !canAdminWriteToCloud()) return;
 
   const resolvedCats =
     blogCategories ?? data.blogCategories ?? (bridge ? bridge.getBlogCategories() : []);
@@ -526,7 +530,7 @@ export async function pushPortfolioMetaToCloud(
 }
 
 export async function pushProjectToCloud(project: Project, orderIndex = 0): Promise<void> {
-  if (isApplyingSnapshot || !isVerifiedFirebaseOwner(auth.currentUser)) return;
+  if (isApplyingSnapshot || !canAdminWriteToCloud()) return;
   const cleanId = sanitizeDocId(project.id);
   const mutable = sanitizeProjectMutableFields({ ...project, id: cleanId }, orderIndex);
   await upsertProtectedDocument('projects', cleanId, mutable);
@@ -534,7 +538,7 @@ export async function pushProjectToCloud(project: Project, orderIndex = 0): Prom
 }
 
 export async function pushAllProjectsToCloud(projects: Project[]): Promise<void> {
-  if (isApplyingSnapshot || !isVerifiedFirebaseOwner(auth.currentUser)) return;
+  if (isApplyingSnapshot || !canAdminWriteToCloud()) return;
   for (let i = 0; i < projects.length; i++) {
     const p = projects[i];
     const cleanId = sanitizeDocId(p.id);
@@ -549,13 +553,13 @@ export async function pushAllProjectsToCloud(projects: Project[]): Promise<void>
 }
 
 export async function deleteProjectFromCloud(projectId: string): Promise<void> {
-  if (isApplyingSnapshot || !isVerifiedFirebaseOwner(auth.currentUser)) return;
+  if (isApplyingSnapshot || !canAdminWriteToCloud()) return;
   await deleteProtectedDocument('projects', projectId);
   emitStatus({ lastSyncedAt: new Date().toISOString(), error: null });
 }
 
 export async function pushExperienceToCloud(exp: Experience, orderIndex = 0): Promise<void> {
-  if (isApplyingSnapshot || !isVerifiedFirebaseOwner(auth.currentUser)) return;
+  if (isApplyingSnapshot || !canAdminWriteToCloud()) return;
   const cleanId = sanitizeDocId(exp.id);
   const mutable = sanitizeExperienceMutableFields({ ...exp, id: cleanId }, orderIndex);
   await upsertProtectedDocument('experiences', cleanId, mutable);
@@ -563,7 +567,7 @@ export async function pushExperienceToCloud(exp: Experience, orderIndex = 0): Pr
 }
 
 export async function pushAllExperiencesToCloud(experiences: Experience[]): Promise<void> {
-  if (isApplyingSnapshot || !isVerifiedFirebaseOwner(auth.currentUser)) return;
+  if (isApplyingSnapshot || !canAdminWriteToCloud()) return;
   for (let i = 0; i < experiences.length; i++) {
     const e = experiences[i];
     const cleanId = sanitizeDocId(e.id);
@@ -574,13 +578,13 @@ export async function pushAllExperiencesToCloud(experiences: Experience[]): Prom
 }
 
 export async function deleteExperienceFromCloud(expId: string): Promise<void> {
-  if (isApplyingSnapshot || !isVerifiedFirebaseOwner(auth.currentUser)) return;
+  if (isApplyingSnapshot || !canAdminWriteToCloud()) return;
   await deleteProtectedDocument('experiences', expId);
   emitStatus({ lastSyncedAt: new Date().toISOString(), error: null });
 }
 
 export async function pushBlogToCloud(blog: BlogPost, orderIndex = 0): Promise<void> {
-  if (isApplyingSnapshot || !isVerifiedFirebaseOwner(auth.currentUser)) return;
+  if (isApplyingSnapshot || !canAdminWriteToCloud()) return;
   const cleanId = sanitizeDocId(blog.id);
   const mutable = sanitizeBlogMutableFields({ ...blog, id: cleanId }, orderIndex);
   await upsertProtectedDocument('blogs', cleanId, mutable);
@@ -588,7 +592,7 @@ export async function pushBlogToCloud(blog: BlogPost, orderIndex = 0): Promise<v
 }
 
 export async function pushAllBlogsToCloud(blogs: BlogPost[]): Promise<void> {
-  if (isApplyingSnapshot || !isVerifiedFirebaseOwner(auth.currentUser)) return;
+  if (isApplyingSnapshot || !canAdminWriteToCloud()) return;
   for (let i = 0; i < blogs.length; i++) {
     const b = blogs[i];
     const cleanId = sanitizeDocId(b.id);
@@ -603,7 +607,7 @@ export async function pushAllBlogsToCloud(blogs: BlogPost[]): Promise<void> {
 }
 
 export async function deleteBlogFromCloud(blogId: string): Promise<void> {
-  if (isApplyingSnapshot || !isVerifiedFirebaseOwner(auth.currentUser)) return;
+  if (isApplyingSnapshot || !canAdminWriteToCloud()) return;
   await deleteProtectedDocument('blogs', blogId);
   emitStatus({ lastSyncedAt: new Date().toISOString(), error: null });
 }
@@ -615,6 +619,15 @@ export async function deleteBlogFromCloud(blogId: string): Promise<void> {
 export async function syncAllLocalDataToCloud(): Promise<FullSyncResult> {
   if (activeFullSyncPromise) {
     return activeFullSyncPromise;
+  }
+
+  if (!isAdminAuthenticated()) {
+    return {
+      success: false,
+      projectsSynced: 0,
+      blogsSynced: 0,
+      error: 'Admin session is locked. Unlock Admin Panel with your System Password first.',
+    };
   }
 
   if (!bridge) {
@@ -708,6 +721,13 @@ export async function signInOwnerWithGoogle(): Promise<{
   email?: string;
   error?: string;
 }> {
+  if (!isAdminAuthenticated()) {
+    return {
+      success: false,
+      error: 'Admin password authentication is required before connecting Cloud Sync.',
+    };
+  }
+
   try {
     const result = await signInWithPopup(auth, googleProvider);
     const user = result.user;
@@ -719,8 +739,6 @@ export async function signInOwnerWithGoogle(): Promise<{
       };
     }
 
-    // Grant unified Main Security System session immediately
-    grantAdminSessionFromGoogleOwner();
     emitStatus({
       isOwnerConnected: true,
       ownerEmail: user.email || null,
@@ -833,7 +851,7 @@ async function pullCloudSnapshotOnce(): Promise<void> {
 
   // 4. blogs
   try {
-    const ownerSignedIn = isVerifiedFirebaseOwner(auth.currentUser);
+    const ownerSignedIn = isAdminAuthenticated() && isVerifiedFirebaseOwner(auth.currentUser);
     const blogQuery = ownerSignedIn
       ? collection(db, 'blogs')
       : query(collection(db, 'blogs'), where('status', '==', 'Published'));
@@ -958,9 +976,15 @@ export function initializeCloudRealtimeSync(callbacks: CloudBridgeCallbacks): vo
   };
 
   // Start public blogs listener immediately for fast first paint
-  attachBlogsListener(isVerifiedFirebaseOwner(auth.currentUser));
+  attachBlogsListener(isAdminAuthenticated() && isVerifiedFirebaseOwner(auth.currentUser));
 
-  // 4. Listen to Firebase Auth state changes for Owner auto-backup & draft access
+  // Refresh blog query privileges when Admin unlocks or locks System Security
+  window.addEventListener(ADMIN_AUTH_CHANGED_EVENT, () => {
+    const ownerConnected = isVerifiedFirebaseOwner(auth.currentUser);
+    attachBlogsListener(isAdminAuthenticated() && ownerConnected);
+  });
+
+  // 4. Listen to Firebase Auth state changes for Owner Cloud connection status
   onAuthStateChanged(auth, (user) => {
     const ownerConnected = isVerifiedFirebaseOwner(user);
     emitStatus({
@@ -968,10 +992,9 @@ export function initializeCloudRealtimeSync(callbacks: CloudBridgeCallbacks): vo
       ownerEmail: ownerConnected && user ? user.email : null,
     });
 
-    attachBlogsListener(ownerConnected);
+    attachBlogsListener(isAdminAuthenticated() && ownerConnected);
 
-    if (ownerConnected) {
-      // Automatically ensure all local custom & default items are safely persisted to Cloud Firestore
+    if (ownerConnected && isAdminAuthenticated()) {
       void syncAllLocalDataToCloud();
     }
   });

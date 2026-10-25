@@ -139,13 +139,6 @@ function storeAdminToken(token: string): void {
 }
 
 /**
- * Grant unified Admin session when verified portfolio owner authenticates via Google Cloud Auth
- */
-export function grantAdminSessionFromGoogleOwner(): void {
-  storeAdminToken(`sabbir_sqa_admin_google_${Date.now()}`);
-}
-
-/**
  * Verify Admin Passcode via secure backend API endpoint
  */
 export async function verifyAdminPasscode(inputCode: string): Promise<boolean> {

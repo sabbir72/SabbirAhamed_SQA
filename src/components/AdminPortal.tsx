@@ -95,6 +95,7 @@ interface AdminPortalProps {
   onOpenResumeBuilder?: () => void;
   onOpenCoverLetter?: () => void;
   onOpenMainSecurity?: (mode?: SecurityModalMode) => void;
+  onOpenCloudScan?: () => void;
 }
 
 export default function AdminPortal({ 
@@ -103,6 +104,7 @@ export default function AdminPortal({
   onOpenResumeBuilder,
   onOpenCoverLetter,
   onOpenMainSecurity,
+  onOpenCloudScan,
 }: AdminPortalProps) {
   // Authentication State (controlled exclusively by the external Main Security System)
   const [isAdmin, setIsAdmin] = useState<boolean>(() => isAdminAuthenticated());
@@ -1333,6 +1335,18 @@ ${profile.title || PERSONAL_INFO.title}`;
             <div className="flex flex-col sm:items-end gap-2.5 shrink-0">
               {/* Row 1: Primary Workspace Utilities */}
               <div className="flex flex-wrap items-center gap-2">
+                {onOpenCloudScan && (
+                  <button
+                    type="button"
+                    onClick={onOpenCloudScan}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow-sm transition-colors cursor-pointer whitespace-nowrap shrink-0"
+                    title="Open Pre-Git Cloud Scan & Backup"
+                  >
+                    <Cloud className="w-3.5 h-3.5 shrink-0" />
+                    <span>Pre-Git Cloud Scan</span>
+                  </button>
+                )}
+
                 <button
                   onClick={handleRefreshWorkspace}
                   className="p-2 rounded-xl bg-white/[0.04] hover:bg-white/[0.09] text-slate-300 hover:text-white border border-white/[0.08] transition-colors cursor-pointer shrink-0"
@@ -1405,6 +1419,53 @@ ${profile.title || PERSONAL_INFO.title}`;
           {/* ==================================================================== */}
           {activeTab === 'overview' && (
             <div className="space-y-6 animate-fadeIn">
+              {/* Pre-Git Version Cloud Scan & Backup Notice (Admin Exclusive) */}
+              <div className="bg-[#0E1320] border border-emerald-500/25 rounded-2xl p-4 sm:p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                <div className="flex items-start gap-3.5 min-w-0">
+                  <div className="w-10 h-10 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0">
+                    <Cloud className="w-5 h-5" />
+                  </div>
+                  <div className="space-y-1 min-w-0">
+                    <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
+                      <span className="font-semibold text-white text-sm">
+                        Pre-Git Cloud Scan &amp; Backup
+                      </span>
+                      <span aria-hidden="true">·</span>
+                      <span className={cloudStatus.isOwnerConnected ? 'text-emerald-400' : 'text-amber-300'}>
+                        {cloudStatus.isOwnerConnected
+                          ? `Connected (${cloudStatus.ownerEmail})`
+                          : 'Owner Google Not Connected'}
+                      </span>
+                      {cloudStatus.lastSyncedAt && (
+                        <>
+                          <span aria-hidden="true">·</span>
+                          <span className="font-mono tabular-nums text-slate-400">
+                            Last Scan: {new Date(cloudStatus.lastSyncedAt).toLocaleTimeString()}
+                          </span>
+                        </>
+                      )}
+                    </div>
+                    <p className="text-xs text-slate-300 leading-relaxed">
+                      নতুন Git Version বা Commit করার আগে একবার স্ক্যান করে নিন—যাতে সব প্রজেক্ট, ব্লগ এবং আপলোড করা ছবি Cloud Database-এ স্থায়ীভাবে ব্যাকআপ থাকে।
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2 shrink-0">
+                  {onOpenCloudScan ? (
+                    <button
+                      type="button"
+                      onClick={onOpenCloudScan}
+                      className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap shrink-0"
+                    >
+                      <Cloud className="w-3.5 h-3.5 shrink-0" />
+                      <span>
+                        {cloudStatus.isOwnerConnected ? 'Scan & Backup Now' : 'Connect Google & Scan'}
+                      </span>
+                    </button>
+                  ) : null}
+                </div>
+              </div>
               
               {/* 10-Card Executive KPI Grid (Modeled on Reference Dashboard) */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
