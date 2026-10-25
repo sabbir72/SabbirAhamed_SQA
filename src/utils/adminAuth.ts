@@ -12,11 +12,14 @@
 const ADMIN_TOKEN_KEY = 'sabbir_sqa_admin_token';
 const ADMIN_LAST_ACTIVE_KEY = 'sabbir_sqa_admin_last_active';
 const ADMIN_LOCAL_PASS_HASH_KEY = 'sabbir_sqa_admin_custom_hash';
+const ADMIN_OAUTH_GRACE_UNTIL_KEY = 'sabbir_sqa_admin_oauth_grace_until';
 
-export const ADMIN_SESSION_TIMEOUT_MS = 2 * 60 * 1000;
-export const ADMIN_SESSION_TIMEOUT_SECONDS = 120;
+export const ADMIN_SESSION_TIMEOUT_MS = 15 * 60 * 1000;
+export const ADMIN_SESSION_TIMEOUT_SECONDS = 15 * 60;
+export const ADMIN_OAUTH_GRACE_MS = 10 * 60 * 1000;
 export const ADMIN_AUTH_CHANGED_EVENT = 'admin_auth_changed';
 export const ADMIN_SESSION_EXPIRED_EVENT = 'admin_session_expired';
+export const ADMIN_OAUTH_REDIRECT_COMPLETED_EVENT = 'admin_oauth_redirect_completed';
 
 async function sha256Hex(input: string): Promise<string> {
   if (typeof window !== 'undefined' && window.crypto?.subtle) {
@@ -29,8 +32,63 @@ async function sha256Hex(input: string): Promise<string> {
   return input;
 }
 
+export function startAdminOAuthGracePeriod(): void {
+  try {
+    const token = sessionStorage.getItem(ADMIN_TOKEN_KEY) || localStorage.getItem(ADMIN_TOKEN_KEY);
+    if (!token || !token.startsWith('sabbir_sqa_admin_')) return;
+    const now = Date.now();
+    const until = String(now + ADMIN_OAUTH_GRACE_MS);
+    sessionStorage.setItem(ADMIN_LAST_ACTIVE_KEY, String(now));
+    localStorage.setItem(ADMIN_LAST_ACTIVE_KEY, String(now));
+    sessionStorage.setItem(ADMIN_OAUTH_GRACE_UNTIL_KEY, until);
+    localStorage.setItem(ADMIN_OAUTH_GRACE_UNTIL_KEY, until);
+  } catch {
+    // Ignore storage errors
+  }
+}
+
+export function isAdminOAuthGraceActive(): boolean {
+  try {
+    const raw =
+      sessionStorage.getItem(ADMIN_OAUTH_GRACE_UNTIL_KEY) ||
+      localStorage.getItem(ADMIN_OAUTH_GRACE_UNTIL_KEY);
+    if (!raw) return false;
+    const until = parseInt(raw, 10);
+    return Number.isFinite(until) && Date.now() < until;
+  } catch {
+    return false;
+  }
+}
+
+export function clearAdminOAuthGracePeriod(): void {
+  try {
+    sessionStorage.removeItem(ADMIN_OAUTH_GRACE_UNTIL_KEY);
+    localStorage.removeItem(ADMIN_OAUTH_GRACE_UNTIL_KEY);
+  } catch {
+    // Ignore storage errors
+  }
+}
+
+export function completeAdminOAuthRedirectSession(): void {
+  try {
+    const token = sessionStorage.getItem(ADMIN_TOKEN_KEY) || localStorage.getItem(ADMIN_TOKEN_KEY);
+    if (token && token.startsWith('sabbir_sqa_admin_')) {
+      const now = Date.now();
+      sessionStorage.setItem(ADMIN_TOKEN_KEY, token);
+      localStorage.setItem(ADMIN_TOKEN_KEY, token);
+      sessionStorage.setItem(ADMIN_LAST_ACTIVE_KEY, String(now));
+      localStorage.setItem(ADMIN_LAST_ACTIVE_KEY, String(now));
+      clearAdminOAuthGracePeriod();
+      window.dispatchEvent(new Event(ADMIN_AUTH_CHANGED_EVENT));
+      window.dispatchEvent(new Event(ADMIN_OAUTH_REDIRECT_COMPLETED_EVENT));
+    }
+  } catch {
+    // Ignore storage errors
+  }
+}
+
 /**
- * Record active interaction to keep session alive during the 2-minute window
+ * Record active interaction to keep session alive
  */
 export function recordAdminActivity(): void {
   try {
@@ -41,7 +99,7 @@ export function recordAdminActivity(): void {
         sessionStorage.getItem(ADMIN_LAST_ACTIVE_KEY) || localStorage.getItem(ADMIN_LAST_ACTIVE_KEY);
       const lastActive = lastActiveRaw ? parseInt(lastActiveRaw, 10) : now;
 
-      if (now - lastActive > ADMIN_SESSION_TIMEOUT_MS) {
+      if (now - lastActive > ADMIN_SESSION_TIMEOUT_MS && !isAdminOAuthGraceActive()) {
         logoutAdmin(true);
         return;
       }
@@ -55,13 +113,17 @@ export function recordAdminActivity(): void {
 }
 
 /**
- * Get remaining session duration in seconds (0 to 120)
+ * Get remaining session duration in seconds
  */
 export function getAdminSessionRemainingSeconds(): number {
   try {
     const token = sessionStorage.getItem(ADMIN_TOKEN_KEY) || localStorage.getItem(ADMIN_TOKEN_KEY);
     if (!token || !token.startsWith('sabbir_sqa_admin_')) {
       return 0;
+    }
+
+    if (isAdminOAuthGraceActive()) {
+      return ADMIN_SESSION_TIMEOUT_SECONDS;
     }
 
     const lastActiveRaw =
@@ -85,13 +147,17 @@ export function getAdminSessionRemainingSeconds(): number {
 }
 
 /**
- * Check if the user is currently authenticated as Admin (and within the 2-minute timeout window)
+ * Check if the user is currently authenticated as Admin
  */
 export function isAdminAuthenticated(): boolean {
   try {
     const token = sessionStorage.getItem(ADMIN_TOKEN_KEY) || localStorage.getItem(ADMIN_TOKEN_KEY);
     if (!token || !token.startsWith('sabbir_sqa_admin_')) {
       return false;
+    }
+
+    if (isAdminOAuthGraceActive()) {
+      return true;
     }
 
     const lastActiveRaw =
@@ -297,6 +363,8 @@ export function logoutAdmin(isAutoExpired = false): void {
     localStorage.removeItem(ADMIN_TOKEN_KEY);
     sessionStorage.removeItem(ADMIN_LAST_ACTIVE_KEY);
     localStorage.removeItem(ADMIN_LAST_ACTIVE_KEY);
+    sessionStorage.removeItem(ADMIN_OAUTH_GRACE_UNTIL_KEY);
+    localStorage.removeItem(ADMIN_OAUTH_GRACE_UNTIL_KEY);
   } catch {
     // Ignore storage errors
   }

@@ -11,7 +11,18 @@
  */
 
 import { initializeApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, User } from 'firebase/auth';
+import {
+  Auth,
+  browserLocalPersistence,
+  browserPopupRedirectResolver,
+  browserSessionPersistence,
+  getAuth,
+  GoogleAuthProvider,
+  indexedDBLocalPersistence,
+  initializeAuth,
+  inMemoryPersistence,
+  User,
+} from 'firebase/auth';
 import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
 
@@ -19,17 +30,57 @@ const app = initializeApp(firebaseConfig);
 
 // CRITICAL: Connect specifically to the provisioned named Firestore database
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
-export const auth = getAuth(app);
 
-export const googleProvider = new GoogleAuthProvider();
-googleProvider.setCustomParameters({
-  prompt: 'select_account',
-});
+function createMobileReadyAuth(): Auth {
+  if (typeof window === 'undefined') {
+    return getAuth(app);
+  }
+  try {
+    // Synchronous browserLocalPersistence first prevents async IndexedDB delays from
+    // expiring mobile Safari/Chrome touch gestures before signInWithPopup opens,
+    // and inMemoryPersistence ensures mobile cross-origin iframes never fail storage checks.
+    return initializeAuth(app, {
+      persistence: [
+        browserLocalPersistence,
+        browserSessionPersistence,
+        indexedDBLocalPersistence,
+        inMemoryPersistence,
+      ],
+      popupRedirectResolver: browserPopupRedirectResolver,
+    });
+  } catch {
+    return getAuth(app);
+  }
+}
+
+export const auth = createMobileReadyAuth();
+export { browserPopupRedirectResolver };
+
+export const PRIMARY_OWNER_EMAIL = 'sabbircse72@gmail.com';
 
 export const OWNER_ADMIN_EMAILS: readonly string[] = [
-  'sabbir.altersense@gmail.com',
   'sabbircse72@gmail.com',
+  'sabbir.altersense@gmail.com',
 ];
+
+export function createOwnerGoogleProvider(
+  loginHintEmail: string = PRIMARY_OWNER_EMAIL,
+  forceAccountSelect = false
+): GoogleAuthProvider {
+  const provider = new GoogleAuthProvider();
+  const params: Record<string, string> = {};
+  const cleanHint = (loginHintEmail || PRIMARY_OWNER_EMAIL).trim().toLowerCase();
+  if (cleanHint) {
+    params.login_hint = cleanHint;
+  }
+  if (forceAccountSelect) {
+    params.prompt = 'select_account';
+  }
+  provider.setCustomParameters(params);
+  return provider;
+}
+
+export const googleProvider = createOwnerGoogleProvider(PRIMARY_OWNER_EMAIL);
 
 export function isVerifiedFirebaseOwner(user: User | null | undefined): boolean {
   if (!user || !user.email || !user.emailVerified) return false;

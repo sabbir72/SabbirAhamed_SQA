@@ -57,10 +57,13 @@ import {
   CLOUD_SYNC_STATUS_EVENT,
   CloudSyncStatus,
   getCloudSyncStatus,
+  isTopLevelBrowserWindow,
   signInOwnerWithGoogle,
+  signInOwnerWithGoogleRedirect,
   signOutOwnerFromGoogle,
   syncAllLocalDataToCloud,
 } from '../utils/cloudSync';
+import { PRIMARY_OWNER_EMAIL } from '../firebase';
 import { PERSONAL_INFO } from '../data';
 import { 
   DEFAULT_CAREER_OBJECTIVE, 
@@ -290,7 +293,7 @@ export default function AdminPortal({
       setSessionRemaining(remaining);
       if (remaining <= 0 || !isAdminAuthenticated()) {
         setIsAdmin(false);
-        showToast('Admin session expired after 2 minutes of inactivity.');
+        showToast('Admin session expired due to inactivity.');
       }
     }, 1000);
 
@@ -307,7 +310,7 @@ export default function AdminPortal({
 
     const handleSessionExpired = () => {
       setIsAdmin(false);
-      showToast('Admin session expired after 2 minutes. Logged out.');
+      showToast('Admin session expired. Logged out.');
     };
 
     window.addEventListener('mousemove', handleActivity, { passive: true });
@@ -4227,7 +4230,7 @@ ${profile.title || PERSONAL_INFO.title}`;
                   </div>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+                <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-2.5 shrink-0 w-full sm:w-auto">
                   {cloudStatus.isOwnerConnected ? (
                     <>
                       <button
@@ -4243,10 +4246,10 @@ ${profile.title || PERSONAL_INFO.title}`;
                             showToast(res.error);
                           }
                         }}
-                        className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-mono text-xs font-bold flex items-center gap-2 cursor-pointer transition-colors disabled:opacity-50"
+                        className="min-h-[44px] px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-mono text-xs font-bold flex items-center justify-center gap-2 cursor-pointer transition-colors disabled:opacity-50 whitespace-nowrap"
                       >
                         <RefreshCw
-                          className={`w-3.5 h-3.5 ${cloudStatus.isSyncing ? 'animate-spin' : ''}`}
+                          className={`w-3.5 h-3.5 shrink-0 ${cloudStatus.isSyncing ? 'animate-spin' : ''}`}
                         />
                         <span>
                           {cloudStatus.isSyncing ? 'Syncing to Cloud...' : 'Sync All Data to Cloud'}
@@ -4258,27 +4261,45 @@ ${profile.title || PERSONAL_INFO.title}`;
                           await signOutOwnerFromGoogle();
                           showToast('Disconnected Google Cloud write session.');
                         }}
-                        className="px-3.5 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 font-mono text-xs cursor-pointer transition-colors"
+                        className="min-h-[44px] px-3.5 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 font-mono text-xs cursor-pointer transition-colors whitespace-nowrap"
                       >
                         Disconnect
                       </button>
                     </>
                   ) : (
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        const res = await signInOwnerWithGoogle();
-                        if (res.success) {
-                          showToast(`Connected Cloud Sync as ${res.email || 'Owner'}!`);
-                        } else if (res.error) {
-                          showToast(res.error);
-                        }
-                      }}
-                      className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-mono text-xs font-bold flex items-center gap-2 cursor-pointer transition-colors shadow-lg shadow-emerald-600/20"
-                    >
-                      <Cloud className="w-4 h-4" />
-                      <span>Connect Google Cloud Sync</span>
-                    </button>
+                    <>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          const res = await signInOwnerWithGoogle(PRIMARY_OWNER_EMAIL, false);
+                          if (res.redirecting) return;
+                          if (res.success) {
+                            showToast(`Connected Cloud Sync as ${res.email || PRIMARY_OWNER_EMAIL}!`);
+                          } else if (res.error) {
+                            showToast(res.error);
+                          }
+                        }}
+                        className="min-h-[46px] px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-mono text-xs font-bold flex items-center justify-center gap-2 cursor-pointer transition-colors shadow-lg shadow-emerald-600/20 whitespace-nowrap"
+                      >
+                        <Cloud className="w-4 h-4 shrink-0" />
+                        <span>Connect {PRIMARY_OWNER_EMAIL}</span>
+                      </button>
+
+                      {isTopLevelBrowserWindow() && (
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            const res = await signInOwnerWithGoogleRedirect(PRIMARY_OWNER_EMAIL, false);
+                            if (!res.success && res.error) {
+                              showToast(res.error);
+                            }
+                          }}
+                          className="min-h-[44px] px-3.5 py-2.5 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/35 text-indigo-200 font-mono text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer transition-colors whitespace-nowrap"
+                        >
+                          <span>Mobile Same-Tab Connect</span>
+                        </button>
+                      )}
+                    </>
                   )}
                 </div>
               </div>

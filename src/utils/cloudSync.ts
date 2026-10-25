@@ -26,22 +26,62 @@ import {
   where,
   Unsubscribe,
 } from 'firebase/firestore';
-import { onAuthStateChanged, signInWithPopup, signOut } from 'firebase/auth';
+import {
+  getRedirectResult,
+  onAuthStateChanged,
+  signInWithPopup,
+  signInWithRedirect,
+  signOut,
+} from 'firebase/auth';
 import {
   auth,
+  browserPopupRedirectResolver,
+  createOwnerGoogleProvider,
   db,
-  googleProvider,
   handleFirestoreError,
   isVerifiedFirebaseOwner,
   OperationType,
+  PRIMARY_OWNER_EMAIL,
 } from '../firebase';
 import type { Project, Experience, Skill, Reference, CareerRoadmapItem } from '../types';
 import type { BlogPost } from '../data/blogs';
 import type { PortfolioData, ProfileData } from './portfolioStore';
-import { ADMIN_AUTH_CHANGED_EVENT, isAdminAuthenticated } from './adminAuth';
+import {
+  ADMIN_AUTH_CHANGED_EVENT,
+  clearAdminOAuthGracePeriod,
+  completeAdminOAuthRedirectSession,
+  isAdminAuthenticated,
+  isAdminOAuthGraceActive,
+  recordAdminActivity,
+  startAdminOAuthGracePeriod,
+} from './adminAuth';
 
 function canAdminWriteToCloud(): boolean {
   return isAdminAuthenticated() && isVerifiedFirebaseOwner(auth.currentUser);
+}
+
+export function isMobileBrowserDevice(): boolean {
+  if (typeof window === 'undefined' || typeof navigator === 'undefined') return false;
+  const ua = navigator.userAgent || '';
+  return (
+    /Android|iPhone|iPad|iPod|Mobile|CriOS|FxiOS|SamsungBrowser/i.test(ua) ||
+    window.innerWidth <= 768
+  );
+}
+
+export function isEmbeddedInAppWebView(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  const ua = navigator.userAgent || '';
+  return /FBAN|FBAV|Instagram|Messenger|WhatsApp|LinkedInApp|Line\/|; wv\)/i.test(ua);
+}
+
+export function isTopLevelBrowserWindow(): boolean {
+  if (typeof window === 'undefined') return true;
+  try {
+    return window.self === window.top;
+  } catch {
+    return false;
+  }
 }
 
 export const CLOUD_SYNC_STATUS_EVENT = 'sabbir_cloud_sync_status';
@@ -716,45 +756,197 @@ export async function syncAllLocalDataToCloud(): Promise<FullSyncResult> {
 // Google Owner Sign-In / Sign-Out Actions
 // ------------------------------------------------------------------------
 
-export async function signInOwnerWithGoogle(): Promise<{
-  success: boolean;
-  email?: string;
-  error?: string;
-}> {
+function formatMobileAwareAuthError(err: unknown): {
+  code: string;
+  message: string;
+  canUseSameTabRedirect: boolean;
+} {
+  const code =
+    typeof err === 'object' && err !== null && 'code' in err
+      ? String((err as { code?: unknown }).code || '')
+      : '';
+  const rawMsg = err instanceof Error ? err.message : String(err);
+  const host = typeof window !== 'undefined' ? window.location.hostname : '';
+  const inWebView = isEmbeddedInAppWebView();
+  const topLevel = isTopLevelBrowserWindow();
+  const isMobile = isMobileBrowserDevice();
+
+  if (inWebView) {
+    return {
+      code: code || 'auth/webview-unsupported',
+      message:
+        'Messenger / WhatsApp / ইন-অ্যাপ ব্রাউজারে Google নিরাপত্তা নীতির কারণে Google Sign-In বন্ধ থাকে। অনুগ্রহ করে উপরের মেনু থেকে "Open in Chrome / Safari" করে কানেক্ট করুন।',
+      canUseSameTabRedirect: false,
+    };
+  }
+
+  if (code.includes('unauthorized-domain') || rawMsg.includes('unauthorized-domain')) {
+    return {
+      code: 'auth/unauthorized-domain',
+      message: `এই ডোমেইনটি (${host}) এখনো Firebase Authorized Domains-এ যুক্ত নেই। Firebase Console → Authentication → Settings → Authorized domains-এ "${host}" যোগ করুন।`,
+      canUseSameTabRedirect: false,
+    };
+  }
+
+  if (
+    code.includes('popup-blocked') ||
+    rawMsg.includes('popup-blocked') ||
+    code.includes('operation-not-supported')
+  ) {
+    return {
+      code: code || 'auth/popup-blocked',
+      message: topLevel
+        ? 'মোবাইল ব্রাউজারে পপআপ ব্লক হয়েছে। নিচের "মোবাইল ডাইরেক্ট কানেক্ট (পপআপ ছাড়া)" বাটনে ট্যাপ করুন।'
+        : 'মোবাইল প্রিভিউ আইফ্রেমে পপআপ ব্লক হয়েছে। ব্রাউজার সেটিংস থেকে Pop-ups চালু করুন অথবা সরাসরি অ্যাপ লিংকটি Chrome/Safari ট্যাবে ওপেন করে কানেক্ট করুন।',
+      canUseSameTabRedirect: topLevel,
+    };
+  }
+
+  if (
+    code.includes('popup-closed-by-user') ||
+    code.includes('cancelled-popup-request') ||
+    rawMsg.includes('popup-closed-by-user') ||
+    rawMsg.includes('cancelled-popup-request')
+  ) {
+    return {
+      code: code || 'auth/popup-closed-by-user',
+      message:
+        isMobile && topLevel
+          ? 'মোবাইলে পপআপ ট্যাব বন্ধ হয়ে গেছে। নিচের "মোবাইল ডাইরেক্ট কানেক্ট (পপআপ ছাড়া)" বাটনে ট্যাপ করলে একই ট্যাবে সহজে কানেক্ট হবে।'
+          : 'Google সাইন-ইন পপআপটি সম্পন্ন হওয়ার আগেই বন্ধ হয়ে গেছে। আবার চেষ্টা করুন।',
+      canUseSameTabRedirect: topLevel,
+    };
+  }
+
+  if (code.includes('network-request-failed') || rawMsg.includes('network-request-failed')) {
+    return {
+      code: 'auth/network-request-failed',
+      message: 'ইন্টারনেট সংযোগ বা নেটওয়ার্ক সমস্যার কারণে Google কানেক্ট সম্পন্ন হয়নি। আবার চেষ্টা করুন।',
+      canUseSameTabRedirect: topLevel && isMobile,
+    };
+  }
+
+  return {
+    code: code || 'auth/unknown',
+    message: topLevel && isMobile
+      ? `Google কানেকশন সম্পন্ন হয়নি (${code || 'mobile-popup'})। নিচের "মোবাইল ডাইরেক্ট কানেক্ট (পপআপ ছাড়া)" বাটন ব্যবহার করুন।`
+      : `Google কানেকশন সম্পন্ন হয়নি${code ? ` (${code})` : ''}। অনুগ্রহ করে আবার চেষ্টা করুন।`,
+    canUseSameTabRedirect: topLevel && isMobile,
+  };
+}
+
+export async function signInOwnerWithGoogleRedirect(
+  preferredEmail: string = PRIMARY_OWNER_EMAIL,
+  forceAccountSelect = false
+): Promise<{ success: boolean; redirecting?: boolean; error?: string }> {
   if (!isAdminAuthenticated()) {
     return {
       success: false,
-      error: 'Admin password authentication is required before connecting Cloud Sync.',
+      error: 'আগে System Password দিয়ে Admin Panel আনলক করুন।',
+    };
+  }
+
+  if (!isTopLevelBrowserWindow()) {
+    return {
+      success: false,
+      error:
+        'প্রিভিউ আইফ্রেমের ভেতরে Same-Tab Redirect করা যায় না। নিচের ডাইরেক্ট লিংকটি কপি করে মোবাইল Chrome/Safari-তে ওপেন করুন।',
     };
   }
 
   try {
-    const result = await signInWithPopup(auth, googleProvider);
+    startAdminOAuthGracePeriod();
+    const provider = createOwnerGoogleProvider(preferredEmail, forceAccountSelect);
+    await signInWithRedirect(auth, provider, browserPopupRedirectResolver);
+    return { success: true, redirecting: true };
+  } catch (err) {
+    clearAdminOAuthGracePeriod();
+    const formatted = formatMobileAwareAuthError(err);
+    emitStatus({ error: formatted.message });
+    return { success: false, error: formatted.message };
+  }
+}
+
+export async function signInOwnerWithGoogle(
+  preferredEmail: string = PRIMARY_OWNER_EMAIL,
+  forceAccountSelect = false
+): Promise<{
+  success: boolean;
+  email?: string;
+  redirecting?: boolean;
+  error?: string;
+  errorCode?: string;
+}> {
+  if (!isAdminAuthenticated()) {
+    return {
+      success: false,
+      error: 'আগে System Password দিয়ে Admin Panel আনলক করুন।',
+    };
+  }
+
+  // Synchronous localStorage mark BEFORE signInWithPopup preserves mobile hardware tap gesture!
+  startAdminOAuthGracePeriod();
+  const provider = createOwnerGoogleProvider(preferredEmail, forceAccountSelect);
+
+  try {
+    const result = await signInWithPopup(auth, provider, browserPopupRedirectResolver);
     const user = result.user;
     if (!isVerifiedFirebaseOwner(user)) {
+      const wrongEmail = user?.email || 'অন্য ইমেইল';
       await signOut(auth);
+      clearAdminOAuthGracePeriod();
       return {
         success: false,
-        error: 'Unauthorized Google account. Please sign in with the verified portfolio owner email.',
+        errorCode: 'auth/wrong-owner-email',
+        error: `"${wrongEmail}" অনুমোদিত নয়। অনুগ্রহ করে "${PRIMARY_OWNER_EMAIL}" ইমেইল দিয়ে কানেক্ট করুন।`,
       };
     }
 
+    recordAdminActivity();
+    clearAdminOAuthGracePeriod();
     emitStatus({
       isOwnerConnected: true,
       ownerEmail: user.email || null,
       error: null,
     });
 
-    // Deduped full two-way sync (shares activeFullSyncPromise with onAuthStateChanged)
+    // Deduped full two-way sync
     void syncAllLocalDataToCloud();
 
     return { success: true, email: user.email || undefined };
   } catch (err) {
-    const rawMsg = err instanceof Error ? err.message : String(err);
-    if (rawMsg.includes('popup-closed-by-user') || rawMsg.includes('cancelled-popup-request')) {
-      return { success: false, error: 'Google sign-in popup was closed.' };
+    const formatted = formatMobileAwareAuthError(err);
+
+    // Automatic seamless fallback to same-tab redirect on mobile when popup is blocked by OS/browser!
+    if (
+      isMobileBrowserDevice() &&
+      isTopLevelBrowserWindow() &&
+      !isEmbeddedInAppWebView() &&
+      (formatted.code.includes('popup-blocked') ||
+        formatted.code.includes('operation-not-supported') ||
+        formatted.code.includes('web-storage-unsupported'))
+    ) {
+      try {
+        startAdminOAuthGracePeriod();
+        await signInWithRedirect(auth, provider, browserPopupRedirectResolver);
+        return { success: true, redirecting: true };
+      } catch (redirectErr) {
+        clearAdminOAuthGracePeriod();
+        const redirectFormatted = formatMobileAwareAuthError(redirectErr);
+        return {
+          success: false,
+          errorCode: redirectFormatted.code,
+          error: redirectFormatted.message,
+        };
+      }
     }
-    return { success: false, error: 'Unable to complete Google sign-in. Please try again.' };
+
+    clearAdminOAuthGracePeriod();
+    return {
+      success: false,
+      errorCode: formatted.code,
+      error: formatted.message,
+    };
   }
 }
 
@@ -977,6 +1169,45 @@ export function initializeCloudRealtimeSync(callbacks: CloudBridgeCallbacks): vo
 
   // Start public blogs listener immediately for fast first paint
   attachBlogsListener(isAdminAuthenticated() && isVerifiedFirebaseOwner(auth.currentUser));
+
+  // Complete any returning mobile same-tab Google OAuth redirect cleanly
+  getRedirectResult(auth, browserPopupRedirectResolver)
+    .then(async (redirectRes) => {
+      if (!redirectRes || !redirectRes.user) {
+        if (isAdminOAuthGraceActive() && isVerifiedFirebaseOwner(auth.currentUser)) {
+          completeAdminOAuthRedirectSession();
+        }
+        return;
+      }
+
+      if (!isVerifiedFirebaseOwner(redirectRes.user)) {
+        const wrongEmail = redirectRes.user.email || 'Unknown email';
+        await signOut(auth);
+        clearAdminOAuthGracePeriod();
+        emitStatus({
+          isOwnerConnected: false,
+          ownerEmail: null,
+          error: `"${wrongEmail}" অনুমোদিত নয়। অনুগ্রহ করে "${PRIMARY_OWNER_EMAIL}" ইমেইল দিয়ে কানেক্ট করুন।`,
+        });
+        return;
+      }
+
+      completeAdminOAuthRedirectSession();
+      emitStatus({
+        isOwnerConnected: true,
+        ownerEmail: redirectRes.user.email || null,
+        error: null,
+      });
+
+      if (isAdminAuthenticated()) {
+        await syncAllLocalDataToCloud();
+      }
+    })
+    .catch((err) => {
+      clearAdminOAuthGracePeriod();
+      const formatted = formatMobileAwareAuthError(err);
+      emitStatus({ error: formatted.message });
+    });
 
   // Refresh blog query privileges when Admin unlocks or locks System Security
   window.addEventListener(ADMIN_AUTH_CHANGED_EVENT, () => {

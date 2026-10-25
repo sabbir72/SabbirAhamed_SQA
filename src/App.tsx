@@ -29,7 +29,12 @@ import AdminPortal from './components/AdminPortal';
 import AdminQuickAccess from './components/AdminQuickAccess';
 import AdminCloudScanModal from './components/AdminCloudScanModal';
 import { getCurrentRoute, navigateTo, navigateToHomeSection, AppRoute } from './utils/router';
-import { isAdminAuthenticated, verifyOwnerWithServer, logoutAdmin } from './utils/adminAuth';
+import {
+  ADMIN_OAUTH_REDIRECT_COMPLETED_EVENT,
+  isAdminAuthenticated,
+  verifyOwnerWithServer,
+  logoutAdmin,
+} from './utils/adminAuth';
 import {
   applyCloudPortfolioSnapshot,
   getStoredPortfolioData,
@@ -98,8 +103,19 @@ export default function App(): React.ReactNode {
       onCloudSnapshot: applyCloudPortfolioSnapshot,
     });
 
+    const handleOAuthRedirectCompleted = () => {
+      if (isAdminAuthenticated()) {
+        setIsAdmin(true);
+        if (getCurrentRoute().type !== 'admin') {
+          navigateTo('/admin');
+        }
+        setIsCloudScanModalOpen(true);
+      }
+    };
+
     window.addEventListener('popstate', handlePopState);
     window.addEventListener('admin_auth_changed', syncAdmin);
+    window.addEventListener(ADMIN_OAUTH_REDIRECT_COMPLETED_EVENT, handleOAuthRedirectCompleted);
 
     const interval = setInterval(() => {
       const authenticated = isAdminAuthenticated();
@@ -124,6 +140,7 @@ export default function App(): React.ReactNode {
       clearInterval(interval);
       window.removeEventListener('popstate', handlePopState);
       window.removeEventListener('admin_auth_changed', syncAdmin);
+      window.removeEventListener(ADMIN_OAUTH_REDIRECT_COMPLETED_EVENT, handleOAuthRedirectCompleted);
       window.removeEventListener('hashchange', checkVCardRoute);
       window.removeEventListener('popstate', checkVCardRoute);
     };
