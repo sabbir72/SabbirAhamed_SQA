@@ -117,12 +117,6 @@ export default function AdminPortal({
   const [visitorStats, setVisitorStats] = useState<VisitorMetrics>(() => getCurrentVisitorMetrics());
   const [cloudStatus, setCloudStatus] = useState<CloudSyncStatus>(() => getCloudSyncStatus());
 
-  useEffect(() => {
-    if (!isAdmin && onOpenMainSecurity) {
-      onOpenMainSecurity('unlock');
-    }
-  }, [isAdmin, onOpenMainSecurity]);
-
   // Active Tab (synced when route query ?tab=... updates)
   const [activeTab, setActiveTab] = useState<AdminTab>(initialTab);
 
@@ -291,7 +285,7 @@ export default function AdminPortal({
       setSessionRemaining(remaining);
       if (remaining <= 0 || !isAdminAuthenticated()) {
         setIsAdmin(false);
-        showToast('Admin session expired due to inactivity.');
+        onBack();
       }
     }, 1000);
 
@@ -308,7 +302,7 @@ export default function AdminPortal({
 
     const handleSessionExpired = () => {
       setIsAdmin(false);
-      showToast('Admin session expired. Logged out.');
+      onBack();
     };
 
     window.addEventListener('mousemove', handleActivity, { passive: true });
@@ -327,7 +321,7 @@ export default function AdminPortal({
       window.removeEventListener('touchstart', handleActivity);
       window.removeEventListener(ADMIN_SESSION_EXPIRED_EVENT, handleSessionExpired);
     };
-  }, [isAdmin]);
+  }, [isAdmin, onBack]);
 
 
   // Export dataset backup

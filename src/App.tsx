@@ -11,7 +11,7 @@
  * -----------------------------------------
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import Navbar from './components/Navbar';
 import Hero from './components/Hero';
 import SkillsGrid from './components/SkillsGrid';
@@ -33,6 +33,7 @@ import AdminCloudScanModal, {
 import { getCurrentRoute, navigateTo, navigateToHomeSection, AppRoute } from './utils/router';
 import {
   ADMIN_OAUTH_REDIRECT_COMPLETED_EVENT,
+  ADMIN_SESSION_EXPIRED_EVENT,
   isAdminAuthenticated,
   verifyOwnerWithServer,
   logoutAdmin,
@@ -61,15 +62,35 @@ export default function App(): React.ReactNode {
   const [securityModalMode, setSecurityModalMode] = useState<SecurityModalMode>('unlock');
   const [isCloudScanModalOpen, setIsCloudScanModalOpen] = useState<boolean>(false);
   const wasOnAdminRouteRef = useRef<boolean>(false);
+  const promptedLockedAdminRouteRef = useRef<boolean>(false);
+
+  const handleReturnHomeFromAdmin = useCallback(() => {
+    setIsCloudScanModalOpen(false);
+    setIsAdminPasscodeModalOpen(false);
+    promptedLockedAdminRouteRef.current = false;
+    navigateTo('/', { replace: true, scrollToTop: true });
+    setRoute({ type: 'home' });
+  }, []);
 
   useEffect(() => {
     document.documentElement.classList.add('dark');
     initializeTheme();
   }, [dark]);
 
-  // Only prompt Cloud Auto-Save once per session if Admin enters /admin while not yet connected
+  // Prompt Cloud Auto-Save once per session if unlocked Admin enters /admin;
+  // or prompt password once if a visitor/logged-out admin lands directly on /admin URL.
   useEffect(() => {
     const isNowOnAdmin = route.type === 'admin';
+    if (isNowOnAdmin && !isAdmin) {
+      if (!promptedLockedAdminRouteRef.current) {
+        promptedLockedAdminRouteRef.current = true;
+        setSecurityModalMode('unlock');
+        setIsAdminPasscodeModalOpen(true);
+      }
+    } else {
+      promptedLockedAdminRouteRef.current = false;
+    }
+
     if (isAdmin && isNowOnAdmin && !wasOnAdminRouteRef.current) {
       const status = getCloudSyncStatus();
       let dismissed = false;
@@ -124,13 +145,33 @@ export default function App(): React.ReactNode {
       }
     };
 
+    const handleSessionExpired = () => {
+      setIsAdmin(false);
+      setIsOwnerVerified(false);
+      setIsCloudScanModalOpen(false);
+      setIsAdminPasscodeModalOpen(false);
+      if (getCurrentRoute().type === 'admin') {
+        promptedLockedAdminRouteRef.current = false;
+        navigateTo('/', { replace: true, scrollToTop: true });
+        setRoute({ type: 'home' });
+      }
+    };
+
     window.addEventListener('popstate', handlePopState);
     window.addEventListener('admin_auth_changed', syncAdmin);
     window.addEventListener(ADMIN_OAUTH_REDIRECT_COMPLETED_EVENT, handleOAuthRedirectCompleted);
+    window.addEventListener(ADMIN_SESSION_EXPIRED_EVENT, handleSessionExpired);
 
     const interval = setInterval(() => {
       const authenticated = isAdminAuthenticated();
-      setIsAdmin(authenticated);
+      setIsAdmin((prev) => {
+        if (prev && !authenticated && getCurrentRoute().type === 'admin') {
+          promptedLockedAdminRouteRef.current = false;
+          navigateTo('/', { replace: true, scrollToTop: true });
+          setRoute({ type: 'home' });
+        }
+        return authenticated;
+      });
       if (!authenticated) {
         setIsOwnerVerified(false);
         setIsCloudScanModalOpen(false);
@@ -152,52 +193,68 @@ export default function App(): React.ReactNode {
       window.removeEventListener('popstate', handlePopState);
       window.removeEventListener('admin_auth_changed', syncAdmin);
       window.removeEventListener(ADMIN_OAUTH_REDIRECT_COMPLETED_EVENT, handleOAuthRedirectCompleted);
+      window.removeEventListener(ADMIN_SESSION_EXPIRED_EVENT, handleSessionExpired);
       window.removeEventListener('hashchange', checkVCardRoute);
       window.removeEventListener('popstate', checkVCardRoute);
     };
   }, [isAdmin]);
 
-  const handleOpenResumeBuilder = () => {
+  const handleOpenResumeBuilder = useCallback(() => {
     setIsResumeModalOpen(true);
-  };
+  }, []);
 
-  const handleOpenCoverLetter = () => {
+  const handleOpenCoverLetter = useCallback(() => {
     setIsCoverLetterModalOpen(true);
-  };
+  }, []);
 
-  const handleOpenSecurityModal = (mode: SecurityModalMode = 'unlock') => {
+  const handleOpenSecurityModal = useCallback((mode: SecurityModalMode = 'unlock') => {
     setSecurityModalMode(mode);
     setIsAdminPasscodeModalOpen(true);
-  };
+  }, []);
 
-  const handleOpenCloudScanModal = () => {
+  const handleCloseSecurityModal = useCallback(() => {
+    setIsAdminPasscodeModalOpen(false);
+    // If user closes/cancels the password prompt while on a locked/expired /admin URL,
+    // immediately return them smoothly to the Home Page without requiring a reload.
+    if (!isAdminAuthenticated() && getCurrentRoute().type === 'admin') {
+      promptedLockedAdminRouteRef.current = false;
+      navigateTo('/', { replace: true, scrollToTop: true });
+      setRoute({ type: 'home' });
+    }
+  }, []);
+
+  const handleOpenCloudScanModal = useCallback(() => {
     if (isAdminAuthenticated()) {
       setIsCloudScanModalOpen(true);
     }
-  };
+  }, []);
 
-  const handleLogoutAdmin = () => {
+  const handleLogoutAdmin = useCallback(() => {
     setIsCloudScanModalOpen(false);
+    setIsAdminPasscodeModalOpen(false);
     logoutAdmin();
     setIsAdmin(false);
     setIsOwnerVerified(false);
-    if (route.type === 'admin') {
-      navigateTo('/');
+    if (getCurrentRoute().type === 'admin') {
+      promptedLockedAdminRouteRef.current = false;
+      navigateTo('/', { replace: true, scrollToTop: true });
+      setRoute({ type: 'home' });
     }
-  };
+  }, []);
 
-  const handleSecurityModalSuccess = (completedMode: SecurityModalMode) => {
+  const handleSecurityModalSuccess = useCallback((completedMode: SecurityModalMode) => {
     setIsAdmin(true);
     setIsAdminPasscodeModalOpen(false);
     if (completedMode === 'unlock') {
-      if (route.type !== 'admin') {
+      if (getCurrentRoute().type !== 'admin') {
         navigateTo('/admin');
+        setRoute(getCurrentRoute());
       }
       if (!getCloudSyncStatus().isOwnerConnected) {
         setIsCloudScanModalOpen(true);
       }
     }
-  };
+  }, []);
 
   const currentPath = window.location.pathname;
 
@@ -219,7 +276,7 @@ export default function App(): React.ReactNode {
       <main className="flex-grow">
         {route.type === 'admin' && (
           <AdminPortal
-            onBack={() => navigateTo('/')}
+            onBack={handleReturnHomeFromAdmin}
             initialTab={route.initialTab || 'overview'}
             onOpenResumeBuilder={handleOpenResumeBuilder}
             onOpenCoverLetter={handleOpenCoverLetter}
@@ -311,8 +368,9 @@ export default function App(): React.ReactNode {
         <AdminPasscodeModal
           isOpen={isAdminPasscodeModalOpen}
           initialMode={securityModalMode}
-          onClose={() => setIsAdminPasscodeModalOpen(false)}
+          onClose={handleCloseSecurityModal}
           onSuccess={handleSecurityModalSuccess}
+          returnHomeOnCancel={route.type === 'admin' && !isAdmin}
           title="Main System Security"
           description="Enter your password to unlock full portfolio management or update your password."
         />

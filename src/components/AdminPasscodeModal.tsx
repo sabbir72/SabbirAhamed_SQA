@@ -22,6 +22,7 @@ import {
   Eye,
   EyeOff,
   RefreshCw,
+  Home,
 } from 'lucide-react';
 import {
   verifyAdminPasscode,
@@ -37,6 +38,7 @@ interface AdminPasscodeModalProps {
   initialMode?: SecurityModalMode;
   onClose: () => void;
   onSuccess: (mode: SecurityModalMode) => void;
+  returnHomeOnCancel?: boolean;
   title?: string;
   description?: string;
 }
@@ -46,6 +48,7 @@ export default function AdminPasscodeModal({
   initialMode = 'unlock',
   onClose,
   onSuccess,
+  returnHomeOnCancel = false,
   title,
   description,
 }: AdminPasscodeModalProps) {
@@ -102,6 +105,19 @@ export default function AdminPasscodeModal({
       scrollElementIntoView(cardRef.current);
     }
   }, [isOpen, isCompactMobileKeyboard, viewportHeight, scrollElementIntoView]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !isSubmitting) {
+        e.preventDefault();
+        setIsInputFocused(false);
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, isSubmitting, onClose, setIsInputFocused]);
 
   if (!isOpen) return null;
 
@@ -183,8 +199,19 @@ export default function AdminPasscodeModal({
     setSuccessMsg('');
   };
 
+  const handleDismiss = () => {
+    if (isSubmitting) return;
+    setIsInputFocused(false);
+    onClose();
+  };
+
   return (
     <div
+      onClick={(e) => {
+        if (e.target === e.currentTarget) {
+          handleDismiss();
+        }
+      }}
       className={`fixed inset-x-0 z-[80] flex justify-center bg-black/85 backdrop-blur-md overflow-y-auto overscroll-contain transition-all duration-150 ${
         isCompactMobileKeyboard
           ? 'items-start px-3 pt-3 pb-6'
@@ -197,6 +224,7 @@ export default function AdminPasscodeModal({
     >
       <div
         ref={cardRef}
+        onClick={(e) => e.stopPropagation()}
         className={`relative w-full max-w-md bg-[#0E1422] border border-white/15 rounded-2xl sm:rounded-3xl shadow-2xl text-white transition-all duration-150 my-auto ${
           isCompactMobileKeyboard
             ? 'p-4 sm:p-7 space-y-3.5 mt-1 mb-4'
@@ -207,12 +235,10 @@ export default function AdminPasscodeModal({
         {/* Close button (44x44 touch hitbox) */}
         <button
           type="button"
-          onClick={() => {
-            setIsInputFocused(false);
-            onClose();
-          }}
+          onClick={handleDismiss}
           className="absolute top-3 right-3 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-full bg-white/5 hover:bg-white/10 text-[#9CA3AF] hover:text-white transition-colors cursor-pointer"
-          aria-label="Close Security Modal"
+          aria-label={returnHomeOnCancel ? 'Close and Return to Home Page' : 'Close Security Modal'}
+          title={returnHomeOnCancel ? 'Back to Home Page' : 'Close'}
         >
           <X className="w-5 h-5" />
         </button>
@@ -372,14 +398,12 @@ export default function AdminPasscodeModal({
             <div className="pt-1 flex items-center justify-end gap-2.5">
               <button
                 type="button"
-                onClick={() => {
-                  setIsInputFocused(false);
-                  onClose();
-                }}
+                onClick={handleDismiss}
                 disabled={isSubmitting}
-                className="min-h-[44px] px-4 sm:px-5 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-[#D1D5DB] font-mono text-xs font-medium cursor-pointer transition-colors disabled:opacity-50 whitespace-nowrap shrink-0"
+                className="min-h-[44px] px-4 sm:px-5 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-[#D1D5DB] hover:text-white font-mono text-xs font-medium cursor-pointer transition-colors disabled:opacity-50 inline-flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0"
               >
-                Cancel
+                {returnHomeOnCancel && <Home className="w-3.5 h-3.5 shrink-0" />}
+                <span>{returnHomeOnCancel ? 'Back to Home' : 'Cancel'}</span>
               </button>
               <button
                 type="submit"
@@ -522,14 +546,12 @@ export default function AdminPasscodeModal({
             <div className="pt-1.5 flex items-center justify-end gap-2.5">
               <button
                 type="button"
-                onClick={() => {
-                  setIsInputFocused(false);
-                  onClose();
-                }}
+                onClick={handleDismiss}
                 disabled={isSubmitting}
-                className="min-h-[44px] px-4 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-[#D1D5DB] font-mono text-xs font-medium cursor-pointer transition-colors disabled:opacity-50 whitespace-nowrap shrink-0"
+                className="min-h-[44px] px-4 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-[#D1D5DB] hover:text-white font-mono text-xs font-medium cursor-pointer transition-colors disabled:opacity-50 inline-flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0"
               >
-                Cancel
+                {returnHomeOnCancel && <Home className="w-3.5 h-3.5 shrink-0" />}
+                <span>{returnHomeOnCancel ? 'Back to Home' : 'Cancel'}</span>
               </button>
               <button
                 type="submit"

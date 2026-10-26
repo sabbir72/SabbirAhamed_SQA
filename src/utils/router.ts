@@ -98,16 +98,24 @@ export function getCurrentRoute(): AppRoute {
 }
 
 /**
- * Navigates to target path programmatically using HTML5 pushState
+ * Navigates to target path programmatically using HTML5 pushState or replaceState
  */
-export function navigateTo(path: string, options: { scrollToTop?: boolean } = { scrollToTop: true }) {
-  const currentUrl = `${window.location.pathname}${window.location.search}`;
+export function navigateTo(
+  path: string,
+  options: { scrollToTop?: boolean; replace?: boolean } = {}
+) {
+  const { scrollToTop = true, replace = false } = options;
+  const currentUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
   if (currentUrl !== path) {
-    window.history.pushState({}, '', path);
+    if (replace) {
+      window.history.replaceState({}, '', path);
+    } else {
+      window.history.pushState({}, '', path);
+    }
     // Dispatch popstate so custom route listeners trigger re-render
     window.dispatchEvent(new PopStateEvent('popstate'));
   }
-  if (options.scrollToTop) {
+  if (scrollToTop) {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 }
