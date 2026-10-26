@@ -153,7 +153,7 @@ export default function AdminQuickAccess({
             <ChevronRight className="w-3.5 h-3.5 text-[#9CA3AF] group-hover:text-white group-hover:translate-x-0.5 transition-all shrink-0" />
           </button>
 
-          {/* Google Cloud Scan Button (Admin Only · Git Repo Untouched) */}
+          {/* Cloud Auto-Save Database Button (Admin Only) */}
           {onOpenCloudScan && (
             <button
               type="button"
@@ -162,8 +162,8 @@ export default function AdminQuickAccess({
                 onOpenCloudScan();
               }}
               className="min-w-[36px] min-h-[36px] flex items-center justify-center rounded-full text-emerald-400 hover:bg-emerald-500/15 transition-colors cursor-pointer shrink-0"
-              title="Google Cloud Scan & Sync (Cloud Only)"
-              aria-label="Google Cloud Scan & Sync"
+              title="Cloud Auto-Save Database"
+              aria-label="Cloud Auto-Save Database"
             >
               <Cloud className="w-3.5 h-3.5" />
             </button>

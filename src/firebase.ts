@@ -14,6 +14,7 @@
 import { initializeApp } from 'firebase/app';
 import {
   Auth,
+  browserLocalPersistence,
   browserPopupRedirectResolver,
   browserSessionPersistence,
   getAuth,
@@ -36,69 +37,61 @@ interface InternalStsUser {
   };
 }
 
+function cleanStorageBucket(storage: Storage, now: number, forceClearAll: boolean): void {
+  const keysToDelete: string[] = [];
+  for (let i = 0; i < storage.length; i++) {
+    const key = storage.key(i);
+    if (!key || !key.startsWith('firebase:')) continue;
+
+    if (forceClearAll) {
+      keysToDelete.push(key);
+      continue;
+    }
+
+    if (key.startsWith('firebase:authUser:')) {
+      const raw = storage.getItem(key);
+      if (!raw) {
+        keysToDelete.push(key);
+        continue;
+      }
+      try {
+        const parsed = JSON.parse(raw) as InternalStsUser;
+        const exp = Number(parsed?.stsTokenManager?.expirationTime || 0);
+        const token = parsed?.stsTokenManager?.accessToken;
+        if (!token || !exp || exp - now <= TOKEN_SAFETY_BUFFER_MS) {
+          keysToDelete.push(key);
+        }
+      } catch {
+        keysToDelete.push(key);
+      }
+    }
+  }
+  for (const key of keysToDelete) {
+    storage.removeItem(key);
+  }
+}
+
 /**
  * Purges any stale/expired Firebase Auth entries from Web Storage & IndexedDB BEFORE
- * `initializeAuth` boots so old sessions never call `securetoken.googleapis.com` and block Firestore.
+ * `initializeAuth` boots so old sessions never call `securetoken.googleapis.com` and block Firestore,
+ * while keeping fresh (<54 min) sessions alive across reloads and tabs.
  */
 export function purgeStaleFirebaseAuthStorage(forceClearAll = false): void {
   if (typeof window === 'undefined') return;
-
   const now = Date.now();
 
-  // 1. Always remove persistent localStorage Firebase Auth keys so cross-day expired tokens never accumulate
   try {
-    const localKeysToDelete: string[] = [];
-    for (let i = 0; i < window.localStorage.length; i++) {
-      const key = window.localStorage.key(i);
-      if (key && key.startsWith('firebase:')) {
-        localKeysToDelete.push(key);
-      }
-    }
-    for (const key of localKeysToDelete) {
-      window.localStorage.removeItem(key);
-    }
+    cleanStorageBucket(window.localStorage, now, forceClearAll);
   } catch {
-    // Ignore storage access restrictions
+    // Ignore localStorage restrictions
   }
 
-  // 2. Inspect sessionStorage Firebase Auth keys: keep only unexpired fresh tokens (>6 min remaining)
   try {
-    const sessionKeysToDelete: string[] = [];
-    for (let i = 0; i < window.sessionStorage.length; i++) {
-      const key = window.sessionStorage.key(i);
-      if (!key || !key.startsWith('firebase:')) continue;
-
-      if (forceClearAll) {
-        sessionKeysToDelete.push(key);
-        continue;
-      }
-
-      if (key.startsWith('firebase:authUser:')) {
-        const raw = window.sessionStorage.getItem(key);
-        if (!raw) {
-          sessionKeysToDelete.push(key);
-          continue;
-        }
-        try {
-          const parsed = JSON.parse(raw) as InternalStsUser;
-          const exp = Number(parsed?.stsTokenManager?.expirationTime || 0);
-          const token = parsed?.stsTokenManager?.accessToken;
-          if (!token || !exp || exp - now <= TOKEN_SAFETY_BUFFER_MS) {
-            sessionKeysToDelete.push(key);
-          }
-        } catch {
-          sessionKeysToDelete.push(key);
-        }
-      }
-    }
-    for (const key of sessionKeysToDelete) {
-      window.sessionStorage.removeItem(key);
-    }
+    cleanStorageBucket(window.sessionStorage, now, forceClearAll);
   } catch {
     // Ignore sessionStorage restrictions
   }
 
-  // 3. Delete legacy IndexedDB Firebase Auth store left by older builds
   try {
     if (typeof window.indexedDB !== 'undefined') {
       window.indexedDB.deleteDatabase('firebaseLocalStorageDb');
@@ -127,10 +120,10 @@ function createMobileReadyAuth(): Auth {
     return getAuth(app);
   }
   try {
-    // Synchronous browserSessionPersistence resolves in 0ms (preserving mobile Safari/Chrome
-    // tap gestures for signInWithPopup & supporting signInWithRedirect) without cross-day stale tokens.
+    // Synchronous browserLocalPersistence + browserSessionPersistence resolves in 0ms
+    // (preserving mobile Safari/Chrome tap gestures AND keeping fresh sessions alive across tabs).
     return initializeAuth(app, {
-      persistence: [browserSessionPersistence, inMemoryPersistence],
+      persistence: [browserLocalPersistence, browserSessionPersistence, inMemoryPersistence],
       popupRedirectResolver: browserPopupRedirectResolver,
     });
   } catch {

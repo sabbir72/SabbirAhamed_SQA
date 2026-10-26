@@ -1,14 +1,21 @@
-import { useState, useEffect } from 'react';
-import { ClipboardList, Play, Layers, Activity, Database, Sparkles, CheckCircle2, Plus } from 'lucide-react';
+import { useState, useEffect, useMemo } from 'react';
+import { ClipboardList, Play, Layers, Activity, Database, Sparkles, CheckCircle2, Plus, ChevronDown, ChevronUp } from 'lucide-react';
 import { Skill } from '../types';
 import { getStoredSkills, PORTFOLIO_UPDATED_EVENT } from '../utils/portfolioStore';
 import { isAdminAuthenticated } from '../utils/adminAuth';
 import { navigateTo } from '../utils/router';
+import PaginationBar from './PaginationBar';
+import ScrollableFilterTabs, { FilterTabItem } from './ScrollableFilterTabs';
+
+const MAX_VISIBLE_SKILLS_PER_CARD = 6;
 
 export default function SkillsGrid() {
   const [skills, setSkills] = useState<Skill[]>(() => getStoredSkills());
   const [isAdmin, setIsAdmin] = useState(() => isAdminAuthenticated());
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [pageSize, setPageSize] = useState<number>(6);
+  const [expandedCards, setExpandedCards] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     const handleSync = () => {
@@ -23,11 +30,62 @@ export default function SkillsGrid() {
     };
   }, []);
 
-  const categories = ['All', ...skills.map((s) => s.category)];
+  // Ensure selectedCategory stays valid if a category is renamed or removed
+  useEffect(() => {
+    if (
+      selectedCategory !== 'All' &&
+      !skills.some((s) => s.category === selectedCategory)
+    ) {
+      setSelectedCategory('All');
+    }
+  }, [skills, selectedCategory]);
 
-  const filteredCategories = skills.filter((cat) =>
-    selectedCategory === 'All' ? true : cat.category === selectedCategory
+  const totalSkillsCount = useMemo(
+    () => skills.reduce((sum, s) => sum + s.items.length, 0),
+    [skills]
   );
+
+  const categoryTabs: FilterTabItem[] = useMemo(
+    () => [
+      { id: 'All', label: 'All Categories', count: totalSkillsCount },
+      ...skills.map((s) => ({
+        id: s.category,
+        label: s.category,
+        count: s.items.length,
+      })),
+    ],
+    [skills, totalSkillsCount]
+  );
+
+  const filteredCategories = useMemo(
+    () =>
+      skills.filter((cat) =>
+        selectedCategory === 'All' ? true : cat.category === selectedCategory
+      ),
+    [skills, selectedCategory]
+  );
+
+  // Reset to page 1 when switching category tab
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [selectedCategory]);
+
+  const effectivePageSize = pageSize <= 0 ? Math.max(1, filteredCategories.length) : pageSize;
+  const totalPages = Math.max(1, Math.ceil(filteredCategories.length / effectivePageSize));
+  const safePage = Math.min(currentPage, totalPages);
+
+  const paginatedCategories = useMemo(() => {
+    if (pageSize <= 0) return filteredCategories;
+    const start = (safePage - 1) * pageSize;
+    return filteredCategories.slice(start, start + pageSize);
+  }, [filteredCategories, safePage, pageSize]);
+
+  const toggleCardExpand = (categoryName: string) => {
+    setExpandedCards((prev) => ({
+      ...prev,
+      [categoryName]: !prev[categoryName],
+    }));
+  };
 
   const getCategoryIcon = (category: string) => {
     switch (category) {
@@ -49,13 +107,13 @@ export default function SkillsGrid() {
   return (
     <section id="skills" className="py-24 bg-transparent text-[#F3F4F6] px-4 sm:px-6 border-t border-white/10 relative">
       <div id="competencies" className="absolute -top-20" />
-      <div className="max-w-7xl mx-auto relative z-10 space-y-12">
+      <div className="max-w-7xl mx-auto relative z-10 space-y-10">
         {/* Section Header */}
         <div className="text-center max-w-3xl mx-auto space-y-3">
-          <p className="text-xs font-mono font-bold text-[var(--color-accent)] tracking-widest uppercase mb-1">
-            CORE SKILLS & CAPABILITIES
+          <p className="text-xs font-mono font-semibold text-[var(--color-accent)] tracking-wider">
+            Core Skills & Capabilities
           </p>
-          <h2 className="font-display font-extrabold text-3xl sm:text-4xl md:text-5xl text-white">
+          <h2 className="font-display font-extrabold text-3xl sm:text-4xl md:text-5xl text-white tracking-tight [text-wrap:balance]">
             Testing Arsenal & Technical Skills
           </h2>
           <p className="text-[#D1D5DB] text-sm sm:text-base leading-relaxed font-light">
@@ -65,76 +123,109 @@ export default function SkillsGrid() {
           {isAdmin && (
             <div className="pt-1 flex justify-center">
               <button
+                type="button"
                 onClick={() => navigateTo('/admin')}
-                className="inline-flex items-center space-x-1.5 px-3.5 py-1.5 rounded-full bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-xs font-mono transition-all cursor-pointer"
+                className="min-h-[40px] inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-xs font-mono whitespace-nowrap shrink-0 transition-colors cursor-pointer"
                 title="Manage Skills in Admin Portal"
               >
                 <Plus className="w-3.5 h-3.5" />
-                <span>Add / Manage Skills</span>
+                <span>Manage Skills</span>
               </button>
             </div>
           )}
         </div>
 
-        {/* Filter Category Chips */}
-        <div className="flex flex-wrap items-center justify-center gap-2">
-          {categories.map((cat) => (
-            <button
-              key={cat}
-              onClick={() => setSelectedCategory(cat)}
-              className={`px-4 py-2 rounded-full text-xs font-mono transition-all border ${
-                selectedCategory === cat
-                  ? 'bg-[var(--color-accent)] text-white border-[var(--color-accent)] font-bold shadow-lg shadow-[var(--color-accent)]/20'
-                  : 'bg-[#12151C] border-white/10 text-[#D1D5DB] hover:border-[var(--color-accent)]/50 hover:text-white'
-              }`}
-            >
-              {cat}
-            </button>
-          ))}
+        {/* Compact Horizontal Scrollable / Expandable Category Tabs */}
+        <div id="skills-grid-top">
+          <ScrollableFilterTabs
+            tabs={categoryTabs}
+            activeTab={selectedCategory}
+            onSelectTab={setSelectedCategory}
+            align="center"
+          />
         </div>
 
         {/* Skill Cards Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredCategories.map((cat) => (
-            <div
-              key={cat.category}
-              className="glass-card glass-card-hover rounded-2xl p-7 border border-white/10 relative group"
-            >
-              <div className="absolute top-5 right-5 text-[10px] font-mono text-emerald-400 font-semibold px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20">
-                VERIFIED
-              </div>
+          {paginatedCategories.map((cat) => {
+            const isCardExpanded = Boolean(expandedCards[cat.category]) || selectedCategory === cat.category;
+            const hasMoreItems = cat.items.length > MAX_VISIBLE_SKILLS_PER_CARD;
+            const visibleItems = isCardExpanded
+              ? cat.items
+              : cat.items.slice(0, MAX_VISIBLE_SKILLS_PER_CARD);
+            const hiddenCount = cat.items.length - MAX_VISIBLE_SKILLS_PER_CARD;
 
-              {/* Category Header */}
-              <div className="flex items-center space-x-3.5 pb-4 mb-5 border-b border-white/10">
-                <div className="w-11 h-11 flex items-center justify-center bg-[var(--color-accent)]/10 rounded-xl border border-[var(--color-accent)]/20 group-hover:border-[var(--color-accent)] transition-colors">
-                  {getCategoryIcon(cat.category)}
-                </div>
+            return (
+              <div
+                key={cat.category}
+                className="glass-card glass-card-hover rounded-2xl p-7 border border-white/10 flex flex-col justify-between relative group"
+              >
                 <div>
-                  <h3 className="font-display font-bold text-lg text-white">
-                    {cat.category}
-                  </h3>
-                  <p className="text-xs text-[#9CA3AF] font-mono">
-                    {cat.items.length} Primary Frameworks & Skills
-                  </p>
-                </div>
-              </div>
+                  {/* Category Header */}
+                  <div className="flex items-center gap-3.5 pb-4 mb-5 border-b border-white/10">
+                    <div className="w-11 h-11 flex items-center justify-center bg-[var(--color-accent)]/10 rounded-xl border border-[var(--color-accent)]/20 group-hover:border-[var(--color-accent)] transition-colors shrink-0">
+                      {getCategoryIcon(cat.category)}
+                    </div>
+                    <div className="min-w-0">
+                      <h3 className="font-display font-bold text-lg text-white truncate">
+                        {cat.category}
+                      </h3>
+                      <p className="text-xs text-[#9CA3AF] font-mono tabular-nums">
+                        {cat.items.length} skills & tools
+                      </p>
+                    </div>
+                  </div>
 
-              {/* Skills Items List */}
-              <ul className="space-y-3">
-                {cat.items.map((item) => (
-                  <li key={item} className="flex items-center space-x-2.5 text-xs text-[#F3F4F6]">
-                    <CheckCircle2 className="w-3.5 h-3.5 text-[var(--color-accent)] shrink-0" />
-                    <span className="leading-relaxed font-medium">{item}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ))}
+                  {/* Skills Items List */}
+                  <ul className="space-y-3">
+                    {visibleItems.map((item) => (
+                      <li key={item} className="flex items-center gap-2.5 text-xs text-[#F3F4F6]">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-[var(--color-accent)] shrink-0" />
+                        <span className="leading-relaxed font-medium">{item}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                {/* Expand / Collapse toggle when a single category has > 6 skills */}
+                {hasMoreItems && selectedCategory !== cat.category && (
+                  <div className="pt-4 mt-4 border-t border-white/10">
+                    <button
+                      type="button"
+                      onClick={() => toggleCardExpand(cat.category)}
+                      className="text-xs font-mono font-semibold text-[var(--color-accent)] hover:text-[var(--color-accent-hover)] inline-flex items-center gap-1 transition-colors whitespace-nowrap shrink-0 cursor-pointer tabular-nums"
+                    >
+                      {isCardExpanded ? (
+                        <>
+                          <span>Show fewer skills</span>
+                          <ChevronUp className="w-3.5 h-3.5" />
+                        </>
+                      ) : (
+                        <>
+                          <span>+{hiddenCount} more skills</span>
+                          <ChevronDown className="w-3.5 h-3.5" />
+                        </>
+                      )}
+                    </button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
+
+        {/* Pagination Controls for Skill Categories */}
+        <PaginationBar
+          currentPage={safePage}
+          totalItems={filteredCategories.length}
+          pageSize={pageSize}
+          onPageChange={setCurrentPage}
+          onPageSizeChange={setPageSize}
+          pageSizeOptions={[3, 6, 9, 0]}
+          itemLabel="skill categories"
+          scrollTargetId="skills-grid-top"
+        />
       </div>
     </section>
   );
 }
-
-
-

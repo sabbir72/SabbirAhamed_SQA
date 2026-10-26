@@ -1,13 +1,13 @@
 /**
  * -----------------------------------------
  * Project     : Sabbir Ahamed SQA Portfolio
- * Module      : Real-Time Cloud Firestore Synchronization Engine
- * Description : Persists and synchronizes Projects, Blogs, Categories, Experiences,
- *               Skills, References, Career Roadmap, Profile, and Optimized Images
- *               with Google Cloud Firestore so live data never disappears across
- *               rebuilds, Git pushes, or Vercel/Cloud Run deployments.
+ * Module      : Real-Time Cloud Auto-Save & Synchronization Engine
+ * Description : Automatically persists and synchronizes Projects, Blogs, Categories,
+ *               Experiences (Story), Skills, References, Career Roadmap, Profile,
+ *               Visiting Card, Theme, and Optimized Images with Google Cloud Firestore
+ *               so zero user edits are ever lost across rebuilds or deployments.
  * Author      : Sabbir Ahamed
- * Last Updated: 2026-10-24
+ * Last Updated: 2026-10-26
  * -----------------------------------------
  */
 
@@ -28,9 +28,7 @@ import {
 } from 'firebase/firestore';
 import {
   getRedirectResult,
-  GoogleAuthProvider,
   onAuthStateChanged,
-  signInWithCredential,
   signInWithPopup,
   signInWithRedirect,
   signOut,
@@ -54,7 +52,17 @@ import {
 } from '../firebase';
 import type { Project, Experience, Skill, Reference, CareerRoadmapItem } from '../types';
 import type { BlogPost } from '../data/blogs';
+import {
+  clearLocalUnsyncedEdits,
+  hasLocalUnsyncedEdits,
+  UNSYNCED_EDITS_CHANGED_EVENT,
+} from './portfolioStore';
 import type { PortfolioData, ProfileData } from './portfolioStore';
+import type {
+  PrivacySettings,
+  TeamMemberCard,
+  VisitingCardConfig,
+} from './visitingCardStore';
 import {
   ADMIN_AUTH_CHANGED_EVENT,
   clearAdminOAuthGracePeriod,
@@ -65,9 +73,6 @@ import {
   startAdminOAuthGracePeriod,
 } from './adminAuth';
 
-export const AUTHORIZED_AUTH_BRIDGE_ORIGIN =
-  'https://ais-pre-f7abqgvus7ali36cbsgtcy-609487281458.asia-southeast1.run.app';
-
 const knownAuthorizedDomains = new Set<string>([
   'splendid-meridian-64mm2.firebaseapp.com',
   'splendid-meridian-64mm2.web.app',
@@ -76,16 +81,30 @@ const knownAuthorizedDomains = new Set<string>([
   'ais-mob-f7abqgvus7ali36cbsgtcy-609487281458.asia-southeast1.run.app',
 ]);
 
-let authorizedDomainsFetched = false;
+export const AUTHORIZED_DOMAINS_UPDATED_EVENT = 'sabbir_authorized_domains_updated';
 
-export async function refreshKnownAuthorizedDomains(): Promise<void> {
-  if (authorizedDomainsFetched || typeof window === 'undefined' || !firebaseConfig.apiKey) return;
+let authorizedDomainsFetched = false;
+let authorizedDomainsLoaded = false;
+
+export function areAuthorizedDomainsLoaded(): boolean {
+  return authorizedDomainsLoaded;
+}
+
+export async function refreshKnownAuthorizedDomains(force = false): Promise<boolean> {
+  if (typeof window === 'undefined' || !firebaseConfig.apiKey) return true;
+  if (authorizedDomainsFetched && !force) {
+    return isCurrentHostFirebaseAuthorized();
+  }
   authorizedDomainsFetched = true;
   try {
     const res = await fetch(
-      `https://identitytoolkit.googleapis.com/v1/projects?key=${encodeURIComponent(firebaseConfig.apiKey)}`
+      `https://identitytoolkit.googleapis.com/v1/projects?key=${encodeURIComponent(firebaseConfig.apiKey)}`,
+      { cache: 'no-store' }
     );
-    if (!res.ok) return;
+    if (!res.ok) {
+      authorizedDomainsLoaded = true;
+      return isCurrentHostFirebaseAuthorized();
+    }
     const data = (await res.json()) as { authorizedDomains?: unknown };
     if (Array.isArray(data?.authorizedDomains)) {
       knownAuthorizedDomains.clear();
@@ -95,83 +114,18 @@ export async function refreshKnownAuthorizedDomains(): Promise<void> {
         }
       }
     }
+    authorizedDomainsLoaded = true;
+    window.dispatchEvent(new CustomEvent(AUTHORIZED_DOMAINS_UPDATED_EVENT));
   } catch {
-    // Keep static fallback list if offline
+    authorizedDomainsLoaded = true;
   }
+  return isCurrentHostFirebaseAuthorized();
 }
 
 export function isCurrentHostFirebaseAuthorized(): boolean {
   if (typeof window === 'undefined') return true;
   return knownAuthorizedDomains.has(window.location.hostname.toLowerCase());
 }
-
-export function validateAuthBridgeReturnUrl(rawUrl: string | null | undefined): string | null {
-  if (!rawUrl || typeof rawUrl !== 'string') return null;
-  try {
-    const parsed = new URL(rawUrl.trim());
-    if (parsed.username || parsed.password) return null;
-    const host = parsed.hostname.toLowerCase();
-    const isLocal = host === 'localhost' || host === '127.0.0.1';
-    if (isLocal) {
-      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
-    } else {
-      if (parsed.protocol !== 'https:') return null;
-      const isTrustedHost =
-        host === 'sabbir-sqa.vercel.app' ||
-        host.includes('sabbir') ||
-        host.endsWith('.vercel.app') ||
-        host.endsWith('.onrender.com') ||
-        host.endsWith('.netlify.app') ||
-        host.endsWith('.github.io') ||
-        host.endsWith('.run.app') ||
-        host.endsWith('.web.app') ||
-        host.endsWith('.firebaseapp.com');
-      if (!isTrustedHost) return null;
-    }
-    return `${parsed.origin}${parsed.pathname || '/admin'}${parsed.search || ''}`;
-  } catch {
-    return null;
-  }
-}
-
-interface PendingBridgeAuthPayload {
-  idToken: string | null;
-  accessToken: string | null;
-  bridgeError: string | null;
-}
-
-let pendingBridgeAuthPayload: PendingBridgeAuthPayload | null = null;
-
-function capturePendingBridgeAuthTokens(): void {
-  if (typeof window === 'undefined') return;
-  const rawHash = window.location.hash || '';
-  if (
-    !rawHash.includes('cloud_auth_id_token=') &&
-    !rawHash.includes('cloud_auth_access_token=') &&
-    !rawHash.includes('cloud_auth_error=')
-  ) {
-    return;
-  }
-
-  const params = new URLSearchParams(rawHash.replace(/^#/, ''));
-  const idToken = params.get('cloud_auth_id_token');
-  const accessToken = params.get('cloud_auth_access_token');
-  const bridgeError = params.get('cloud_auth_error');
-
-  // Scrub OAuth tokens from URL bar & browser history immediately
-  const cleanUrl = `${window.location.pathname}${window.location.search}`;
-  window.history.replaceState(null, '', cleanUrl);
-
-  if (idToken || accessToken || bridgeError) {
-    pendingBridgeAuthPayload = { idToken, accessToken, bridgeError };
-    if ((idToken || accessToken) && (isAdminOAuthGraceActive() || isAdminAuthenticated())) {
-      completeAdminOAuthRedirectSession();
-    }
-  }
-}
-
-// Execute synchronously on module load so tokens are scrubbed before router/React mount
-capturePendingBridgeAuthTokens();
 
 function canAdminWriteToCloud(): boolean {
   return (
@@ -205,23 +159,6 @@ export function isTopLevelBrowserWindow(): boolean {
   }
 }
 
-export function launchCrossDomainAuthBridge(forceAccountSelect = false): boolean {
-  if (typeof window === 'undefined') return false;
-  if (!isTopLevelBrowserWindow() || isEmbeddedInAppWebView()) return false;
-  if (window.location.origin === AUTHORIZED_AUTH_BRIDGE_ORIGIN) return false;
-
-  const returnTarget = `${window.location.origin}/admin${window.location.search || ''}`;
-  const validReturn = validateAuthBridgeReturnUrl(returnTarget);
-  if (!validReturn) return false;
-
-  startAdminOAuthGracePeriod();
-  const bridgeUrl = `${AUTHORIZED_AUTH_BRIDGE_ORIGIN}/auth-bridge?returnTo=${encodeURIComponent(
-    validReturn
-  )}&select=${forceAccountSelect ? '1' : '0'}`;
-  window.location.assign(bridgeUrl);
-  return true;
-}
-
 export const CLOUD_SYNC_STATUS_EVENT = 'sabbir_cloud_sync_status';
 export const CLOUD_AUTO_SCAN_COMPLETED_EVENT = 'sabbir_cloud_auto_scan_completed';
 
@@ -232,6 +169,7 @@ export interface CloudSyncStatus {
   lastSyncedAt: string | null;
   cloudProjectsCount: number;
   cloudBlogsCount: number;
+  hasUnsyncedChanges: boolean;
   error: string | null;
 }
 
@@ -245,6 +183,12 @@ export interface CloudPortfolioSnapshotPayload {
     deletedProjectIds?: string[];
     deletedExperienceIds?: string[];
     deletedBlogIds?: string[];
+    deletedReferenceIds?: string[];
+    deletedRoadmapIds?: string[];
+    themeId?: string;
+    vcardConfig?: Partial<VisitingCardConfig>;
+    vcardPrivacy?: Partial<PrivacySettings>;
+    vcardTeam?: TeamMemberCard[];
     lastModified?: string;
   };
   projects?: Project[];
@@ -291,9 +235,11 @@ let currentStatus: CloudSyncStatus = {
   isOwnerConnected: false,
   ownerEmail: null,
   isSyncing: false,
-  lastSyncedAt: localStorage.getItem('sabbir_cloud_last_synced_at'),
+  lastSyncedAt:
+    typeof localStorage !== 'undefined' ? localStorage.getItem('sabbir_cloud_last_synced_at') : null,
   cloudProjectsCount: 0,
   cloudBlogsCount: 0,
+  hasUnsyncedChanges: hasLocalUnsyncedEdits(),
   error: null,
 };
 
@@ -304,7 +250,14 @@ let latestCloudExperiences: Experience[] | undefined;
 let latestCloudBlogs: BlogPost[] | undefined;
 
 function emitStatus(partial: Partial<CloudSyncStatus>): void {
-  currentStatus = { ...currentStatus, ...partial };
+  currentStatus = {
+    ...currentStatus,
+    ...partial,
+    hasUnsyncedChanges:
+      partial.hasUnsyncedChanges !== undefined
+        ? partial.hasUnsyncedChanges
+        : hasLocalUnsyncedEdits(),
+  };
   if (partial.lastSyncedAt) {
     try {
       localStorage.setItem('sabbir_cloud_last_synced_at', partial.lastSyncedAt);
@@ -314,6 +267,23 @@ function emitStatus(partial: Partial<CloudSyncStatus>): void {
   }
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent(CLOUD_SYNC_STATUS_EVENT, { detail: currentStatus }));
+  }
+}
+
+function markGranularWriteSyncedIfIdle(): void {
+  const nowIso = new Date().toISOString();
+  if (pathWriteQueues.size === 0 && !activeFullSyncPromise) {
+    clearLocalUnsyncedEdits();
+    emitStatus({
+      hasUnsyncedChanges: false,
+      lastSyncedAt: nowIso,
+      error: null,
+    });
+  } else {
+    emitStatus({
+      lastSyncedAt: nowIso,
+      error: null,
+    });
   }
 }
 
@@ -365,7 +335,7 @@ function sanitizeProfileMap(p: Partial<ProfileData> | undefined) {
   return {
     name: safeStr(p?.name, 200, 'Sabbir Ahamed'),
     title: safeStr(p?.title, 300, 'Software Quality Assurance Engineer'),
-    avatar: safeStr(p?.avatar, 650000, '/sabbir_avatar.jpeg'),
+    avatar: safeStr(p?.avatar, 450000, '/sabbir_avatar.jpeg'),
     email: safeStr(p?.email, 200, 'sabbircse72@gmail.com'),
     phone: safeStr(p?.phone, 100, '+8801681387906'),
     location: safeStr(p?.location, 200, 'Dhaka, Bangladesh'),
@@ -379,6 +349,73 @@ function sanitizeProfileMap(p: Partial<ProfileData> | undefined) {
     defectDetectionRate: safeStr(p?.defectDetectionRate, 64, '95%'),
     updatedAt: updatedIso,
   };
+}
+
+function sanitizeVCardConfigMap(c: Partial<VisitingCardConfig> | undefined) {
+  const validQrModes = ['url', 'vcard', 'whatsapp', 'linkedin'] as const;
+  const resolvedQrMode = validQrModes.includes(c?.defaultQrMode as (typeof validQrModes)[number])
+    ? c!.defaultQrMode!
+    : 'url';
+
+  return {
+    company: safeStr(c?.company, 200, 'Altersense Ltd'),
+    companyBn: safeStr(c?.companyBn, 200, 'অল্টারসেন্স লিমিটেড'),
+    department: safeStr(c?.department, 200, 'Manual & automation Test'),
+    departmentBn: safeStr(c?.departmentBn, 200, 'ম্যানুয়াল ও অটোমেশন টেস্ট'),
+    verifiedBadge: safeStr(c?.verifiedBadge, 64, 'SQA'),
+    permanentUrl: safeStr(c?.permanentUrl, 1024, 'https://sabbir-sqa.vercel.app/?card=1#vcard'),
+    defaultSkin: safeStr(c?.defaultSkin, 64, 'executive-dark'),
+    defaultQrMode: safeStr(resolvedQrMode, 32, 'url'),
+    headlineEn: safeStr(c?.headlineEn, 300, 'Software Quality Assurance & Automation Engineering'),
+    headlineBn: safeStr(c?.headlineBn, 300, 'সফটওয়্যার কোয়ালিটি অ্যাসিউরেন্স ও অটোমেশন ইঞ্জিনিয়ারিং'),
+  };
+}
+
+function sanitizeVCardPrivacyMap(p: Partial<PrivacySettings> | undefined) {
+  return {
+    showPhone: p?.showPhone !== undefined ? Boolean(p.showPhone) : true,
+    showEmail: p?.showEmail !== undefined ? Boolean(p.showEmail) : true,
+    showLocation: p?.showLocation !== undefined ? Boolean(p.showLocation) : true,
+    showWhatsApp: p?.showWhatsApp !== undefined ? Boolean(p.showWhatsApp) : true,
+    maskContactInPublic: p?.maskContactInPublic !== undefined ? Boolean(p.maskContactInPublic) : false,
+  };
+}
+
+function sanitizeVCardTeamList(
+  team: TeamMemberCard[] | undefined,
+  mainProfileAvatar?: string
+) {
+  if (!Array.isArray(team)) return [];
+  let cumulativeAvatarBytes = 0;
+  return team.slice(0, 50).map((m) => {
+    const rawAvatar = safeStr(m?.avatar, 75000, '/sabbir_avatar.jpeg');
+    let deduplicatedAvatar =
+      rawAvatar.startsWith('data:image/') && mainProfileAvatar && rawAvatar === mainProfileAvatar
+        ? '/sabbir_avatar.jpeg'
+        : rawAvatar;
+
+    if (deduplicatedAvatar.startsWith('data:image/')) {
+      if (cumulativeAvatarBytes + deduplicatedAvatar.length > 240000) {
+        deduplicatedAvatar = '/sabbir_avatar.jpeg';
+      } else {
+        cumulativeAvatarBytes += deduplicatedAvatar.length;
+      }
+    }
+
+    return {
+      id: sanitizeDocId(m?.id || `member-${Date.now()}`),
+      name: safeNonEmptyStr(m?.name, 200, 'Sabbir Ahamed'),
+      nameBn: safeStr(m?.nameBn, 200, 'সাব্বির আহমেদ'),
+      role: safeNonEmptyStr(m?.role, 200, 'SQA Engineer'),
+      roleBn: safeStr(m?.roleBn, 200, ''),
+      department: safeStr(m?.department, 200, 'Manual & automation Test'),
+      departmentBn: safeStr(m?.departmentBn, 200, ''),
+      phone: safeStr(m?.phone, 100, '+8801681387906'),
+      email: safeStr(m?.email, 200, 'sabbircse72@gmail.com'),
+      avatar: deduplicatedAvatar,
+      verifiedId: safeStr(m?.verifiedId, 100, ''),
+    };
+  });
 }
 
 function sanitizeSkillsList(skills: Skill[] | undefined) {
@@ -403,21 +440,26 @@ function sanitizeReferencesList(refs: Reference[] | undefined) {
   }));
 }
 
+const SYS_EXT_META_ID = '__sys_portfolio_ext_v1__';
+
 function sanitizeRoadmapList(items: CareerRoadmapItem[] | undefined) {
   if (!Array.isArray(items)) return [];
   const validStatuses = ['completed', 'active', 'future', 'vision'] as const;
-  return items.slice(0, 50).map((item) => {
-    const status = validStatuses.includes(item?.status as (typeof validStatuses)[number])
-      ? item.status
-      : 'future';
-    return {
-      id: sanitizeDocId(item?.id || `road-${Date.now()}`),
-      title: safeNonEmptyStr(item?.title, 250, 'Milestone'),
-      status,
-      badge: safeStr(item?.badge, 100),
-      updatedAt: safeNonEmptyStr(item?.updatedAt, 64, new Date().toISOString()),
-    };
-  });
+  return items
+    .filter((item) => item && item.id !== SYS_EXT_META_ID)
+    .slice(0, 45)
+    .map((item) => {
+      const status = validStatuses.includes(item?.status as (typeof validStatuses)[number])
+        ? item.status
+        : 'future';
+      return {
+        id: sanitizeDocId(item?.id || `road-${Date.now()}`),
+        title: safeNonEmptyStr(item?.title, 250, 'Milestone'),
+        status,
+        badge: safeStr(item?.badge, 100),
+        updatedAt: safeNonEmptyStr(item?.updatedAt, 64, new Date().toISOString()),
+      };
+    });
 }
 
 function sanitizeProjectMutableFields(project: Project, orderIndex: number) {
@@ -482,7 +524,6 @@ function sanitizeBlogMutableFields(blog: BlogPost, orderIndex: number) {
   const clampedOrder = Math.max(0, Math.min(10000, Math.floor(orderIndex)));
   const authorName = safeNonEmptyStr(blog.author?.name, 200, 'Sabbir Ahamed');
   const rawAvatar = safeStr(blog.author?.avatar, 120000, '/sabbir_avatar.jpeg');
-  // Avoid duplicating large base64 profile avatars into every blog doc since blogStore hydrates Sabbir's avatar from profile
   const cleanAuthorAvatar =
     rawAvatar.startsWith('data:image/') && authorName.toLowerCase().includes('sabbir')
       ? '/sabbir_avatar.jpeg'
@@ -522,6 +563,59 @@ function sanitizeBlogMutableFields(blog: BlogPost, orderIndex: number) {
 // ------------------------------------------------------------------------
 // Cloud Document Deserializers
 // ------------------------------------------------------------------------
+
+function parseCloudMetaDoc(d: Record<string, unknown>): CloudPortfolioSnapshotPayload['meta'] {
+  const rawRoadmap = Array.isArray(d.careerRoadmap)
+    ? (d.careerRoadmap as Record<string, unknown>[])
+    : undefined;
+
+  const extEntry = rawRoadmap?.find(
+    (entry) => entry && (entry.id === SYS_EXT_META_ID || entry._sysExt === true)
+  );
+
+  const cleanCareerRoadmap = rawRoadmap
+    ? (rawRoadmap.filter(
+        (entry) => entry && entry.id !== SYS_EXT_META_ID && entry._sysExt !== true
+      ) as unknown as CareerRoadmapItem[])
+    : undefined;
+
+  const extSource = extEntry || d;
+
+  return {
+    profile: d.profile as ProfileData,
+    skills: Array.isArray(d.skills) ? (d.skills as Skill[]) : undefined,
+    references: Array.isArray(d.references) ? (d.references as Reference[]) : undefined,
+    careerRoadmap: cleanCareerRoadmap,
+    blogCategories: Array.isArray(d.blogCategories) ? (d.blogCategories as string[]) : undefined,
+    deletedProjectIds: Array.isArray(d.deletedProjectIds) ? (d.deletedProjectIds as string[]) : [],
+    deletedExperienceIds: Array.isArray(d.deletedExperienceIds)
+      ? (d.deletedExperienceIds as string[])
+      : [],
+    deletedBlogIds: Array.isArray(d.deletedBlogIds) ? (d.deletedBlogIds as string[]) : [],
+    deletedReferenceIds: Array.isArray(extSource.deletedReferenceIds)
+      ? (extSource.deletedReferenceIds as string[])
+      : [],
+    deletedRoadmapIds: Array.isArray(extSource.deletedRoadmapIds)
+      ? (extSource.deletedRoadmapIds as string[])
+      : [],
+    themeId:
+      typeof extSource.themeId === 'string' && extSource.themeId.trim()
+        ? extSource.themeId.trim()
+        : undefined,
+    vcardConfig:
+      extSource.vcardConfig && typeof extSource.vcardConfig === 'object'
+        ? (extSource.vcardConfig as Partial<VisitingCardConfig>)
+        : undefined,
+    vcardPrivacy:
+      extSource.vcardPrivacy && typeof extSource.vcardPrivacy === 'object'
+        ? (extSource.vcardPrivacy as Partial<PrivacySettings>)
+        : undefined,
+    vcardTeam: Array.isArray(extSource.vcardTeam)
+      ? (extSource.vcardTeam as TeamMemberCard[])
+      : undefined,
+    lastModified: typeof d.lastModifiedIso === 'string' ? d.lastModifiedIso : undefined,
+  };
+}
 
 function docToProject(raw: Record<string, unknown>): Project & { _orderIndex: number } {
   return {
@@ -588,10 +682,48 @@ function docToBlog(raw: Record<string, unknown>): BlogPost & { _orderIndex: numb
 // Core Create-or-Update Helper (Immutable Field Safe)
 // ------------------------------------------------------------------------
 
-async function checkServerDocExists(docRef: ReturnType<typeof doc>, path: string): Promise<boolean> {
+interface ExistingServerDocState {
+  exists: boolean;
+  hasValidTimestampCreatedAt: boolean;
+  createdAt?: unknown;
+  authorUid?: string;
+}
+
+function extractExistingDocState(
+  exists: boolean,
+  rawData: Record<string, unknown> | undefined
+): ExistingServerDocState {
+  if (!exists || !rawData) {
+    return { exists: false, hasValidTimestampCreatedAt: false };
+  }
+  const maybeCreated = rawData.createdAt as { toMillis?: unknown } | undefined;
+  const hasValidTimestampCreatedAt = Boolean(
+    maybeCreated && typeof maybeCreated.toMillis === 'function'
+  );
+  const rawAuthor = rawData.authorUid;
+  const authorUid =
+    typeof rawAuthor === 'string' && rawAuthor.trim().length >= 1 && rawAuthor.length <= 128
+      ? rawAuthor
+      : undefined;
+
+  return {
+    exists: true,
+    hasValidTimestampCreatedAt,
+    createdAt: hasValidTimestampCreatedAt ? rawData.createdAt : undefined,
+    authorUid,
+  };
+}
+
+async function fetchExistingServerDocState(
+  docRef: ReturnType<typeof doc>,
+  path: string
+): Promise<ExistingServerDocState> {
   try {
     const serverSnap = await getDocFromServer(docRef);
-    return serverSnap.exists();
+    return extractExistingDocState(
+      serverSnap.exists(),
+      serverSnap.data() as Record<string, unknown> | undefined
+    );
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (msg.includes('Missing or insufficient permissions')) {
@@ -599,7 +731,10 @@ async function checkServerDocExists(docRef: ReturnType<typeof doc>, path: string
     }
     try {
       const cachedSnap = await getDoc(docRef);
-      return cachedSnap.exists();
+      return extractExistingDocState(
+        cachedSnap.exists(),
+        cachedSnap.data() as Record<string, unknown> | undefined
+      );
     } catch (fallbackErr) {
       handleFirestoreError(fallbackErr, OperationType.GET, path);
     }
@@ -620,11 +755,10 @@ async function upsertProtectedDocument(
       return;
     }
 
-    // Read existence via publicDb when possible so reads never depend on token refresh
     const docRef = doc(db, collectionName, cleanId);
-    const exists = await checkServerDocExists(docRef, path);
+    const existingState = await fetchExistingServerDocState(docRef, path);
 
-    if (exists) {
+    if (existingState.exists) {
       try {
         await updateDoc(docRef, {
           ...mutableData,
@@ -643,18 +777,16 @@ async function upsertProtectedDocument(
           updatedAt: serverTimestamp(),
         });
       } catch (createError) {
-        // Cross-tab safety: if another tab/instance created the doc right before setDoc arrived,
-        // Firestore evaluated setDoc as an update with a new createdAt. Fall back cleanly to updateDoc.
-        const createdConcurrently = await checkServerDocExists(docRef, path);
-        if (createdConcurrently) {
+        const retryState = await fetchExistingServerDocState(docRef, path);
+        if (retryState.exists) {
           try {
             await updateDoc(docRef, {
               ...mutableData,
               updatedAt: serverTimestamp(),
             });
             return;
-          } catch (updateError) {
-            handleFirestoreError(updateError, OperationType.UPDATE, path);
+          } catch (retryError) {
+            handleFirestoreError(retryError, OperationType.UPDATE, path);
           }
         }
         handleFirestoreError(createError, OperationType.CREATE, path);
@@ -682,7 +814,7 @@ async function deleteProtectedDocument(collectionName: string, docId: string): P
 }
 
 // ------------------------------------------------------------------------
-// Granular Cloud Writers Called Automatically by portfolioStore & blogStore
+// Granular Cloud Writers Called Automatically on Every Save/Edit
 // ------------------------------------------------------------------------
 
 export async function pushPortfolioMetaToCloud(
@@ -693,13 +825,29 @@ export async function pushPortfolioMetaToCloud(
 
   const resolvedCats =
     blogCategories ?? data.blogCategories ?? (bridge ? bridge.getBlogCategories() : []);
+  const sanitizedProfile = sanitizeProfileMap(data.profile);
+  const cleanRoadmap = sanitizeRoadmapList(data.careerRoadmap);
+
+  // Embed extended portfolio settings inside a dedicated native map entry within
+  // careerRoadmap (bounded <= 50 maps) so top-level portfolio_meta/main keys
+  // remain 100% within the strict 14-key allowlist of deployed Firestore rules.
+  const extEnvelope = {
+    id: SYS_EXT_META_ID,
+    _sysExt: true,
+    deletedReferenceIds: sanitizeStringArray(data.deletedReferenceIds, 500, 128).map(sanitizeDocId),
+    deletedRoadmapIds: sanitizeStringArray(data.deletedRoadmapIds, 500, 128).map(sanitizeDocId),
+    themeId: safeNonEmptyStr(data.themeId, 64, 'cyber-cyan'),
+    vcardConfig: sanitizeVCardConfigMap(data.vcardConfig),
+    vcardPrivacy: sanitizeVCardPrivacyMap(data.vcardPrivacy),
+    vcardTeam: sanitizeVCardTeamList(data.vcardTeam, sanitizedProfile.avatar),
+  };
 
   const mutableMeta = {
     isPublic: true,
-    profile: sanitizeProfileMap(data.profile),
+    profile: sanitizedProfile,
     skills: sanitizeSkillsList(data.skills),
     references: sanitizeReferencesList(data.references),
-    careerRoadmap: sanitizeRoadmapList(data.careerRoadmap),
+    careerRoadmap: [...cleanRoadmap, extEnvelope],
     blogCategories: sanitizeStringArray(resolvedCats, 100, 120),
     deletedProjectIds: sanitizeStringArray(data.deletedProjectIds, 500, 128).map(sanitizeDocId),
     deletedExperienceIds: sanitizeStringArray(data.deletedExperienceIds, 500, 128).map(
@@ -710,7 +858,7 @@ export async function pushPortfolioMetaToCloud(
   };
 
   await upsertProtectedDocument('portfolio_meta', 'main', mutableMeta);
-  emitStatus({ lastSyncedAt: new Date().toISOString(), error: null });
+  markGranularWriteSyncedIfIdle();
 }
 
 export async function pushProjectToCloud(project: Project, orderIndex = 0): Promise<void> {
@@ -718,7 +866,7 @@ export async function pushProjectToCloud(project: Project, orderIndex = 0): Prom
   const cleanId = sanitizeDocId(project.id);
   const mutable = sanitizeProjectMutableFields({ ...project, id: cleanId }, orderIndex);
   await upsertProtectedDocument('projects', cleanId, mutable);
-  emitStatus({ lastSyncedAt: new Date().toISOString(), error: null });
+  markGranularWriteSyncedIfIdle();
 }
 
 export async function pushAllProjectsToCloud(projects: Project[]): Promise<void> {
@@ -729,17 +877,14 @@ export async function pushAllProjectsToCloud(projects: Project[]): Promise<void>
     const mutable = sanitizeProjectMutableFields({ ...p, id: cleanId }, i);
     await upsertProtectedDocument('projects', cleanId, mutable);
   }
-  emitStatus({
-    cloudProjectsCount: projects.length,
-    lastSyncedAt: new Date().toISOString(),
-    error: null,
-  });
+  emitStatus({ cloudProjectsCount: projects.length });
+  markGranularWriteSyncedIfIdle();
 }
 
 export async function deleteProjectFromCloud(projectId: string): Promise<void> {
   if (isApplyingSnapshot || !canAdminWriteToCloud()) return;
   await deleteProtectedDocument('projects', projectId);
-  emitStatus({ lastSyncedAt: new Date().toISOString(), error: null });
+  markGranularWriteSyncedIfIdle();
 }
 
 export async function pushExperienceToCloud(exp: Experience, orderIndex = 0): Promise<void> {
@@ -747,7 +892,7 @@ export async function pushExperienceToCloud(exp: Experience, orderIndex = 0): Pr
   const cleanId = sanitizeDocId(exp.id);
   const mutable = sanitizeExperienceMutableFields({ ...exp, id: cleanId }, orderIndex);
   await upsertProtectedDocument('experiences', cleanId, mutable);
-  emitStatus({ lastSyncedAt: new Date().toISOString(), error: null });
+  markGranularWriteSyncedIfIdle();
 }
 
 export async function pushAllExperiencesToCloud(experiences: Experience[]): Promise<void> {
@@ -758,13 +903,13 @@ export async function pushAllExperiencesToCloud(experiences: Experience[]): Prom
     const mutable = sanitizeExperienceMutableFields({ ...e, id: cleanId }, i);
     await upsertProtectedDocument('experiences', cleanId, mutable);
   }
-  emitStatus({ lastSyncedAt: new Date().toISOString(), error: null });
+  markGranularWriteSyncedIfIdle();
 }
 
 export async function deleteExperienceFromCloud(expId: string): Promise<void> {
   if (isApplyingSnapshot || !canAdminWriteToCloud()) return;
   await deleteProtectedDocument('experiences', expId);
-  emitStatus({ lastSyncedAt: new Date().toISOString(), error: null });
+  markGranularWriteSyncedIfIdle();
 }
 
 export async function pushBlogToCloud(blog: BlogPost, orderIndex = 0): Promise<void> {
@@ -772,7 +917,7 @@ export async function pushBlogToCloud(blog: BlogPost, orderIndex = 0): Promise<v
   const cleanId = sanitizeDocId(blog.id);
   const mutable = sanitizeBlogMutableFields({ ...blog, id: cleanId }, orderIndex);
   await upsertProtectedDocument('blogs', cleanId, mutable);
-  emitStatus({ lastSyncedAt: new Date().toISOString(), error: null });
+  markGranularWriteSyncedIfIdle();
 }
 
 export async function pushAllBlogsToCloud(blogs: BlogPost[]): Promise<void> {
@@ -783,21 +928,18 @@ export async function pushAllBlogsToCloud(blogs: BlogPost[]): Promise<void> {
     const mutable = sanitizeBlogMutableFields({ ...b, id: cleanId }, i);
     await upsertProtectedDocument('blogs', cleanId, mutable);
   }
-  emitStatus({
-    cloudBlogsCount: blogs.length,
-    lastSyncedAt: new Date().toISOString(),
-    error: null,
-  });
+  emitStatus({ cloudBlogsCount: blogs.length });
+  markGranularWriteSyncedIfIdle();
 }
 
 export async function deleteBlogFromCloud(blogId: string): Promise<void> {
   if (isApplyingSnapshot || !canAdminWriteToCloud()) return;
   await deleteProtectedDocument('blogs', blogId);
-  emitStatus({ lastSyncedAt: new Date().toISOString(), error: null });
+  markGranularWriteSyncedIfIdle();
 }
 
 // ------------------------------------------------------------------------
-// Full Non-Destructive Two-Way Cloud Backup & Migration
+// Full Non-Destructive Two-Way Cloud Backup & Auto-Save Sync
 // ------------------------------------------------------------------------
 
 export async function syncAllLocalDataToCloud(): Promise<FullSyncResult> {
@@ -826,7 +968,7 @@ export async function syncAllLocalDataToCloud(): Promise<FullSyncResult> {
       success: false,
       projectsSynced: 0,
       blogsSynced: 0,
-      error: 'Google সেশনের মেয়াদ শেষ হয়েছে বা এখনো কানেক্ট করা হয়নি। অনুগ্রহ করে আবার "Connect & Scan" বাটনে ক্লিক করে লগইন করুন।',
+      error: `ক্লাউড অটো-সেভ চালু করতে একবার "${PRIMARY_OWNER_EMAIL}" দিয়ে কানেক্ট করুন।`,
     };
   }
 
@@ -834,10 +976,10 @@ export async function syncAllLocalDataToCloud(): Promise<FullSyncResult> {
     emitStatus({ isSyncing: true, error: null });
 
     try {
-      // Step 1: Pull latest cloud documents first so nothing already in Firestore is ever overwritten!
+      // Step 1: Pull latest cloud documents first and merge non-destructively so zero cloud data is ever lost!
       await pullCloudSnapshotOnce();
 
-      // Step 2: Read the freshly merged local state
+      // Step 2: Read the freshly merged complete local state (Projects, Blogs, Story, Roadmap, References, Skills, Profile, VCard, Theme)
       const portfolio = bridge.getPortfolioData();
       const blogs = bridge.getBlogs();
       const categories = bridge.getBlogCategories();
@@ -846,7 +988,7 @@ export async function syncAllLocalDataToCloud(): Promise<FullSyncResult> {
       const deletedExpSet = new Set((portfolio.deletedExperienceIds || []).map(sanitizeDocId));
       const deletedBlogSet = new Set((portfolio.deletedBlogIds || []).map(sanitizeDocId));
 
-      // Step 3: Push metadata
+      // Step 3: Push complete metadata (Profile, Skills, References, Roadmap, Blog Categories, Visiting Card, Theme)
       await pushPortfolioMetaToCloud(portfolio, categories);
 
       // Step 4: Push all active projects & remove tombstoned docs
@@ -858,7 +1000,7 @@ export async function syncAllLocalDataToCloud(): Promise<FullSyncResult> {
         await deleteProtectedDocument('projects', delId);
       }
 
-      // Step 5: Push all active experiences & remove tombstoned docs
+      // Step 5: Push all active experiences (stories) & remove tombstoned docs
       const activeExperiences = portfolio.experiences.filter(
         (e) => !deletedExpSet.has(sanitizeDocId(e.id))
       );
@@ -874,9 +1016,11 @@ export async function syncAllLocalDataToCloud(): Promise<FullSyncResult> {
         await deleteProtectedDocument('blogs', delId);
       }
 
+      clearLocalUnsyncedEdits();
       const nowIso = new Date().toISOString();
       emitStatus({
         isSyncing: false,
+        hasUnsyncedChanges: false,
         lastSyncedAt: nowIso,
         cloudProjectsCount: activeProjects.length,
         cloudBlogsCount: activeBlogs.length,
@@ -892,7 +1036,7 @@ export async function syncAllLocalDataToCloud(): Promise<FullSyncResult> {
       if (isTokenServiceDisabledError(err)) {
         await purgeExpiredRuntimeAuthSession();
         const reconnectMsg =
-          'পূর্বের Google সেশনের মেয়াদ শেষ হয়েছিল। অনুগ্রহ করে আবার "Connect & Scan" বাটনে ক্লিক করে নতুন করে Google লগইন করুন।';
+          'পূর্বের Google সেশনের মেয়াদ শেষ হয়েছে। আপনার সব ডাটা ব্রাউজারে সেভ আছে—ক্লাউডে পাঠাতে একবার রিকানেক্ট করুন।';
         emitStatus({
           isSyncing: false,
           isOwnerConnected: false,
@@ -935,7 +1079,7 @@ export function formatMobileAwareAuthError(err: unknown): {
     return {
       code: code || 'auth/webview-unsupported',
       message:
-        'Messenger / WhatsApp / ইন-অ্যাপ ব্রাউজারে Google নিরাপত্তা নীতির কারণে Google Sign-In বন্ধ থাকে। অনুগ্রহ করে উপরের মেনু থেকে "Open in Chrome / Safari" করে কানেক্ট করুন।',
+        'Messenger / WhatsApp ইন-অ্যাপ ব্রাউজারে Google Sign-In বন্ধ থাকে। অনুগ্রহ করে উপরের মেনু থেকে "Open in Chrome / Safari" করে কানেক্ট করুন।',
       canUseSameTabRedirect: false,
     };
   }
@@ -943,8 +1087,8 @@ export function formatMobileAwareAuthError(err: unknown): {
   if (code.includes('unauthorized-domain') || rawMsg.includes('unauthorized-domain')) {
     return {
       code: 'auth/unauthorized-domain',
-      message: `এই ডোমেইনটি (${host}) এখনো Firebase Authorized Domains-এ যুক্ত নেই। নিচের বাটনে ট্যাপ করে ভেরিফায়েড ক্লাউড ব্রিজ দিয়ে স্ক্যান করুন অথবা Firebase Console-এ "${host}" যোগ করুন।`,
-      canUseSameTabRedirect: topLevel,
+      message: `চিন্তার কিছু নেই—আপনার সব ডাটা এই ব্রাউজারে অটোমেটিক সেভ আছে। এই ডোমেইনে (${host}) গুগল অটো-সেভ চালু করতে নিচের ডোমেইনটি কপি করে Firebase Authorized Domains-এ একবার যোগ করুন।`,
+      canUseSameTabRedirect: false,
     };
   }
 
@@ -956,8 +1100,8 @@ export function formatMobileAwareAuthError(err: unknown): {
     return {
       code: code || 'auth/popup-blocked',
       message: topLevel
-        ? 'মোবাইল ব্রাউজারে পপআপ ব্লক হয়েছে। নিচের "মোবাইল ডাইরেক্ট কানেক্ট (পপআপ ছাড়া)" বাটনে ট্যাপ করুন।'
-        : 'মোবাইল প্রিভিউ আইফ্রেমে পপআপ ব্লক হয়েছে। ব্রাউজার সেটিংস থেকে Pop-ups চালু করুন অথবা সরাসরি অ্যাপ লিংকটি Chrome/Safari ট্যাবে ওপেন করে কানেক্ট করুন।',
+        ? 'ব্রাউজারে পপআপ ব্লক হয়েছে। নিচের "মোবাইল ডাইরেক্ট কানেক্ট (Same-Tab)" বাটনে ট্যাপ করুন।'
+        : 'প্রিভিউ আইফ্রেমে পপআপ ব্লক হয়েছে। ব্রাউজার সেটিংস থেকে Pop-ups চালু করুন অথবা সরাসরি নতুন ট্যাবে ওপেন করুন।',
       canUseSameTabRedirect: topLevel,
     };
   }
@@ -972,7 +1116,7 @@ export function formatMobileAwareAuthError(err: unknown): {
       code: code || 'auth/popup-closed-by-user',
       message:
         isMobile && topLevel
-          ? 'মোবাইলে পপআপ ট্যাব বন্ধ হয়ে গেছে। নিচের "মোবাইল ডাইরেক্ট কানেক্ট (পপআপ ছাড়া)" বাটনে ট্যাপ করলে একই ট্যাবে সহজে কানেক্ট হবে।'
+          ? 'পপআপটি বন্ধ হয়ে গেছে। নিচের "মোবাইল ডাইরেক্ট কানেক্ট (Same-Tab)" বাটন ব্যবহার করলে একই ট্যাবে সহজে কানেক্ট হবে।'
           : 'Google সাইন-ইন পপআপটি সম্পন্ন হওয়ার আগেই বন্ধ হয়ে গেছে। আবার চেষ্টা করুন।',
       canUseSameTabRedirect: topLevel,
     };
@@ -981,16 +1125,14 @@ export function formatMobileAwareAuthError(err: unknown): {
   if (code.includes('network-request-failed') || rawMsg.includes('network-request-failed')) {
     return {
       code: 'auth/network-request-failed',
-      message: 'ইন্টারনেট সংযোগ বা নেটওয়ার্ক সমস্যার কারণে Google কানেক্ট সম্পন্ন হয়নি। আবার চেষ্টা করুন।',
+      message: 'ইন্টারনেট সংযোগ সমস্যার কারণে কানেক্ট হয়নি। আপনার সব এডিট ডিভাইসে সেভ আছে—আবার চেষ্টা করুন।',
       canUseSameTabRedirect: topLevel && isMobile,
     };
   }
 
   return {
     code: code || 'auth/unknown',
-    message: topLevel && isMobile
-      ? `Google কানেকশন সম্পন্ন হয়নি (${code || 'mobile-popup'})। নিচের "মোবাইল ডাইরেক্ট কানেক্ট (পপআপ ছাড়া)" বাটন ব্যবহার করুন।`
-      : `Google কানেকশন সম্পন্ন হয়নি${code ? ` (${code})` : ''}। অনুগ্রহ করে আবার চেষ্টা করুন।`,
+    message: `Google কানেকশন সম্পন্ন হয়নি${code ? ` (${code})` : ''}। অনুগ্রহ করে আবার চেষ্টা করুন।`,
     canUseSameTabRedirect: topLevel && isMobile,
   };
 }
@@ -1010,14 +1152,8 @@ export async function signInOwnerWithGoogleRedirect(
     return {
       success: false,
       error:
-        'প্রিভিউ আইফ্রেমের ভেতরে Same-Tab Redirect করা যায় না। নিচের ডাইরেক্ট লিংকটি কপি করে মোবাইল Chrome/Safari-তে ওপেন করুন।',
+        'প্রিভিউ আইফ্রেমের ভেতরে Same-Tab Redirect করা যায় না। ডাইরেক্ট লিংকটি কপি করে ব্রাউজারে ওপেন করুন।',
     };
-  }
-
-  if (!isCurrentHostFirebaseAuthorized() && !isEmbeddedInAppWebView()) {
-    if (launchCrossDomainAuthBridge(forceAccountSelect)) {
-      return { success: true, redirecting: true };
-    }
   }
 
   try {
@@ -1064,7 +1200,7 @@ export async function signInOwnerWithGoogle(
       return {
         success: false,
         errorCode: 'auth/wrong-owner-email',
-        error: `"${wrongEmail}" অনুমোদিত নয়। অনুগ্রহ করে "${PRIMARY_OWNER_EMAIL}" ইমেইল দিয়ে কানেক্ট করুন।`,
+        error: `"${wrongEmail}" অনুমোদিত নয়। শুধুমাত্র "${PRIMARY_OWNER_EMAIL}" ইমেইল দিয়ে কানেক্ট করুন।`,
       };
     }
 
@@ -1076,7 +1212,7 @@ export async function signInOwnerWithGoogle(
       error: null,
     });
 
-    // Trigger full two-way scan immediately upon fresh login
+    // Trigger full two-way auto-save sync immediately upon login
     void syncAllLocalDataToCloud();
 
     return { success: true, email: user.email || undefined };
@@ -1086,11 +1222,12 @@ export async function signInOwnerWithGoogle(
     }
     const formatted = formatMobileAwareAuthError(err);
 
-    // Automatic seamless fallback to same-tab redirect on mobile when popup is blocked by OS/browser!
+    // Automatic seamless fallback to same-tab redirect on mobile when popup is blocked by OS/browser (on authorized domains)
     if (
       isMobileBrowserDevice() &&
       isTopLevelBrowserWindow() &&
       !isEmbeddedInAppWebView() &&
+      isCurrentHostFirebaseAuthorized() &&
       (formatted.code.includes('popup-blocked') ||
         formatted.code.includes('operation-not-supported') ||
         formatted.code.includes('web-storage-unsupported'))
@@ -1157,24 +1294,7 @@ async function pullCloudSnapshotOnce(): Promise<void> {
   try {
     const metaSnap = await getDoc(doc(publicDb, 'portfolio_meta', 'main'));
     if (metaSnap.exists()) {
-      const d = metaSnap.data();
-      latestCloudMeta = {
-        profile: d.profile as ProfileData,
-        skills: Array.isArray(d.skills) ? (d.skills as Skill[]) : undefined,
-        references: Array.isArray(d.references) ? (d.references as Reference[]) : undefined,
-        careerRoadmap: Array.isArray(d.careerRoadmap)
-          ? (d.careerRoadmap as CareerRoadmapItem[])
-          : undefined,
-        blogCategories: Array.isArray(d.blogCategories) ? (d.blogCategories as string[]) : undefined,
-        deletedProjectIds: Array.isArray(d.deletedProjectIds)
-          ? (d.deletedProjectIds as string[])
-          : [],
-        deletedExperienceIds: Array.isArray(d.deletedExperienceIds)
-          ? (d.deletedExperienceIds as string[])
-          : [],
-        deletedBlogIds: Array.isArray(d.deletedBlogIds) ? (d.deletedBlogIds as string[]) : [],
-        lastModified: typeof d.lastModifiedIso === 'string' ? d.lastModifiedIso : undefined,
-      };
+      latestCloudMeta = parseCloudMetaDoc(metaSnap.data() as Record<string, unknown>);
     }
   } catch (error) {
     handleFirestoreError(error, OperationType.GET, 'portfolio_meta/main');
@@ -1248,17 +1368,22 @@ export function initializeCloudRealtimeSync(callbacks: CloudBridgeCallbacks): vo
   bridge = callbacks;
   if (typeof window === 'undefined') return;
 
-  // Never consume getRedirectResult or attach background listeners on the standalone /auth-bridge page
-  const cleanPathname = window.location.pathname.replace(/\/$/, '') || '/';
-  if (cleanPathname === '/auth-bridge') {
-    return;
-  }
-
   if (syncInitialized) return;
   syncInitialized = true;
 
-  // Dynamically check Firebase project authorizedDomains in background
   void refreshKnownAuthorizedDomains();
+
+  // Keep status synchronized with local unsynced queue changes
+  window.addEventListener(UNSYNCED_EDITS_CHANGED_EVENT, () => {
+    emitStatus({ hasUnsyncedChanges: hasLocalUnsyncedEdits() });
+  });
+
+  // Automatically flush any queued local edits when internet reconnects
+  window.addEventListener('online', () => {
+    if (canAdminWriteToCloud() && hasLocalUnsyncedEdits()) {
+      void syncAllLocalDataToCloud();
+    }
+  });
 
   let unsubBlogs: Unsubscribe | null = null;
 
@@ -1267,24 +1392,7 @@ export function initializeCloudRealtimeSync(callbacks: CloudBridgeCallbacks): vo
     doc(publicDb, 'portfolio_meta', 'main'),
     (snap) => {
       if (!snap.exists()) return;
-      const d = snap.data();
-      latestCloudMeta = {
-        profile: d.profile as ProfileData,
-        skills: Array.isArray(d.skills) ? (d.skills as Skill[]) : undefined,
-        references: Array.isArray(d.references) ? (d.references as Reference[]) : undefined,
-        careerRoadmap: Array.isArray(d.careerRoadmap)
-          ? (d.careerRoadmap as CareerRoadmapItem[])
-          : undefined,
-        blogCategories: Array.isArray(d.blogCategories) ? (d.blogCategories as string[]) : undefined,
-        deletedProjectIds: Array.isArray(d.deletedProjectIds)
-          ? (d.deletedProjectIds as string[])
-          : [],
-        deletedExperienceIds: Array.isArray(d.deletedExperienceIds)
-          ? (d.deletedExperienceIds as string[])
-          : [],
-        deletedBlogIds: Array.isArray(d.deletedBlogIds) ? (d.deletedBlogIds as string[]) : [],
-        lastModified: typeof d.lastModifiedIso === 'string' ? d.lastModifiedIso : undefined,
-      };
+      latestCloudMeta = parseCloudMetaDoc(snap.data() as Record<string, unknown>);
       notifyBridgeSnapshot();
     },
     (error) => {
@@ -1366,64 +1474,7 @@ export function initializeCloudRealtimeSync(callbacks: CloudBridgeCallbacks): vo
     );
   };
 
-  // Start public blogs listener immediately for fast first paint
   attachBlogsListener(canAdminWriteToCloud());
-
-  // Complete returning Cross-Domain Cloud Auth Bridge credentials (from /auth-bridge)
-  capturePendingBridgeAuthTokens();
-  if (pendingBridgeAuthPayload) {
-    const { idToken, accessToken, bridgeError } = pendingBridgeAuthPayload;
-    pendingBridgeAuthPayload = null;
-
-    if (bridgeError) {
-      clearAdminOAuthGracePeriod();
-      emitStatus({ error: bridgeError });
-    } else if (idToken || accessToken) {
-      emitStatus({ isSyncing: true, error: null });
-      const credential = GoogleAuthProvider.credential(idToken || null, accessToken || null);
-      signInWithCredential(auth, credential)
-        .then(async (credRes) => {
-          if (!isVerifiedFirebaseOwner(credRes.user)) {
-            const wrongEmail = credRes.user?.email || 'অন্য ইমেইল';
-            await purgeExpiredRuntimeAuthSession();
-            clearAdminOAuthGracePeriod();
-            emitStatus({
-              isSyncing: false,
-              isOwnerConnected: false,
-              ownerEmail: null,
-              error: `"${wrongEmail}" অনুমোদিত নয়। অনুগ্রহ করে "${PRIMARY_OWNER_EMAIL}" ইমেইল দিয়ে কানেক্ট করুন।`,
-            });
-            return;
-          }
-
-          completeAdminOAuthRedirectSession();
-          emitStatus({
-            isOwnerConnected: true,
-            ownerEmail: credRes.user.email || PRIMARY_OWNER_EMAIL,
-            error: null,
-          });
-
-          if (isAdminAuthenticated()) {
-            const syncRes = await syncAllLocalDataToCloud();
-            if (syncRes.success && typeof window !== 'undefined') {
-              window.dispatchEvent(
-                new CustomEvent(CLOUD_AUTO_SCAN_COMPLETED_EVENT, { detail: syncRes })
-              );
-            }
-          } else {
-            emitStatus({ isSyncing: false });
-          }
-        })
-        .catch(async (err) => {
-          clearAdminOAuthGracePeriod();
-          if (isTokenServiceDisabledError(err)) {
-            await purgeExpiredRuntimeAuthSession();
-          }
-          const formatted = formatMobileAwareAuthError(err);
-          emitStatus({ isSyncing: false, error: formatted.message });
-        });
-    }
-  }
 
   // Complete any returning mobile same-tab Google OAuth redirect cleanly
   getRedirectResult(auth, browserPopupRedirectResolver)
@@ -1446,7 +1497,7 @@ export function initializeCloudRealtimeSync(callbacks: CloudBridgeCallbacks): vo
         emitStatus({
           isOwnerConnected: false,
           ownerEmail: null,
-          error: `"${wrongEmail}" অনুমোদিত নয়। অনুগ্রহ করে "${PRIMARY_OWNER_EMAIL}" ইমেইল দিয়ে কানেক্ট করুন।`,
+          error: `"${wrongEmail}" অনুমোদিত নয়। শুধুমাত্র "${PRIMARY_OWNER_EMAIL}" ইমেইল দিয়ে কানেক্ট করুন।`,
         });
         return;
       }
@@ -1477,9 +1528,13 @@ export function initializeCloudRealtimeSync(callbacks: CloudBridgeCallbacks): vo
       emitStatus({ error: formatted.message });
     });
 
-  // Refresh blog query privileges when Admin unlocks or locks System Security
+  // Refresh blog query privileges & auto-flush pending local edits when Admin unlocks
   window.addEventListener(ADMIN_AUTH_CHANGED_EVENT, () => {
-    attachBlogsListener(canAdminWriteToCloud());
+    const canWrite = canAdminWriteToCloud();
+    attachBlogsListener(canWrite);
+    if (canWrite && hasLocalUnsyncedEdits()) {
+      void syncAllLocalDataToCloud();
+    }
   });
 
   // 4. Listen to Firebase Auth state changes & schedule clean sign-out BEFORE 5-min refresh offset
@@ -1487,7 +1542,6 @@ export function initializeCloudRealtimeSync(callbacks: CloudBridgeCallbacks): vo
     clearTokenExpiryTimer();
 
     if (user && !hasFreshOwnerAuthToken(user)) {
-      // Stale token detected: purge immediately so @firebase/auth never hits securetoken.googleapis.com
       void purgeExpiredRuntimeAuthSession();
       emitStatus({
         isOwnerConnected: false,

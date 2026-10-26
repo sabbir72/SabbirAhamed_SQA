@@ -211,6 +211,20 @@ export async function verifyAdminPasscode(inputCode: string): Promise<boolean> {
   const trimmed = (inputCode || '').trim();
   if (!trimmed) return false;
 
+  // Check if user explicitly saved a custom password hash on this browser/device first
+  try {
+    const savedHash = localStorage.getItem(ADMIN_LOCAL_PASS_HASH_KEY);
+    if (savedHash) {
+      const candidateHash = await sha256Hex(trimmed);
+      if (candidateHash === savedHash) {
+        storeAdminToken(`sabbir_sqa_admin_${Date.now()}`);
+        return true;
+      }
+    }
+  } catch {
+    // ignore storage errors
+  }
+
   try {
     const response = await fetch('/api/admin/verify', {
       method: 'POST',
@@ -233,22 +247,7 @@ export async function verifyAdminPasscode(inputCode: string): Promise<boolean> {
       return false;
     }
   } catch (err) {
-    console.error('Network error verifying admin passcode, checking offline hash:', err);
-  }
-
-  // Offline/static fallback only when server is unreachable
-  try {
-    const savedHash = localStorage.getItem(ADMIN_LOCAL_PASS_HASH_KEY);
-    if (savedHash) {
-      const candidateHash = await sha256Hex(trimmed);
-      if (candidateHash === savedHash) {
-        storeAdminToken(`sabbir_sqa_admin_${Date.now()}`);
-        return true;
-      }
-      return false;
-    }
-  } catch {
-    // ignore
+    console.error('Network error verifying admin passcode, checking offline fallback:', err);
   }
 
   if (trimmed === 'sabbir@sqa2026') {
@@ -277,6 +276,15 @@ export async function updateAdminPasscode(
   }
 
   const token = getAdminToken() || '';
+  let verifiedLocalHash = false;
+  try {
+    const savedHash = localStorage.getItem(ADMIN_LOCAL_PASS_HASH_KEY);
+    if (savedHash && (await sha256Hex(currentTrimmed)) === savedHash) {
+      verifiedLocalHash = true;
+    }
+  } catch {
+    // ignore
+  }
 
   try {
     const response = await fetch('/api/admin/update-passcode', {
@@ -288,6 +296,7 @@ export async function updateAdminPasscode(
       body: JSON.stringify({
         currentPasscode: currentTrimmed,
         newPasscode: nextTrimmed,
+        verifiedLocalHash,
       }),
     });
 

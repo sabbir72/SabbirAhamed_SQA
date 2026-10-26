@@ -1,13 +1,13 @@
 /**
  * -----------------------------------------
  * Project     : Sabbir Ahamed SQA Portfolio
- * Module      : Portfolio Data Store & Non-Destructive Sync Manager
+ * Module      : Portfolio Data Store & Zero-Data-Loss Sync Manager
  * Description : Centralized state manager for Projects, Blogs mirror, Experience,
- *               Skills, References, Career Roadmap, and Profile.
- *               Implements non-destructive ID-level merging with tombstones so
- *               live-created projects and blogs are never lost across rebuilds.
+ *               Skills, References, Career Roadmap, Profile, Visiting Card, and Theme.
+ *               Implements non-destructive ID-level merging with tombstones and an
+ *               offline-first unsynced queue so zero user edits are ever lost.
  * Author      : Sabbir Ahamed
- * Last Updated: 2026-10-24
+ * Last Updated: 2026-10-26
  * -----------------------------------------
  */
 
@@ -22,6 +22,23 @@ import {
 } from '../data';
 import type { BlogPost } from '../data/blogs';
 import {
+  getSavedThemeId,
+  hydrateThemeFromCloud,
+  SQA_THEME_USER_CHANGED_EVENT,
+} from './themeStore';
+import {
+  hydrateVisitingCardFromCloud,
+  loadPrivacySettings,
+  loadTeamMembers,
+  loadVisitingCardConfig,
+  VCARD_USER_CHANGED_EVENT,
+} from './visitingCardStore';
+import type {
+  PrivacySettings,
+  TeamMemberCard,
+  VisitingCardConfig,
+} from './visitingCardStore';
+import {
   CloudPortfolioSnapshotPayload,
   deleteExperienceFromCloud,
   deleteProjectFromCloud,
@@ -35,8 +52,47 @@ import {
 } from './cloudSync';
 
 const STORAGE_KEY_PORTFOLIO = 'sabbir_portfolio_data_v2';
+const LOCAL_UNSYNCED_EDITS_KEY = 'sabbir_portfolio_has_unsynced_edits';
+
 export const PORTFOLIO_UPDATED_EVENT = 'sabbir_portfolio_updated';
 export const SERVER_BLOGS_SYNCED_EVENT = 'sabbir_server_blogs_synced';
+export const UNSYNCED_EDITS_CHANGED_EVENT = 'sabbir_unsynced_edits_changed';
+
+let hasHydratedFromCloud = false;
+
+export function hasLocalUnsyncedEdits(): boolean {
+  try {
+    return typeof localStorage !== 'undefined' && localStorage.getItem(LOCAL_UNSYNCED_EDITS_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+export function markLocalUnsyncedEdits(): void {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(LOCAL_UNSYNCED_EDITS_KEY, 'true');
+    }
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent(UNSYNCED_EDITS_CHANGED_EVENT, { detail: true }));
+    }
+  } catch {
+    // ignore storage errors
+  }
+}
+
+export function clearLocalUnsyncedEdits(): void {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem(LOCAL_UNSYNCED_EDITS_KEY);
+    }
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent(UNSYNCED_EDITS_CHANGED_EVENT, { detail: false }));
+    }
+  } catch {
+    // ignore storage errors
+  }
+}
 
 export interface ProfileData {
   name: string;
@@ -85,6 +141,12 @@ export interface PortfolioData {
   deletedProjectIds?: string[];
   deletedExperienceIds?: string[];
   deletedBlogIds?: string[];
+  deletedReferenceIds?: string[];
+  deletedRoadmapIds?: string[];
+  themeId?: string;
+  vcardConfig?: VisitingCardConfig;
+  vcardPrivacy?: PrivacySettings;
+  vcardTeam?: TeamMemberCard[];
   lastModified?: string;
 }
 
@@ -109,10 +171,41 @@ function pickNewerItem<T extends { updatedAt?: string }>(primary: T, secondary: 
   return primary;
 }
 
+function pickNewerProfile(
+  cloudProfile: Partial<ProfileData> | undefined,
+  localProfile: Partial<ProfileData> | undefined,
+  preferLocalWhenEqual: boolean
+): ProfileData {
+  if (!cloudProfile && !localProfile) {
+    return { ...DEFAULT_PROFILE };
+  }
+  if (!cloudProfile) {
+    return { ...DEFAULT_PROFILE, ...localProfile };
+  }
+  if (!localProfile) {
+    return { ...DEFAULT_PROFILE, ...cloudProfile };
+  }
+
+  const cloudTs = cloudProfile.updatedAt ? Date.parse(cloudProfile.updatedAt) : 0;
+  const localTs = localProfile.updatedAt ? Date.parse(localProfile.updatedAt) : 0;
+  const safeCloudTs = Number.isNaN(cloudTs) ? 0 : cloudTs;
+  const safeLocalTs = Number.isNaN(localTs) ? 0 : localTs;
+
+  if (safeLocalTs > safeCloudTs) {
+    return { ...DEFAULT_PROFILE, ...cloudProfile, ...localProfile };
+  }
+  if (safeCloudTs > safeLocalTs) {
+    return { ...DEFAULT_PROFILE, ...localProfile, ...cloudProfile };
+  }
+  return preferLocalWhenEqual
+    ? { ...DEFAULT_PROFILE, ...cloudProfile, ...localProfile }
+    : { ...DEFAULT_PROFILE, ...localProfile, ...cloudProfile };
+}
+
 /**
  * Non-destructively merges primary items, secondary items, and codebase defaults by `id`,
  * while honoring explicit tombstones (`deletedIds`) so intentional deletions stick
- * and newly created/seeded items are never lost across builds.
+ * and newly created/seeded items are never lost across builds or devices.
  */
 export function mergeEntitiesById<T extends { id: string; updatedAt?: string }>(
   primaryList: T[] | undefined,
@@ -137,12 +230,11 @@ export function mergeEntitiesById<T extends { id: string; updatedAt?: string }>(
     }
   };
 
-  // Preserve custom items at the front while letting newly added codebase seed projects appear prominently
   const defaultIds = new Set(defaultList.map((d) => d.id));
   const primary = Array.isArray(primaryList) ? primaryList : [];
   const secondary = Array.isArray(secondaryList) ? secondaryList : [];
 
-  // 1. Custom (non-default) items created on live site come first so user's newest creations stay on top
+  // 1. Custom (non-default) items created on live site come first so user's newest creations stay prominent
   for (const item of primary) {
     if (!defaultIds.has(item.id)) pushOrMerge(item);
   }
@@ -173,8 +265,9 @@ export function mergeEntitiesById<T extends { id: string; updatedAt?: string }>(
 }
 
 /**
- * Loads portfolio dataset from localStorage non-destructively, merging any newly
- * added codebase defaults without overwriting live custom projects or edits.
+ * Loads portfolio dataset from localStorage non-destructively.
+ * IMPORTANT: Never stamps a synthetic `lastModified` on unedited default seed data,
+ * ensuring Cloud Firestore snapshots always hydrate cleanly on new devices/tabs.
  */
 export function getStoredPortfolioData(): PortfolioData {
   try {
@@ -188,7 +281,6 @@ export function getStoredPortfolioData(): PortfolioData {
           if (!mergedCandidate) {
             mergedCandidate = parsed;
           } else {
-            // Merge any extra custom projects/blogs from older storage keys non-destructively
             mergedCandidate = {
               ...mergedCandidate,
               projects: mergeEntitiesById(
@@ -197,9 +289,28 @@ export function getStoredPortfolioData(): PortfolioData {
                 [],
                 uniqueStrings([...(mergedCandidate.deletedProjectIds || []), ...(parsed.deletedProjectIds || [])])
               ),
-              blogs: Array.isArray(mergedCandidate.blogs) && mergedCandidate.blogs.length > 0
-                ? mergedCandidate.blogs
-                : parsed.blogs,
+              experiences: mergeEntitiesById(
+                mergedCandidate.experiences,
+                parsed.experiences,
+                [],
+                uniqueStrings([...(mergedCandidate.deletedExperienceIds || []), ...(parsed.deletedExperienceIds || [])])
+              ),
+              references: mergeEntitiesById(
+                mergedCandidate.references,
+                parsed.references,
+                [],
+                uniqueStrings([...(mergedCandidate.deletedReferenceIds || []), ...(parsed.deletedReferenceIds || [])])
+              ),
+              careerRoadmap: mergeEntitiesById(
+                mergedCandidate.careerRoadmap,
+                parsed.careerRoadmap,
+                [],
+                uniqueStrings([...(mergedCandidate.deletedRoadmapIds || []), ...(parsed.deletedRoadmapIds || [])])
+              ),
+              blogs:
+                Array.isArray(mergedCandidate.blogs) && mergedCandidate.blogs.length > 0
+                  ? mergedCandidate.blogs
+                  : parsed.blogs,
             };
           }
         }
@@ -210,6 +321,8 @@ export function getStoredPortfolioData(): PortfolioData {
       const deletedProjectIds = uniqueStrings(mergedCandidate.deletedProjectIds);
       const deletedExperienceIds = uniqueStrings(mergedCandidate.deletedExperienceIds);
       const deletedBlogIds = uniqueStrings(mergedCandidate.deletedBlogIds);
+      const deletedReferenceIds = uniqueStrings(mergedCandidate.deletedReferenceIds);
+      const deletedRoadmapIds = uniqueStrings(mergedCandidate.deletedRoadmapIds);
 
       const loadedData: PortfolioData = {
         projects: mergeEntitiesById(mergedCandidate.projects, [], DEFAULT_PROJECTS, deletedProjectIds),
@@ -218,14 +331,18 @@ export function getStoredPortfolioData(): PortfolioData {
           Array.isArray(mergedCandidate.skills) && mergedCandidate.skills.length > 0
             ? mergedCandidate.skills
             : [...DEFAULT_SKILLS],
-        references:
-          Array.isArray(mergedCandidate.references) && mergedCandidate.references.length > 0
-            ? mergedCandidate.references
-            : [...DEFAULT_REFERENCES],
-        careerRoadmap:
-          Array.isArray(mergedCandidate.careerRoadmap) && mergedCandidate.careerRoadmap.length > 0
-            ? mergedCandidate.careerRoadmap
-            : [...DEFAULT_CAREER_ROADMAP],
+        references: mergeEntitiesById(
+          mergedCandidate.references,
+          [],
+          DEFAULT_REFERENCES,
+          deletedReferenceIds
+        ),
+        careerRoadmap: mergeEntitiesById(
+          mergedCandidate.careerRoadmap,
+          [],
+          DEFAULT_CAREER_ROADMAP,
+          deletedRoadmapIds
+        ),
         profile: mergedCandidate.profile
           ? { ...DEFAULT_PROFILE, ...mergedCandidate.profile }
           : { ...DEFAULT_PROFILE },
@@ -234,7 +351,13 @@ export function getStoredPortfolioData(): PortfolioData {
         deletedProjectIds,
         deletedExperienceIds,
         deletedBlogIds,
-        lastModified: mergedCandidate.lastModified || new Date().toISOString(),
+        deletedReferenceIds,
+        deletedRoadmapIds,
+        themeId: mergedCandidate.themeId || getSavedThemeId(),
+        vcardConfig: mergedCandidate.vcardConfig || loadVisitingCardConfig(),
+        vcardPrivacy: mergedCandidate.vcardPrivacy || loadPrivacySettings(),
+        vcardTeam: mergedCandidate.vcardTeam || loadTeamMembers(),
+        lastModified: mergedCandidate.lastModified,
       };
 
       try {
@@ -248,6 +371,7 @@ export function getStoredPortfolioData(): PortfolioData {
     console.error('Error reading portfolio data from localStorage:', err);
   }
 
+  // Fresh browser state: leave lastModified undefined so Firestore Cloud data always wins cleanly
   const initialData: PortfolioData = {
     projects: [...DEFAULT_PROJECTS],
     experiences: [...DEFAULT_EXPERIENCE],
@@ -258,7 +382,12 @@ export function getStoredPortfolioData(): PortfolioData {
     deletedProjectIds: [],
     deletedExperienceIds: [],
     deletedBlogIds: [],
-    lastModified: new Date().toISOString(),
+    deletedReferenceIds: [],
+    deletedRoadmapIds: [],
+    themeId: getSavedThemeId(),
+    vcardConfig: loadVisitingCardConfig(),
+    vcardPrivacy: loadPrivacySettings(),
+    vcardTeam: loadTeamMembers(),
   };
 
   try {
@@ -287,10 +416,12 @@ function readLocalBlogsFallback(): BlogPost[] | undefined {
 }
 
 /**
- * Save full portfolio dataset to localStorage, dispatch update event, and sync with server
+ * Save full portfolio dataset to localStorage, queue unsynced mark, dispatch update event,
+ * and auto-sync to Google Cloud Firestore whenever connected.
  */
 export function savePortfolioData(data: PortfolioData): void {
   const current = getStoredPortfolioData();
+  const nowIso = new Date().toISOString();
   const updatedData: PortfolioData = {
     ...current,
     ...data,
@@ -298,7 +429,13 @@ export function savePortfolioData(data: PortfolioData): void {
     deletedProjectIds: uniqueStrings(data.deletedProjectIds ?? current.deletedProjectIds),
     deletedExperienceIds: uniqueStrings(data.deletedExperienceIds ?? current.deletedExperienceIds),
     deletedBlogIds: uniqueStrings(data.deletedBlogIds ?? current.deletedBlogIds),
-    lastModified: new Date().toISOString(),
+    deletedReferenceIds: uniqueStrings(data.deletedReferenceIds ?? current.deletedReferenceIds),
+    deletedRoadmapIds: uniqueStrings(data.deletedRoadmapIds ?? current.deletedRoadmapIds),
+    themeId: data.themeId ?? getSavedThemeId(),
+    vcardConfig: data.vcardConfig ?? loadVisitingCardConfig(),
+    vcardPrivacy: data.vcardPrivacy ?? loadPrivacySettings(),
+    vcardTeam: data.vcardTeam ?? loadTeamMembers(),
+    lastModified: nowIso,
   };
 
   try {
@@ -308,7 +445,12 @@ export function savePortfolioData(data: PortfolioData): void {
     console.error('Error saving portfolio data to localStorage:', err);
   }
 
+  if (!isCurrentlyApplyingCloudSnapshot()) {
+    markLocalUnsyncedEdits();
+  }
+
   window.dispatchEvent(new CustomEvent(PORTFOLIO_UPDATED_EVENT, { detail: updatedData }));
+
   if (!isCurrentlyApplyingCloudSnapshot()) {
     void pushPortfolioMetaToCloud(updatedData).catch((err) => {
       console.error('Cloud meta sync error:', err);
@@ -318,7 +460,7 @@ export function savePortfolioData(data: PortfolioData): void {
 
 /**
  * Called by blogStore whenever blogs or blog categories change so they are persisted
- * directly to Google Cloud Firestore (never mutating Git repository files).
+ * locally + synced directly to Google Cloud Firestore (never mutating Git repository files).
  */
 export function syncBlogStateToPortfolioServer(
   blogs: BlogPost[],
@@ -331,6 +473,10 @@ export function syncBlogStateToPortfolioServer(
     blogs,
     blogCategories,
     deletedBlogIds: uniqueStrings(deletedBlogIds),
+    themeId: getSavedThemeId(),
+    vcardConfig: loadVisitingCardConfig(),
+    vcardPrivacy: loadPrivacySettings(),
+    vcardTeam: loadTeamMembers(),
     lastModified: new Date().toISOString(),
   };
 
@@ -342,6 +488,7 @@ export function syncBlogStateToPortfolioServer(
   }
 
   if (!isCurrentlyApplyingCloudSnapshot()) {
+    markLocalUnsyncedEdits();
     void pushPortfolioMetaToCloud(updatedData, blogCategories).catch((err) => {
       console.error('Cloud blog meta sync error:', err);
     });
@@ -349,8 +496,7 @@ export function syncBlogStateToPortfolioServer(
 }
 
 /**
- * Non-destructively merges server data with local browser data on startup.
- * Never overwrites or wipes custom projects/blogs created on the live browser!
+ * Non-destructively merges server baseline data with local browser data on startup.
  */
 export async function initializePortfolioStoreFromServer(): Promise<void> {
   try {
@@ -358,12 +504,15 @@ export async function initializePortfolioStoreFromServer(): Promise<void> {
     if (!response.ok) return;
     const result = await response.json();
     if (!result.success || !result.data || typeof result.data !== 'object') return;
+    if (hasHydratedFromCloud) return;
 
     const serverData: Partial<PortfolioData> = result.data;
     const local = getStoredPortfolioData();
+    const localUnsynced = hasLocalUnsyncedEdits();
 
     const serverIsNewer = Boolean(
-      serverData.lastModified &&
+      !localUnsynced &&
+        serverData.lastModified &&
         (!local.lastModified || new Date(serverData.lastModified) >= new Date(local.lastModified))
     );
 
@@ -379,6 +528,14 @@ export async function initializePortfolioStoreFromServer(): Promise<void> {
       ...(local.deletedBlogIds || []),
       ...(serverData.deletedBlogIds || []),
     ]);
+    const mergedDeletedReferenceIds = uniqueStrings([
+      ...(local.deletedReferenceIds || []),
+      ...(serverData.deletedReferenceIds || []),
+    ]);
+    const mergedDeletedRoadmapIds = uniqueStrings([
+      ...(local.deletedRoadmapIds || []),
+      ...(serverData.deletedRoadmapIds || []),
+    ]);
 
     const mergedProjects = serverIsNewer
       ? mergeEntitiesById(serverData.projects, local.projects, DEFAULT_PROJECTS, mergedDeletedProjectIds)
@@ -388,9 +545,15 @@ export async function initializePortfolioStoreFromServer(): Promise<void> {
       ? mergeEntitiesById(serverData.experiences, local.experiences, DEFAULT_EXPERIENCE, mergedDeletedExperienceIds)
       : mergeEntitiesById(local.experiences, serverData.experiences, DEFAULT_EXPERIENCE, mergedDeletedExperienceIds);
 
-    const mergedProfile: ProfileData = serverIsNewer
-      ? { ...DEFAULT_PROFILE, ...(local.profile || {}), ...(serverData.profile || {}) }
-      : { ...DEFAULT_PROFILE, ...(serverData.profile || {}), ...(local.profile || {}) };
+    const mergedReferences = serverIsNewer
+      ? mergeEntitiesById(serverData.references, local.references, DEFAULT_REFERENCES, mergedDeletedReferenceIds)
+      : mergeEntitiesById(local.references, serverData.references, DEFAULT_REFERENCES, mergedDeletedReferenceIds);
+
+    const mergedRoadmap = serverIsNewer
+      ? mergeEntitiesById(serverData.careerRoadmap, local.careerRoadmap, DEFAULT_CAREER_ROADMAP, mergedDeletedRoadmapIds)
+      : mergeEntitiesById(local.careerRoadmap, serverData.careerRoadmap, DEFAULT_CAREER_ROADMAP, mergedDeletedRoadmapIds);
+
+    const mergedProfile = pickNewerProfile(serverData.profile, local.profile, !serverIsNewer);
 
     const mergedData: PortfolioData = {
       ...local,
@@ -400,14 +563,8 @@ export async function initializePortfolioStoreFromServer(): Promise<void> {
         serverIsNewer && Array.isArray(serverData.skills) && serverData.skills.length > 0
           ? serverData.skills
           : local.skills,
-      references:
-        serverIsNewer && Array.isArray(serverData.references) && serverData.references.length > 0
-          ? serverData.references
-          : local.references,
-      careerRoadmap:
-        serverIsNewer && Array.isArray(serverData.careerRoadmap) && serverData.careerRoadmap.length > 0
-          ? serverData.careerRoadmap
-          : local.careerRoadmap,
+      references: mergedReferences,
+      careerRoadmap: mergedRoadmap,
       profile: mergedProfile,
       blogs: Array.isArray(serverData.blogs) && serverData.blogs.length > 0 ? serverData.blogs : local.blogs,
       blogCategories:
@@ -417,8 +574,10 @@ export async function initializePortfolioStoreFromServer(): Promise<void> {
       deletedProjectIds: mergedDeletedProjectIds,
       deletedExperienceIds: mergedDeletedExperienceIds,
       deletedBlogIds: mergedDeletedBlogIds,
+      deletedReferenceIds: mergedDeletedReferenceIds,
+      deletedRoadmapIds: mergedDeletedRoadmapIds,
       lastModified:
-        serverIsNewer && serverData.lastModified ? serverData.lastModified : local.lastModified || new Date().toISOString(),
+        serverIsNewer && serverData.lastModified ? serverData.lastModified : local.lastModified,
     };
 
     try {
@@ -441,24 +600,21 @@ export async function initializePortfolioStoreFromServer(): Promise<void> {
         })
       );
     }
-
   } catch {
     // Keep localStorage safely intact if offline
   }
 }
 
 /**
- * Hydrates local portfolio & blog state from real-time Google Cloud Firestore snapshots
- * completely non-destructively (preserving any local unsynced items + codebase defaults).
+ * Hydrates local portfolio, blog, story, roadmap, reference, visiting card, and theme state
+ * from real-time Google Cloud Firestore snapshots completely non-destructively.
+ * Never overwrites unsynced local edits and never drops items created on any device.
  */
 export function applyCloudPortfolioSnapshot(snapshot: CloudPortfolioSnapshotPayload): void {
+  hasHydratedFromCloud = true;
   const local = getStoredPortfolioData();
   const cloudMeta = snapshot.meta;
-
-  const cloudIsNewer = Boolean(
-    cloudMeta?.lastModified &&
-      (!local.lastModified || new Date(cloudMeta.lastModified) >= new Date(local.lastModified))
-  );
+  const localUnsynced = hasLocalUnsyncedEdits();
 
   const mergedDeletedProjectIds = uniqueStrings([
     ...(local.deletedProjectIds || []),
@@ -472,56 +628,106 @@ export function applyCloudPortfolioSnapshot(snapshot: CloudPortfolioSnapshotPayl
     ...(local.deletedBlogIds || []),
     ...(cloudMeta?.deletedBlogIds || []),
   ]);
+  const mergedDeletedReferenceIds = uniqueStrings([
+    ...(local.deletedReferenceIds || []),
+    ...(cloudMeta?.deletedReferenceIds || []),
+  ]);
+  const mergedDeletedRoadmapIds = uniqueStrings([
+    ...(local.deletedRoadmapIds || []),
+    ...(cloudMeta?.deletedRoadmapIds || []),
+  ]);
 
   const hasCloudProjects = Array.isArray(snapshot.projects) && snapshot.projects.length > 0;
   const mergedProjects = hasCloudProjects
-    ? mergeEntitiesById(snapshot.projects, local.projects, DEFAULT_PROJECTS, mergedDeletedProjectIds)
+    ? localUnsynced
+      ? mergeEntitiesById(local.projects, snapshot.projects, DEFAULT_PROJECTS, mergedDeletedProjectIds)
+      : mergeEntitiesById(snapshot.projects, local.projects, DEFAULT_PROJECTS, mergedDeletedProjectIds)
     : mergeEntitiesById(local.projects, [], DEFAULT_PROJECTS, mergedDeletedProjectIds);
 
   const hasCloudExperiences = Array.isArray(snapshot.experiences) && snapshot.experiences.length > 0;
   const mergedExperiences = hasCloudExperiences
-    ? mergeEntitiesById(
-        snapshot.experiences,
-        local.experiences,
-        DEFAULT_EXPERIENCE,
-        mergedDeletedExperienceIds
-      )
+    ? localUnsynced
+      ? mergeEntitiesById(local.experiences, snapshot.experiences, DEFAULT_EXPERIENCE, mergedDeletedExperienceIds)
+      : mergeEntitiesById(snapshot.experiences, local.experiences, DEFAULT_EXPERIENCE, mergedDeletedExperienceIds)
     : mergeEntitiesById(local.experiences, [], DEFAULT_EXPERIENCE, mergedDeletedExperienceIds);
 
-  const mergedProfile: ProfileData =
-    cloudIsNewer && cloudMeta?.profile
-      ? { ...DEFAULT_PROFILE, ...(local.profile || {}), ...cloudMeta.profile }
-      : { ...DEFAULT_PROFILE, ...(cloudMeta?.profile || {}), ...(local.profile || {}) };
+  const hasCloudReferences = Array.isArray(cloudMeta?.references) && cloudMeta.references.length > 0;
+  const mergedReferences = hasCloudReferences
+    ? localUnsynced
+      ? mergeEntitiesById(local.references, cloudMeta!.references, DEFAULT_REFERENCES, mergedDeletedReferenceIds)
+      : mergeEntitiesById(cloudMeta!.references, local.references, DEFAULT_REFERENCES, mergedDeletedReferenceIds)
+    : mergeEntitiesById(local.references, [], DEFAULT_REFERENCES, mergedDeletedReferenceIds);
+
+  const hasCloudRoadmap = Array.isArray(cloudMeta?.careerRoadmap) && cloudMeta.careerRoadmap.length > 0;
+  const mergedRoadmap = hasCloudRoadmap
+    ? localUnsynced
+      ? mergeEntitiesById(local.careerRoadmap, cloudMeta!.careerRoadmap, DEFAULT_CAREER_ROADMAP, mergedDeletedRoadmapIds)
+      : mergeEntitiesById(cloudMeta!.careerRoadmap, local.careerRoadmap, DEFAULT_CAREER_ROADMAP, mergedDeletedRoadmapIds)
+    : mergeEntitiesById(local.careerRoadmap, [], DEFAULT_CAREER_ROADMAP, mergedDeletedRoadmapIds);
+
+  const mergedProfile = pickNewerProfile(cloudMeta?.profile, local.profile, localUnsynced);
+
+  const mergedSkills =
+    !localUnsynced && Array.isArray(cloudMeta?.skills) && cloudMeta.skills.length > 0
+      ? cloudMeta.skills
+      : local.skills;
+
+  const resolvedThemeId = !localUnsynced && cloudMeta?.themeId ? cloudMeta.themeId : local.themeId || getSavedThemeId();
+  const resolvedVcardConfig: VisitingCardConfig =
+    !localUnsynced && cloudMeta?.vcardConfig
+      ? { ...loadVisitingCardConfig(), ...cloudMeta.vcardConfig }
+      : local.vcardConfig || loadVisitingCardConfig();
+  const resolvedVcardPrivacy: PrivacySettings =
+    !localUnsynced && cloudMeta?.vcardPrivacy
+      ? { ...loadPrivacySettings(), ...cloudMeta.vcardPrivacy }
+      : local.vcardPrivacy || loadPrivacySettings();
+  const resolvedVcardTeam =
+    !localUnsynced && Array.isArray(cloudMeta?.vcardTeam) && cloudMeta.vcardTeam.length > 0
+      ? cloudMeta.vcardTeam
+      : local.vcardTeam || loadTeamMembers();
+
+  if (!localUnsynced) {
+    if (cloudMeta?.themeId) {
+      hydrateThemeFromCloud(cloudMeta.themeId);
+    }
+    if (cloudMeta?.vcardConfig || cloudMeta?.vcardPrivacy || cloudMeta?.vcardTeam) {
+      hydrateVisitingCardFromCloud({
+        vcardConfig: cloudMeta.vcardConfig,
+        vcardPrivacy: cloudMeta.vcardPrivacy,
+        vcardTeam: cloudMeta.vcardTeam,
+      });
+    }
+  }
+
+  const mergedBlogCategories = uniqueStrings([
+    ...(cloudMeta?.blogCategories || []),
+    ...(local.blogCategories || []),
+  ]);
+
+  const resolvedLastModified = localUnsynced
+    ? local.lastModified || cloudMeta?.lastModified
+    : cloudMeta?.lastModified || local.lastModified;
 
   const mergedData: PortfolioData = {
     ...local,
     projects: mergedProjects,
     experiences: mergedExperiences,
-    skills:
-      cloudIsNewer && Array.isArray(cloudMeta?.skills) && cloudMeta.skills.length > 0
-        ? cloudMeta.skills
-        : local.skills,
-    references:
-      cloudIsNewer && Array.isArray(cloudMeta?.references) && cloudMeta.references.length > 0
-        ? cloudMeta.references
-        : local.references,
-    careerRoadmap:
-      cloudIsNewer && Array.isArray(cloudMeta?.careerRoadmap) && cloudMeta.careerRoadmap.length > 0
-        ? cloudMeta.careerRoadmap
-        : local.careerRoadmap,
+    skills: mergedSkills,
+    references: mergedReferences,
+    careerRoadmap: mergedRoadmap,
     profile: mergedProfile,
     blogs: Array.isArray(snapshot.blogs) && snapshot.blogs.length > 0 ? snapshot.blogs : local.blogs,
-    blogCategories:
-      Array.isArray(cloudMeta?.blogCategories) && cloudMeta.blogCategories.length > 0
-        ? cloudMeta.blogCategories
-        : local.blogCategories,
+    blogCategories: mergedBlogCategories.length > 0 ? mergedBlogCategories : local.blogCategories,
     deletedProjectIds: mergedDeletedProjectIds,
     deletedExperienceIds: mergedDeletedExperienceIds,
     deletedBlogIds: mergedDeletedBlogIds,
-    lastModified:
-      cloudIsNewer && cloudMeta?.lastModified
-        ? cloudMeta.lastModified
-        : local.lastModified || new Date().toISOString(),
+    deletedReferenceIds: mergedDeletedReferenceIds,
+    deletedRoadmapIds: mergedDeletedRoadmapIds,
+    themeId: resolvedThemeId,
+    vcardConfig: resolvedVcardConfig,
+    vcardPrivacy: resolvedVcardPrivacy,
+    vcardTeam: resolvedVcardTeam,
+    lastModified: resolvedLastModified,
   };
 
   try {
@@ -535,19 +741,42 @@ export function applyCloudPortfolioSnapshot(snapshot: CloudPortfolioSnapshotPayl
 
   if (
     (Array.isArray(snapshot.blogs) && snapshot.blogs.length > 0) ||
-    (Array.isArray(cloudMeta?.blogCategories) && cloudMeta.blogCategories.length > 0) ||
+    mergedBlogCategories.length > 0 ||
     mergedDeletedBlogIds.length > 0
   ) {
     window.dispatchEvent(
       new CustomEvent(SERVER_BLOGS_SYNCED_EVENT, {
         detail: {
           blogs: snapshot.blogs || [],
-          blogCategories: cloudMeta?.blogCategories || [],
+          blogCategories: mergedBlogCategories,
           deletedBlogIds: mergedDeletedBlogIds,
         },
       })
     );
   }
+}
+
+// Automatically persist Theme and Visiting Card user updates into PortfolioData + Cloud Auto-Save
+if (typeof window !== 'undefined') {
+  window.addEventListener(SQA_THEME_USER_CHANGED_EVENT, () => {
+    if (isCurrentlyApplyingCloudSnapshot()) return;
+    const current = getStoredPortfolioData();
+    savePortfolioData({
+      ...current,
+      themeId: getSavedThemeId(),
+    });
+  });
+
+  window.addEventListener(VCARD_USER_CHANGED_EVENT, () => {
+    if (isCurrentlyApplyingCloudSnapshot()) return;
+    const current = getStoredPortfolioData();
+    savePortfolioData({
+      ...current,
+      vcardConfig: loadVisitingCardConfig(),
+      vcardPrivacy: loadPrivacySettings(),
+      vcardTeam: loadTeamMembers(),
+    });
+  });
 }
 
 // ----------------------------------------------------------------------
@@ -633,7 +862,7 @@ export function reorderStoredProjects(startIndex: number, endIndex: number): voi
 }
 
 // ----------------------------------------------------------------------
-// EXPERIENCE CRUD
+// EXPERIENCE (STORY) CRUD
 // ----------------------------------------------------------------------
 
 export function getStoredExperiences(): Experience[] {
@@ -724,12 +953,18 @@ export function getStoredReferences(): Reference[] {
 
 export function addStoredReference(reference: Omit<Reference, 'id'>): Reference {
   const current = getStoredPortfolioData();
+  const id = `reference-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
   const created: Reference = {
     ...reference,
-    id: `reference-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+    id,
     updatedAt: new Date().toISOString(),
   };
-  savePortfolioData({ ...current, references: [...current.references, created] });
+  const deletedReferenceIds = (current.deletedReferenceIds || []).filter((delId) => delId !== id);
+  savePortfolioData({
+    ...current,
+    references: [...current.references, created],
+    deletedReferenceIds,
+  });
   return created;
 }
 
@@ -738,7 +973,11 @@ export function updateStoredReference(id: string, updatedFields: Omit<Reference,
   const index = current.references.findIndex((reference) => reference.id === id);
   if (index === -1) return false;
   const references = [...current.references];
-  references[index] = { ...references[index], ...updatedFields, updatedAt: new Date().toISOString() };
+  references[index] = {
+    ...references[index],
+    ...updatedFields,
+    updatedAt: new Date().toISOString(),
+  };
   savePortfolioData({ ...current, references });
   return true;
 }
@@ -747,12 +986,13 @@ export function deleteStoredReference(id: string): boolean {
   const current = getStoredPortfolioData();
   const references = current.references.filter((reference) => reference.id !== id);
   if (references.length === current.references.length) return false;
-  savePortfolioData({ ...current, references });
+  const deletedReferenceIds = uniqueStrings([...(current.deletedReferenceIds || []), id]);
+  savePortfolioData({ ...current, references, deletedReferenceIds });
   return true;
 }
 
 // ----------------------------------------------------------------------
-// CAREER ROADMAP CRUD
+// CAREER ROADMAP (VISION & STORY) CRUD
 // ----------------------------------------------------------------------
 
 export function getStoredCareerRoadmap(): CareerRoadmapItem[] {
@@ -761,21 +1001,26 @@ export function getStoredCareerRoadmap(): CareerRoadmapItem[] {
 
 export function addStoredCareerRoadmapItem(item: Omit<CareerRoadmapItem, 'id'>): CareerRoadmapItem {
   const current = getStoredPortfolioData();
+  const id = `roadmap-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+  const nowIso = new Date().toISOString();
   const created: CareerRoadmapItem = {
     ...item,
-    id: `roadmap-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-    updatedAt: new Date().toISOString(),
+    id,
+    updatedAt: nowIso,
   };
   const careerRoadmap =
     created.status === 'active'
       ? [
           ...current.careerRoadmap.map((existing) =>
-            existing.status === 'active' ? { ...existing, status: 'completed' as const } : existing
+            existing.status === 'active'
+              ? { ...existing, status: 'completed' as const, updatedAt: nowIso }
+              : existing
           ),
           created,
         ]
       : [...current.careerRoadmap, created];
-  savePortfolioData({ ...current, careerRoadmap });
+  const deletedRoadmapIds = (current.deletedRoadmapIds || []).filter((delId) => delId !== id);
+  savePortfolioData({ ...current, careerRoadmap, deletedRoadmapIds });
   return created;
 }
 
@@ -786,10 +1031,11 @@ export function updateStoredCareerRoadmapItem(
   const current = getStoredPortfolioData();
   const index = current.careerRoadmap.findIndex((item) => item.id === id);
   if (index === -1) return false;
+  const nowIso = new Date().toISOString();
   const careerRoadmap = current.careerRoadmap.map((item, itemIndex) => {
-    if (itemIndex === index) return { ...item, ...updatedFields, updatedAt: new Date().toISOString() };
+    if (itemIndex === index) return { ...item, ...updatedFields, updatedAt: nowIso };
     if (updatedFields.status === 'active' && item.status === 'active') {
-      return { ...item, status: 'completed' as const };
+      return { ...item, status: 'completed' as const, updatedAt: nowIso };
     }
     return item;
   });
@@ -801,7 +1047,8 @@ export function deleteStoredCareerRoadmapItem(id: string): boolean {
   const current = getStoredPortfolioData();
   const careerRoadmap = current.careerRoadmap.filter((item) => item.id !== id);
   if (careerRoadmap.length === current.careerRoadmap.length) return false;
-  savePortfolioData({ ...current, careerRoadmap });
+  const deletedRoadmapIds = uniqueStrings([...(current.deletedRoadmapIds || []), id]);
+  savePortfolioData({ ...current, careerRoadmap, deletedRoadmapIds });
   return true;
 }
 
@@ -900,10 +1147,12 @@ export function resetPortfolioToDefault(): void {
     skills: [...DEFAULT_SKILLS],
     references: [...DEFAULT_REFERENCES],
     careerRoadmap: [...DEFAULT_CAREER_ROADMAP],
-    profile: { ...DEFAULT_PROFILE },
+    profile: { ...DEFAULT_PROFILE, updatedAt: new Date().toISOString() },
     deletedProjectIds: [],
     deletedExperienceIds: [],
     deletedBlogIds: [],
+    deletedReferenceIds: [],
+    deletedRoadmapIds: [],
     lastModified: new Date().toISOString(),
   };
 
@@ -936,6 +1185,8 @@ export function importPortfolioDataJson(jsonString: string): boolean {
     const deletedProjectIds = uniqueStrings(parsed.deletedProjectIds ?? current.deletedProjectIds);
     const deletedExperienceIds = uniqueStrings(parsed.deletedExperienceIds ?? current.deletedExperienceIds);
     const deletedBlogIds = uniqueStrings(parsed.deletedBlogIds ?? current.deletedBlogIds);
+    const deletedReferenceIds = uniqueStrings(parsed.deletedReferenceIds ?? current.deletedReferenceIds);
+    const deletedRoadmapIds = uniqueStrings(parsed.deletedRoadmapIds ?? current.deletedRoadmapIds);
 
     const importedData: PortfolioData = {
       projects: Array.isArray(parsed.projects)
@@ -945,16 +1196,37 @@ export function importPortfolioDataJson(jsonString: string): boolean {
         ? mergeEntitiesById(parsed.experiences, current.experiences, DEFAULT_EXPERIENCE, deletedExperienceIds)
         : current.experiences,
       skills: Array.isArray(parsed.skills) ? parsed.skills : current.skills,
-      references: Array.isArray(parsed.references) ? parsed.references : current.references,
-      careerRoadmap: Array.isArray(parsed.careerRoadmap) ? parsed.careerRoadmap : current.careerRoadmap,
-      profile: parsed.profile ? { ...DEFAULT_PROFILE, ...parsed.profile } : current.profile || { ...DEFAULT_PROFILE },
+      references: Array.isArray(parsed.references)
+        ? mergeEntitiesById(parsed.references, current.references, DEFAULT_REFERENCES, deletedReferenceIds)
+        : current.references,
+      careerRoadmap: Array.isArray(parsed.careerRoadmap)
+        ? mergeEntitiesById(parsed.careerRoadmap, current.careerRoadmap, DEFAULT_CAREER_ROADMAP, deletedRoadmapIds)
+        : current.careerRoadmap,
+      profile: parsed.profile
+        ? { ...DEFAULT_PROFILE, ...parsed.profile, updatedAt: parsed.profile.updatedAt || new Date().toISOString() }
+        : current.profile || { ...DEFAULT_PROFILE },
       blogs: Array.isArray(parsed.blogs) ? parsed.blogs : current.blogs,
       blogCategories: Array.isArray(parsed.blogCategories) ? parsed.blogCategories : current.blogCategories,
       deletedProjectIds,
       deletedExperienceIds,
       deletedBlogIds,
+      deletedReferenceIds,
+      deletedRoadmapIds,
+      themeId: parsed.themeId || current.themeId || getSavedThemeId(),
+      vcardConfig: parsed.vcardConfig || current.vcardConfig || loadVisitingCardConfig(),
+      vcardPrivacy: parsed.vcardPrivacy || current.vcardPrivacy || loadPrivacySettings(),
+      vcardTeam: Array.isArray(parsed.vcardTeam) ? parsed.vcardTeam : current.vcardTeam || loadTeamMembers(),
       lastModified: new Date().toISOString(),
     };
+
+    if (importedData.themeId) {
+      hydrateThemeFromCloud(importedData.themeId);
+    }
+    hydrateVisitingCardFromCloud({
+      vcardConfig: importedData.vcardConfig,
+      vcardPrivacy: importedData.vcardPrivacy,
+      vcardTeam: importedData.vcardTeam,
+    });
 
     savePortfolioData(importedData);
     void pushAllProjectsToCloud(importedData.projects).catch(() => {});

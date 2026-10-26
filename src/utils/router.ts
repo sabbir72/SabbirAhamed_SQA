@@ -10,7 +10,6 @@
 
 export type AppRoute = 
   | { type: 'home'; sectionHash?: string }
-  | { type: 'auth-bridge' }
   | { type: 'vcard' }
   | { type: 'blog-list' }
   | { type: 'blog-post'; slug: string }
@@ -25,10 +24,6 @@ export function getCurrentRoute(): AppRoute {
   
   const search = window.location.search.toLowerCase();
   const lowerHash = hash.toLowerCase();
-
-  if (path === '/auth-bridge') {
-    return { type: 'auth-bridge' };
-  }
 
   if (path === '/admin' || lowerHash === 'admin') {
     const params = new URLSearchParams(window.location.search);

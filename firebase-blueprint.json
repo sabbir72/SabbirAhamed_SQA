@@ -75,6 +75,32 @@
           "type": "array",
           "description": "Tombstone IDs of intentionally deleted blog articles."
         },
+        "deletedReferenceIds": {
+          "type": "array",
+          "description": "Tombstone IDs of intentionally deleted professional references."
+        },
+        "deletedRoadmapIds": {
+          "type": "array",
+          "description": "Tombstone IDs of intentionally deleted career roadmap milestones."
+        },
+        "themeId": {
+          "type": "string",
+          "description": "Selected portfolio color theme identifier.",
+          "minLength": 0,
+          "maxLength": 64
+        },
+        "vcardConfig": {
+          "type": "object",
+          "description": "Global virtual visiting card configuration."
+        },
+        "vcardPrivacy": {
+          "type": "object",
+          "description": "Virtual visiting card public privacy controls."
+        },
+        "vcardTeam": {
+          "type": "array",
+          "description": "Virtual visiting card team and individual member cards."
+        },
         "authorUid": {
           "type": "string",
           "description": "UID of the verified portfolio owner.",
@@ -85,7 +111,7 @@
           "type": "string",
           "description": "ISO-8601 modification timestamp string.",
           "minLength": 1,
-          "maxLength": 64
+          "maxLength": 120
         },
         "createdAt": {
           "type": "string",
@@ -189,7 +215,7 @@
           "type": "string",
           "description": "Client ISO-8601 modification timestamp.",
           "minLength": 1,
-          "maxLength": 64
+          "maxLength": 120
         },
         "authorUid": {
           "type": "string",
@@ -282,7 +308,7 @@
           "type": "string",
           "description": "Client ISO-8601 modification timestamp.",
           "minLength": 1,
-          "maxLength": 64
+          "maxLength": 120
         },
         "authorUid": {
           "type": "string",
@@ -403,7 +429,7 @@
           "type": "string",
           "description": "Client ISO-8601 modification timestamp.",
           "minLength": 1,
-          "maxLength": 64
+          "maxLength": 120
         },
         "authorUid": {
           "type": "string",

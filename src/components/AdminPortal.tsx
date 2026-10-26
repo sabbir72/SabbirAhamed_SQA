@@ -57,9 +57,7 @@ import {
   CLOUD_SYNC_STATUS_EVENT,
   CloudSyncStatus,
   getCloudSyncStatus,
-  isTopLevelBrowserWindow,
   signInOwnerWithGoogle,
-  signInOwnerWithGoogleRedirect,
   signOutOwnerFromGoogle,
   syncAllLocalDataToCloud,
 } from '../utils/cloudSync';
@@ -1343,10 +1341,10 @@ ${profile.title || PERSONAL_INFO.title}`;
                     type="button"
                     onClick={onOpenCloudScan}
                     className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow-sm transition-colors cursor-pointer whitespace-nowrap shrink-0"
-                    title="Open Google Cloud Scan & Sync (Git Repo Untouched)"
+                    title="Cloud Auto-Save Database"
                   >
                     <Cloud className="w-3.5 h-3.5 shrink-0" />
-                    <span>Google Cloud Scan</span>
+                    <span>{cloudStatus.isOwnerConnected ? 'Cloud Auto-Save: ON' : 'Cloud Auto-Save'}</span>
                   </button>
                 )}
 
@@ -1422,7 +1420,7 @@ ${profile.title || PERSONAL_INFO.title}`;
           {/* ==================================================================== */}
           {activeTab === 'overview' && (
             <div className="space-y-6 animate-fadeIn">
-              {/* Google Cloud Scan & Sync Notice (Admin Exclusive · Git Repo Untouched) */}
+              {/* Cloud Auto-Save Database Status Card */}
               <div className="bg-[#0E1320] border border-emerald-500/25 rounded-2xl p-4 sm:p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                 <div className="flex items-start gap-3.5 min-w-0">
                   <div className="w-10 h-10 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0">
@@ -1431,25 +1429,25 @@ ${profile.title || PERSONAL_INFO.title}`;
                   <div className="space-y-1 min-w-0">
                     <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
                       <span className="font-semibold text-white text-sm">
-                        Google Cloud Scan &amp; Sync (Cloud Only)
+                        Cloud Auto-Save Database
                       </span>
                       <span aria-hidden="true">·</span>
-                      <span className={cloudStatus.isOwnerConnected ? 'text-emerald-400' : 'text-amber-300'}>
+                      <span className={cloudStatus.isOwnerConnected ? 'text-emerald-400' : 'text-sky-300'}>
                         {cloudStatus.isOwnerConnected
-                          ? `Connected (${cloudStatus.ownerEmail})`
-                          : 'Owner Google Not Connected'}
+                          ? `Auto-Save Active (${PRIMARY_OWNER_EMAIL})`
+                          : 'Saved on Device · Connect for Cloud Auto-Save'}
                       </span>
                       {cloudStatus.lastSyncedAt && (
                         <>
                           <span aria-hidden="true">·</span>
                           <span className="font-mono tabular-nums text-slate-400">
-                            Last Scan: {new Date(cloudStatus.lastSyncedAt).toLocaleTimeString()}
+                            Saved: {new Date(cloudStatus.lastSyncedAt).toLocaleTimeString()}
                           </span>
                         </>
                       )}
                     </div>
                     <p className="text-xs text-slate-300 leading-relaxed">
-                      স্ক্যান করলে Git Repository-তে কোনো পরিবর্তন হবে না—শুধুমাত্র Google Cloud Database-এ সব প্রজেক্ট, ব্লগ ও আপলোড করা ছবি স্থায়ীভাবে আপডেট হবে।
+                      আপনার নতুন প্রজেক্ট, ব্লগ, স্টোরি (অভিজ্ঞতা), রোডম্যাপ, রেফারেন্স, স্কিল, ভিজিটিং কার্ড ও প্রোফাইল স্বয়ংক্রিয়ভাবে সুরক্ষিত থাকে—কোনো ডাটা কখনো হারাবে না।
                     </p>
                   </div>
                 </div>
@@ -1463,7 +1461,7 @@ ${profile.title || PERSONAL_INFO.title}`;
                     >
                       <Cloud className="w-3.5 h-3.5 shrink-0" />
                       <span>
-                        {cloudStatus.isOwnerConnected ? 'Scan to Google Cloud' : 'Connect Google & Scan'}
+                        {cloudStatus.isOwnerConnected ? 'Database Status & Sync' : 'Connect Cloud Auto-Save'}
                       </span>
                     </button>
                   ) : null}
@@ -4205,26 +4203,20 @@ ${profile.title || PERSONAL_INFO.title}`;
                   <div className="space-y-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <h3 className="font-display font-bold text-xl text-white">
-                        Permanent Cloud Database Sync
+                        Cloud Auto-Save Database
                       </h3>
-                      <span
-                        className={`px-2.5 py-0.5 rounded-md text-[11px] font-mono font-bold border ${
-                          cloudStatus.isOwnerConnected
-                            ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
-                            : 'bg-amber-500/15 text-amber-300 border-amber-500/30'
-                        }`}
-                      >
-                        {cloudStatus.isOwnerConnected ? 'Cloud Connected' : 'Connect Owner Account'}
+                      <span className="text-xs font-mono text-emerald-400">
+                        {cloudStatus.isOwnerConnected ? '· Auto-Save Active' : '· Ready to Connect'}
                       </span>
                     </div>
                     <p className="text-xs font-mono text-[#9CA3AF] max-w-2xl leading-relaxed">
                       {cloudStatus.isOwnerConnected
-                        ? `Linked as ${cloudStatus.ownerEmail}. Every project, blog article, category, skill, and uploaded image is saved permanently in Google Cloud Firestore across all rebuilds and deployments.`
-                        : 'Link your verified Google owner account once so every project, blog article, and uploaded image is backed up permanently in Google Cloud Firestore and never resets on new builds.'}
+                        ? `Connected as ${PRIMARY_OWNER_EMAIL}. Every Project, Blog, Story/Experience, Roadmap, Reference, Skill, Visiting Card, Theme, and Image is automatically saved in Google Cloud Firestore.`
+                        : `Connect ${PRIMARY_OWNER_EMAIL} once so every Project, Blog, Story/Experience, Roadmap, Reference, Skill, Visiting Card, and Profile update stays permanently saved across all devices and deployments.`}
                     </p>
                     {cloudStatus.lastSyncedAt && (
-                      <p className="text-[11px] font-mono text-emerald-400/90">
-                        Last Cloud Sync: {new Date(cloudStatus.lastSyncedAt).toLocaleString()}
+                      <p className="text-[11px] font-mono tabular-nums text-emerald-400/90">
+                        Last Cloud Save: {new Date(cloudStatus.lastSyncedAt).toLocaleString()}
                       </p>
                     )}
                   </div>
@@ -4240,7 +4232,7 @@ ${profile.title || PERSONAL_INFO.title}`;
                           const res = await syncAllLocalDataToCloud();
                           if (res.success) {
                             showToast(
-                              `Synced ${res.projectsSynced} projects & ${res.blogsSynced} blogs to Cloud!`
+                              'সব প্রজেক্ট, ব্লগ, স্টোরি, রোডম্যাপ ও রেফারেন্স Google Cloud-এ সেভ হয়েছে!'
                             );
                           } else if (res.error) {
                             showToast(res.error);
@@ -4252,7 +4244,7 @@ ${profile.title || PERSONAL_INFO.title}`;
                           className={`w-3.5 h-3.5 shrink-0 ${cloudStatus.isSyncing ? 'animate-spin' : ''}`}
                         />
                         <span>
-                          {cloudStatus.isSyncing ? 'Syncing to Cloud...' : 'Sync All Data to Cloud'}
+                          {cloudStatus.isSyncing ? 'Saving to Cloud...' : 'Save & Sync All Data'}
                         </span>
                       </button>
                       <button
@@ -4267,39 +4259,26 @@ ${profile.title || PERSONAL_INFO.title}`;
                       </button>
                     </>
                   ) : (
-                    <>
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          const res = await signInOwnerWithGoogle(PRIMARY_OWNER_EMAIL, false);
-                          if (res.redirecting) return;
-                          if (res.success) {
-                            showToast(`Connected Cloud Sync as ${res.email || PRIMARY_OWNER_EMAIL}!`);
-                          } else if (res.error) {
-                            showToast(res.error);
-                          }
-                        }}
-                        className="min-h-[46px] px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-mono text-xs font-bold flex items-center justify-center gap-2 cursor-pointer transition-colors shadow-lg shadow-emerald-600/20 whitespace-nowrap"
-                      >
-                        <Cloud className="w-4 h-4 shrink-0" />
-                        <span>Connect {PRIMARY_OWNER_EMAIL}</span>
-                      </button>
-
-                      {isTopLevelBrowserWindow() && (
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            const res = await signInOwnerWithGoogleRedirect(PRIMARY_OWNER_EMAIL, false);
-                            if (!res.success && res.error) {
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (onOpenCloudScan) {
+                          onOpenCloudScan();
+                        } else {
+                          void signInOwnerWithGoogle(PRIMARY_OWNER_EMAIL, false).then((res) => {
+                            if (res.success) {
+                              showToast(`Connected Auto-Save as ${PRIMARY_OWNER_EMAIL}!`);
+                            } else if (res.error) {
                               showToast(res.error);
                             }
-                          }}
-                          className="min-h-[44px] px-3.5 py-2.5 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/35 text-indigo-200 font-mono text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer transition-colors whitespace-nowrap"
-                        >
-                          <span>Mobile Same-Tab Connect</span>
-                        </button>
-                      )}
-                    </>
+                          });
+                        }
+                      }}
+                      className="min-h-[46px] px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-mono text-xs font-bold flex items-center justify-center gap-2 cursor-pointer transition-colors shadow-lg shadow-emerald-600/20 whitespace-nowrap"
+                    >
+                      <Cloud className="w-4 h-4 shrink-0" />
+                      <span>Connect Auto-Save ({PRIMARY_OWNER_EMAIL})</span>
+                    </button>
                   )}
                 </div>
               </div>

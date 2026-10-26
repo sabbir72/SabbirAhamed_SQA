@@ -21,7 +21,6 @@ import {
   BookOpen, 
   X,
   Filter,
-  CheckCircle2,
   SlidersHorizontal,
   Edit3
 } from 'lucide-react';
@@ -31,6 +30,8 @@ import { isAdminAuthenticated } from '../utils/adminAuth';
 import { navigateTo } from '../utils/router';
 import { getStoredProfile, PORTFOLIO_UPDATED_EVENT } from '../utils/portfolioStore';
 import { PERSONAL_INFO } from '../data';
+import PaginationBar from './PaginationBar';
+import ScrollableFilterTabs, { FilterTabItem } from './ScrollableFilterTabs';
 
 const getAuthorAvatar = (author?: { name?: string; avatar?: string }) => {
   const liveAvatar = getStoredProfile().avatar || PERSONAL_INFO.avatar || '/sabbir_avatar.jpeg';
@@ -50,6 +51,8 @@ export default function BlogList({ onSelectPost }: BlogListProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'title'>('newest');
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [pageSize, setPageSize] = useState<number>(6);
   const [isAdmin, setIsAdmin] = useState<boolean>(() => isAdminAuthenticated());
 
   // Subscribe to blog store and admin session updates
@@ -132,6 +135,34 @@ export default function BlogList({ onSelectPost }: BlogListProps) {
     }
     return filteredPosts;
   }, [filteredPosts, selectedCategory, searchQuery, featuredArticle]);
+
+  const categoryTabs: FilterTabItem[] = useMemo(
+    () =>
+      categories.map((cat) => ({
+        id: cat,
+        label: cat,
+        count:
+          cat === 'All'
+            ? publishedPosts.length
+            : publishedPosts.filter((p) => p.category === cat).length,
+      })),
+    [categories, publishedPosts]
+  );
+
+  // Reset to page 1 when category, search, or sort changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [selectedCategory, searchQuery, sortBy]);
+
+  const effectivePageSize = pageSize <= 0 ? Math.max(1, displayGridPosts.length) : pageSize;
+  const totalPages = Math.max(1, Math.ceil(displayGridPosts.length / effectivePageSize));
+  const safePage = Math.min(currentPage, totalPages);
+
+  const paginatedGridPosts = useMemo(() => {
+    if (pageSize <= 0) return displayGridPosts;
+    const start = (safePage - 1) * pageSize;
+    return displayGridPosts.slice(start, start + pageSize);
+  }, [displayGridPosts, safePage, pageSize]);
 
   const totalPublishedCount = publishedPosts.length;
 
@@ -225,28 +256,19 @@ export default function BlogList({ onSelectPost }: BlogListProps) {
             </div>
           </div>
 
-          {/* Row 2: Category Filter Pills */}
-          <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-white/10">
-            <span className="text-xs font-mono text-[#9CA3AF] uppercase mr-1 flex items-center gap-1">
+          {/* Row 2: Compact Scrollable Category Filter Tabs */}
+          <div className="pt-2 border-t border-white/10 flex flex-col sm:flex-row sm:items-center gap-2">
+            <span className="text-xs font-mono text-[#9CA3AF] mr-1 inline-flex items-center gap-1 whitespace-nowrap shrink-0">
               <Filter className="w-3.5 h-3.5 text-[var(--color-accent)]" /> Category:
             </span>
-            {categories.map((cat) => {
-              const isActive = selectedCategory === cat;
-              return (
-                <button
-                  key={cat}
-                  onClick={() => setSelectedCategory(cat)}
-                  className={`px-3.5 py-1.5 rounded-full text-xs font-mono font-medium transition-all duration-200 cursor-pointer flex items-center space-x-1.5 ${
-                    isActive
-                      ? 'bg-[var(--color-accent)] text-white shadow-lg shadow-[var(--color-accent)]/25 font-bold scale-105'
-                      : 'bg-white/[0.05] hover:bg-white/[0.1] text-[#D1D5DB] border border-white/10 hover:border-white/25'
-                  }`}
-                >
-                  {isActive && <CheckCircle2 className="w-3 h-3" />}
-                  <span>{cat}</span>
-                </button>
-              );
-            })}
+            <div className="flex-1 min-w-0">
+              <ScrollableFilterTabs
+                tabs={categoryTabs}
+                activeTab={selectedCategory}
+                onSelectTab={setSelectedCategory}
+                align="start"
+              />
+            </div>
           </div>
 
         </div>
@@ -341,15 +363,15 @@ export default function BlogList({ onSelectPost }: BlogListProps) {
         )}
 
         {/* ==================== BLOG POSTS CATALOG ==================== */}
-        <div className="space-y-6">
+        <div id="blog-catalog-top" className="space-y-6">
           <div className="flex items-center justify-between border-b border-white/10 pb-4">
             <h3 className="font-display font-extrabold text-xl text-white flex items-center space-x-2">
               <BookOpen className="w-5 h-5 text-[var(--color-accent)]" />
               <span>
                 {selectedCategory === 'All' ? 'Articles Catalog' : `${selectedCategory} Articles`}
               </span>
-              <span className="text-xs font-mono px-2.5 py-0.5 rounded-full bg-white/10 text-[var(--color-accent)] font-bold ml-2">
-                {displayGridPosts.length}
+              <span className="text-xs font-mono text-[var(--color-accent)] font-bold ml-2 tabular-nums">
+                · {displayGridPosts.length}
               </span>
             </h3>
 
@@ -386,8 +408,9 @@ export default function BlogList({ onSelectPost }: BlogListProps) {
               </div>
             </div>
           ) : (
+            <>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-8">
-              {displayGridPosts.map((post) => (
+              {paginatedGridPosts.map((post) => (
                 <article
                   key={post.id}
                   className="group bg-[#12151C] border border-white/10 hover:border-[var(--color-accent)]/50 rounded-2xl overflow-hidden shadow-xl flex flex-col justify-between transition-all duration-300 hover:-translate-y-1.5 hover:shadow-2xl hover:shadow-[var(--color-accent)]/10 cursor-pointer relative"
@@ -456,6 +479,18 @@ export default function BlogList({ onSelectPost }: BlogListProps) {
                 </article>
               ))}
             </div>
+
+            <PaginationBar
+              currentPage={safePage}
+              totalItems={displayGridPosts.length}
+              pageSize={pageSize}
+              onPageChange={setCurrentPage}
+              onPageSizeChange={setPageSize}
+              pageSizeOptions={[6, 9, 12, 0]}
+              itemLabel="articles"
+              scrollTargetId="blog-catalog-top"
+            />
+            </>
           )}
         </div>
 

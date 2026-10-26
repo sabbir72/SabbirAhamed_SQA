@@ -27,8 +27,9 @@ import BlogList from './components/BlogList';
 import BlogPost from './components/BlogPost';
 import AdminPortal from './components/AdminPortal';
 import AdminQuickAccess from './components/AdminQuickAccess';
-import AdminCloudScanModal from './components/AdminCloudScanModal';
-import AuthBridgePage from './components/AuthBridgePage';
+import AdminCloudScanModal, {
+  CLOUD_PROMPT_DISMISSED_SESSION_KEY,
+} from './components/AdminCloudScanModal';
 import { getCurrentRoute, navigateTo, navigateToHomeSection, AppRoute } from './utils/router';
 import {
   ADMIN_OAUTH_REDIRECT_COMPLETED_EVENT,
@@ -42,7 +43,7 @@ import {
   initializePortfolioStoreFromServer,
 } from './utils/portfolioStore';
 import { getStoredBlogCategories, getStoredBlogPosts } from './utils/blogStore';
-import { initializeCloudRealtimeSync } from './utils/cloudSync';
+import { getCloudSyncStatus, initializeCloudRealtimeSync } from './utils/cloudSync';
 import { initializeTheme } from './utils/themeStore';
 import AdminPasscodeModal, { SecurityModalMode } from './components/AdminPasscodeModal';
 import { VisitingCardModal } from './components/VisitingCardModal';
@@ -66,11 +67,20 @@ export default function App(): React.ReactNode {
     initializeTheme();
   }, [dark]);
 
-  // Show Pre-Git Cloud Scan & Backup reminder popup every time an authenticated Admin enters /admin
+  // Only prompt Cloud Auto-Save once per session if Admin enters /admin while not yet connected
   useEffect(() => {
     const isNowOnAdmin = route.type === 'admin';
     if (isAdmin && isNowOnAdmin && !wasOnAdminRouteRef.current) {
-      setIsCloudScanModalOpen(true);
+      const status = getCloudSyncStatus();
+      let dismissed = false;
+      try {
+        dismissed = sessionStorage.getItem(CLOUD_PROMPT_DISMISSED_SESSION_KEY) === '1';
+      } catch {
+        // ignore
+      }
+      if (!status.isOwnerConnected && !dismissed) {
+        setIsCloudScanModalOpen(true);
+      }
     }
     if (!isAdmin) {
       setIsCloudScanModalOpen(false);
@@ -183,15 +193,13 @@ export default function App(): React.ReactNode {
       if (route.type !== 'admin') {
         navigateTo('/admin');
       }
-      setIsCloudScanModalOpen(true);
+      if (!getCloudSyncStatus().isOwnerConnected) {
+        setIsCloudScanModalOpen(true);
+      }
     }
   };
 
   const currentPath = window.location.pathname;
-
-  if (route.type === 'auth-bridge') {
-    return <AuthBridgePage />;
-  }
 
   return (
     <div className="min-h-screen bg-[var(--color-dark-bg,#080B11)] text-[#F3F4F6] flex flex-col font-sans selection:bg-[var(--color-accent,#00D2FF)] selection:text-black transition-colors duration-300">

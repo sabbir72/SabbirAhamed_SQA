@@ -62,6 +62,26 @@ service cloud.firestore {
         (arr.size() == 0 || arr[0] is map);
     }
 
+    // Legacy-safe immutability gates so pre-existing documents missing metadata
+    // fields can be cleanly migrated by verified admins without CEL null errors,
+    // while strictly enforcing immutability once initialized.
+    function hasImmutableIdOnUpdate(expectedId) {
+      return incoming().id == expectedId &&
+        (!('id' in existing()) || !(existing().id is string) || incoming().id == existing().id);
+    }
+
+    function hasValidAuthorOnUpdate() {
+      return ('authorUid' in existing() && existing().authorUid is string && existing().authorUid.size() >= 1 && existing().authorUid.size() <= 128)
+        ? (incoming().authorUid == existing().authorUid || incoming().authorUid == request.auth.uid)
+        : incoming().authorUid == request.auth.uid;
+    }
+
+    function hasImmutableCreatedAtOnUpdate() {
+      return ('createdAt' in existing() && existing().createdAt is timestamp)
+        ? incoming().createdAt == existing().createdAt
+        : incoming().createdAt == request.time;
+    }
+
     // ------------------------------------------------------------------------
     // Validation Blueprints
     // ------------------------------------------------------------------------
@@ -79,21 +99,52 @@ service cloud.firestore {
           'testCasesCount', 'bugsReportedCount', 'automationScriptsCount',
           'defectDetectionRate', 'updatedAt'
         ]) &&
-        p.name is string && p.name.size() <= 200 &&
-        p.title is string && p.title.size() <= 300 &&
-        p.avatar is string && p.avatar.size() <= 650000 &&
-        p.email is string && p.email.size() <= 200 &&
-        p.phone is string && p.phone.size() <= 100 &&
-        p.location is string && p.location.size() <= 200 &&
-        p.github is string && p.github.size() <= 500 &&
-        p.linkedin is string && p.linkedin.size() <= 500 &&
-        p.objective is string && p.objective.size() <= 5000 &&
-        p.experienceYears is string && p.experienceYears.size() <= 64 &&
-        p.testCasesCount is string && p.testCasesCount.size() <= 64 &&
-        p.bugsReportedCount is string && p.bugsReportedCount.size() <= 64 &&
-        p.automationScriptsCount is string && p.automationScriptsCount.size() <= 64 &&
-        p.defectDetectionRate is string && p.defectDetectionRate.size() <= 64 &&
-        (!('updatedAt' in p) || (p.updatedAt is string && p.updatedAt.size() <= 64));
+        p.name is string && p.name.size() <= 300 &&
+        p.title is string && p.title.size() <= 500 &&
+        p.avatar is string && p.avatar.size() <= 750000 &&
+        p.email is string && p.email.size() <= 300 &&
+        p.phone is string && p.phone.size() <= 150 &&
+        p.location is string && p.location.size() <= 500 &&
+        p.github is string && p.github.size() <= 1000 &&
+        p.linkedin is string && p.linkedin.size() <= 1000 &&
+        p.objective is string && p.objective.size() <= 10000 &&
+        p.experienceYears is string && p.experienceYears.size() <= 120 &&
+        p.testCasesCount is string && p.testCasesCount.size() <= 120 &&
+        p.bugsReportedCount is string && p.bugsReportedCount.size() <= 120 &&
+        p.automationScriptsCount is string && p.automationScriptsCount.size() <= 120 &&
+        p.defectDetectionRate is string && p.defectDetectionRate.size() <= 120 &&
+        (!('updatedAt' in p) || (p.updatedAt is string && p.updatedAt.size() <= 120));
+    }
+
+    function isValidVCardConfigMap(c) {
+      return c is map &&
+        c.keys().hasOnly([
+          'company', 'companyBn', 'department', 'departmentBn',
+          'verifiedBadge', 'permanentUrl', 'defaultSkin',
+          'defaultQrMode', 'headlineEn', 'headlineBn'
+        ]) &&
+        (!('company' in c) || (c.company is string && c.company.size() <= 500)) &&
+        (!('companyBn' in c) || (c.companyBn is string && c.companyBn.size() <= 500)) &&
+        (!('department' in c) || (c.department is string && c.department.size() <= 500)) &&
+        (!('departmentBn' in c) || (c.departmentBn is string && c.departmentBn.size() <= 500)) &&
+        (!('verifiedBadge' in c) || (c.verifiedBadge is string && c.verifiedBadge.size() <= 120)) &&
+        (!('permanentUrl' in c) || (c.permanentUrl is string && c.permanentUrl.size() <= 2048)) &&
+        (!('defaultSkin' in c) || (c.defaultSkin is string && c.defaultSkin.size() <= 120)) &&
+        (!('defaultQrMode' in c) || (c.defaultQrMode is string && c.defaultQrMode.size() <= 64)) &&
+        (!('headlineEn' in c) || (c.headlineEn is string && c.headlineEn.size() <= 600)) &&
+        (!('headlineBn' in c) || (c.headlineBn is string && c.headlineBn.size() <= 600));
+    }
+
+    function isValidVCardPrivacyMap(p) {
+      return p is map &&
+        p.keys().hasOnly([
+          'showPhone', 'showEmail', 'showLocation', 'showWhatsApp', 'maskContactInPublic'
+        ]) &&
+        (!('showPhone' in p) || p.showPhone is bool) &&
+        (!('showEmail' in p) || p.showEmail is bool) &&
+        (!('showLocation' in p) || p.showLocation is bool) &&
+        (!('showWhatsApp' in p) || p.showWhatsApp is bool) &&
+        (!('maskContactInPublic' in p) || p.maskContactInPublic is bool);
     }
 
     function isValidPortfolioMeta(data) {
@@ -106,8 +157,9 @@ service cloud.firestore {
         data.keys().hasOnly([
           'id', 'isPublic', 'profile', 'skills', 'references',
           'careerRoadmap', 'blogCategories', 'deletedProjectIds',
-          'deletedExperienceIds', 'deletedBlogIds', 'authorUid',
-          'lastModifiedIso', 'createdAt', 'updatedAt'
+          'deletedExperienceIds', 'deletedBlogIds', 'deletedReferenceIds',
+          'deletedRoadmapIds', 'themeId', 'vcardConfig', 'vcardPrivacy',
+          'vcardTeam', 'authorUid', 'lastModifiedIso', 'createdAt', 'updatedAt'
         ]) &&
         data.id == 'main' &&
         data.isPublic is bool &&
@@ -115,12 +167,18 @@ service cloud.firestore {
         isBoundedMapList(data.skills, 50) &&
         isBoundedMapList(data.references, 50) &&
         isBoundedMapList(data.careerRoadmap, 50) &&
-        isBoundedStringList(data.blogCategories, 100, 120) &&
+        isBoundedStringList(data.blogCategories, 100, 200) &&
         isBoundedStringList(data.deletedProjectIds, 500, 128) &&
         isBoundedStringList(data.deletedExperienceIds, 500, 128) &&
         isBoundedStringList(data.deletedBlogIds, 500, 128) &&
+        (!('deletedReferenceIds' in data) || isBoundedStringList(data.deletedReferenceIds, 500, 128)) &&
+        (!('deletedRoadmapIds' in data) || isBoundedStringList(data.deletedRoadmapIds, 500, 128)) &&
+        (!('themeId' in data) || (data.themeId is string && data.themeId.size() <= 64)) &&
+        (!('vcardConfig' in data) || isValidVCardConfigMap(data.vcardConfig)) &&
+        (!('vcardPrivacy' in data) || isValidVCardPrivacyMap(data.vcardPrivacy)) &&
+        (!('vcardTeam' in data) || isBoundedMapList(data.vcardTeam, 50)) &&
         data.authorUid is string && data.authorUid.size() >= 1 && data.authorUid.size() <= 128 &&
-        data.lastModifiedIso is string && data.lastModifiedIso.size() >= 1 && data.lastModifiedIso.size() <= 64 &&
+        data.lastModifiedIso is string && data.lastModifiedIso.size() >= 1 && data.lastModifiedIso.size() <= 120 &&
         data.createdAt is timestamp &&
         data.updatedAt is timestamp;
     }
@@ -138,7 +196,7 @@ service cloud.firestore {
         ]) &&
         isValidId(data.id) &&
         data.visibility == 'public' &&
-        data.orderIndex is int && data.orderIndex >= 0 && data.orderIndex <= 10000 &&
+        data.orderIndex is number && data.orderIndex >= 0 && data.orderIndex <= 10000 &&
         data.title is string && data.title.size() >= 1 && data.title.size() <= 300 &&
         data.type is string && data.type in ['Manual', 'Automation', 'API', 'Performance'] &&
         data.description is string && data.description.size() <= 10000 &&
@@ -148,7 +206,7 @@ service cloud.firestore {
         isBoundedStringList(data.tags, 40, 100) &&
         data.link is string && data.link.size() <= 2048 &&
         data.image is string && data.image.size() <= 750000 &&
-        data.updatedAtIso is string && data.updatedAtIso.size() >= 1 && data.updatedAtIso.size() <= 64 &&
+        data.updatedAtIso is string && data.updatedAtIso.size() >= 1 && data.updatedAtIso.size() <= 120 &&
         data.authorUid is string && data.authorUid.size() >= 1 && data.authorUid.size() <= 128 &&
         data.createdAt is timestamp &&
         data.updatedAt is timestamp;
@@ -165,13 +223,13 @@ service cloud.firestore {
         ]) &&
         isValidId(data.id) &&
         data.visibility == 'public' &&
-        data.orderIndex is int && data.orderIndex >= 0 && data.orderIndex <= 10000 &&
+        data.orderIndex is number && data.orderIndex >= 0 && data.orderIndex <= 10000 &&
         data.role is string && data.role.size() >= 1 && data.role.size() <= 200 &&
         data.company is string && data.company.size() >= 1 && data.company.size() <= 200 &&
         data.period is string && data.period.size() <= 120 &&
         data.location is string && data.location.size() <= 200 &&
         isBoundedStringList(data.highlights, 50, 2000) &&
-        data.updatedAtIso is string && data.updatedAtIso.size() >= 1 && data.updatedAtIso.size() <= 64 &&
+        data.updatedAtIso is string && data.updatedAtIso.size() >= 1 && data.updatedAtIso.size() <= 120 &&
         data.authorUid is string && data.authorUid.size() >= 1 && data.authorUid.size() <= 128 &&
         data.createdAt is timestamp &&
         data.updatedAt is timestamp;
@@ -201,7 +259,7 @@ service cloud.firestore {
           'createdAt', 'updatedAt'
         ]) &&
         isValidId(data.id) &&
-        data.orderIndex is int && data.orderIndex >= 0 && data.orderIndex <= 10000 &&
+        data.orderIndex is number && data.orderIndex >= 0 && data.orderIndex <= 10000 &&
         data.title is string && data.title.size() >= 1 && data.title.size() <= 400 &&
         data.slug is string && data.slug.size() >= 1 && data.slug.size() <= 250 &&
         data.category is string && data.category.size() >= 1 && data.category.size() <= 120 &&
@@ -214,7 +272,7 @@ service cloud.firestore {
         data.featured is bool &&
         data.status is string && data.status in ['Published', 'Draft'] &&
         isValidBlogAuthor(data.author) &&
-        data.updatedAtIso is string && data.updatedAtIso.size() >= 1 && data.updatedAtIso.size() <= 64 &&
+        data.updatedAtIso is string && data.updatedAtIso.size() >= 1 && data.updatedAtIso.size() <= 120 &&
         data.authorUid is string && data.authorUid.size() >= 1 && data.authorUid.size() <= 128 &&
         data.createdAt is timestamp &&
         data.updatedAt is timestamp;
@@ -231,7 +289,7 @@ service cloud.firestore {
     }
 
     match /portfolio_meta/{metaId} {
-      allow get: if isValidId(metaId) && (resource == null || existing().isPublic == true || isAdmin());
+      allow get: if isValidId(metaId) && (resource == null || !('isPublic' in existing()) || existing().isPublic == true || isAdmin());
       allow list: if false;
 
       allow create: if isSignedIn() &&
@@ -247,15 +305,20 @@ service cloud.firestore {
         isSignedIn() &&
         isValidId(metaId) &&
         metaId == 'main' &&
-        incoming().id == existing().id &&
-        incoming().authorUid == existing().authorUid &&
-        incoming().createdAt == existing().createdAt &&
+        hasImmutableIdOnUpdate('main') &&
+        hasValidAuthorOnUpdate() &&
+        hasImmutableCreatedAtOnUpdate() &&
         incoming().updatedAt == request.time &&
-        incoming().diff(existing()).affectedKeys().hasOnly([
-          'isPublic', 'profile', 'skills', 'references', 'careerRoadmap',
-          'blogCategories', 'deletedProjectIds', 'deletedExperienceIds',
-          'deletedBlogIds', 'lastModifiedIso', 'updatedAt'
-        ]) &&
+        (
+          isAdmin() ||
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'isPublic', 'profile', 'skills', 'references', 'careerRoadmap',
+            'blogCategories', 'deletedProjectIds', 'deletedExperienceIds',
+            'deletedBlogIds', 'deletedReferenceIds', 'deletedRoadmapIds',
+            'themeId', 'vcardConfig', 'vcardPrivacy', 'vcardTeam',
+            'lastModifiedIso', 'updatedAt'
+          ])
+        ) &&
         isAdmin();
 
       allow delete: if isSignedIn() && isValidId(metaId) && isAdmin();
@@ -277,15 +340,18 @@ service cloud.firestore {
       allow update: if isValidProject(incoming()) &&
         isSignedIn() &&
         isValidId(projectId) &&
-        incoming().id == existing().id &&
-        incoming().authorUid == existing().authorUid &&
-        incoming().createdAt == existing().createdAt &&
+        hasImmutableIdOnUpdate(projectId) &&
+        hasValidAuthorOnUpdate() &&
+        hasImmutableCreatedAtOnUpdate() &&
         incoming().updatedAt == request.time &&
-        incoming().diff(existing()).affectedKeys().hasOnly([
-          'visibility', 'orderIndex', 'title', 'type', 'description',
-          'metrics', 'assertions', 'logs', 'tags', 'link', 'image',
-          'updatedAtIso', 'updatedAt'
-        ]) &&
+        (
+          isAdmin() ||
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'visibility', 'orderIndex', 'title', 'type', 'description',
+            'metrics', 'assertions', 'logs', 'tags', 'link', 'image',
+            'updatedAtIso', 'updatedAt'
+          ])
+        ) &&
         isAdmin();
 
       allow delete: if isSignedIn() && isValidId(projectId) && isAdmin();
@@ -307,14 +373,17 @@ service cloud.firestore {
       allow update: if isValidExperience(incoming()) &&
         isSignedIn() &&
         isValidId(experienceId) &&
-        incoming().id == existing().id &&
-        incoming().authorUid == existing().authorUid &&
-        incoming().createdAt == existing().createdAt &&
+        hasImmutableIdOnUpdate(experienceId) &&
+        hasValidAuthorOnUpdate() &&
+        hasImmutableCreatedAtOnUpdate() &&
         incoming().updatedAt == request.time &&
-        incoming().diff(existing()).affectedKeys().hasOnly([
-          'visibility', 'orderIndex', 'role', 'company', 'period',
-          'location', 'highlights', 'updatedAtIso', 'updatedAt'
-        ]) &&
+        (
+          isAdmin() ||
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'visibility', 'orderIndex', 'role', 'company', 'period',
+            'location', 'highlights', 'updatedAtIso', 'updatedAt'
+          ])
+        ) &&
         isAdmin();
 
       allow delete: if isSignedIn() && isValidId(experienceId) && isAdmin();
@@ -336,15 +405,18 @@ service cloud.firestore {
       allow update: if isValidBlog(incoming()) &&
         isSignedIn() &&
         isValidId(blogId) &&
-        incoming().id == existing().id &&
-        incoming().authorUid == existing().authorUid &&
-        incoming().createdAt == existing().createdAt &&
+        hasImmutableIdOnUpdate(blogId) &&
+        hasValidAuthorOnUpdate() &&
+        hasImmutableCreatedAtOnUpdate() &&
         incoming().updatedAt == request.time &&
-        incoming().diff(existing()).affectedKeys().hasOnly([
-          'orderIndex', 'title', 'slug', 'category', 'description',
-          'content', 'coverImage', 'publishDate', 'readingTime', 'tags',
-          'featured', 'status', 'author', 'updatedAtIso', 'updatedAt'
-        ]) &&
+        (
+          isAdmin() ||
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'orderIndex', 'title', 'slug', 'category', 'description',
+            'content', 'coverImage', 'publishDate', 'readingTime', 'tags',
+            'featured', 'status', 'author', 'updatedAtIso', 'updatedAt'
+          ])
+        ) &&
         isAdmin();
 
       allow delete: if isSignedIn() && isValidId(blogId) && isAdmin();

@@ -10,7 +10,7 @@
  * -----------------------------------------
  */
 
-import { ProfileData } from './portfolioStore';
+import type { ProfileData } from './portfolioStore';
 
 export type CardLanguage = 'en' | 'bn';
 
@@ -231,6 +231,7 @@ export function savePrivacySettings(settings: PrivacySettings): void {
   if (typeof window === 'undefined') return;
   try {
     localStorage.setItem(STORAGE_KEY_PRIVACY, JSON.stringify(settings));
+    notifyVCardStoreUpdated(true);
   } catch (e) {
     console.error('Failed to save privacy settings', e);
   }
@@ -439,12 +440,17 @@ export function sanitizePermanentCardUrl(url?: string): string {
   return trimmed;
 }
 
+export const VCARD_USER_CHANGED_EVENT = 'sqa_vcard_user_changed';
+
 /**
  * Dispatches an event across the window so all components re-render immediately
  */
-export function notifyVCardStoreUpdated(): void {
+export function notifyVCardStoreUpdated(fromUserEdit = false): void {
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent(VCARD_STORE_UPDATED_EVENT));
+    if (fromUserEdit) {
+      window.dispatchEvent(new CustomEvent(VCARD_USER_CHANGED_EVENT));
+    }
   }
 }
 
@@ -490,7 +496,7 @@ export function saveVisitingCardConfig(updates: Partial<VisitingCardConfig>): Vi
   if (typeof window !== 'undefined') {
     try {
       localStorage.setItem(STORAGE_KEY_CONFIG, JSON.stringify(merged));
-      notifyVCardStoreUpdated();
+      notifyVCardStoreUpdated(true);
     } catch (e) {
       console.error('Failed to save visiting card config', e);
     }
@@ -524,9 +530,61 @@ export function saveTeamMembers(members: TeamMemberCard[]): void {
   if (typeof window === 'undefined') return;
   try {
     localStorage.setItem(STORAGE_KEY_TEAM, JSON.stringify(members));
-    notifyVCardStoreUpdated();
+    notifyVCardStoreUpdated(true);
   } catch (e) {
     console.error('Failed to save team members', e);
+  }
+}
+
+/**
+ * Hydrates Visiting Card Config, Privacy, and Team Members silently from Cloud Database
+ */
+export function hydrateVisitingCardFromCloud(payload: {
+  vcardConfig?: Partial<VisitingCardConfig>;
+  vcardPrivacy?: Partial<PrivacySettings>;
+  vcardTeam?: TeamMemberCard[];
+}): void {
+  if (typeof window === 'undefined') return;
+  let changed = false;
+
+  if (payload.vcardConfig && typeof payload.vcardConfig === 'object') {
+    const mergedCfg: VisitingCardConfig = {
+      ...DEFAULT_VCARD_CONFIG,
+      ...payload.vcardConfig,
+      permanentUrl: sanitizePermanentCardUrl(payload.vcardConfig.permanentUrl),
+    };
+    try {
+      localStorage.setItem(STORAGE_KEY_CONFIG, JSON.stringify(mergedCfg));
+      changed = true;
+    } catch {
+      // ignore
+    }
+  }
+
+  if (payload.vcardPrivacy && typeof payload.vcardPrivacy === 'object') {
+    const mergedPriv: PrivacySettings = {
+      ...DEFAULT_PRIVACY_SETTINGS,
+      ...payload.vcardPrivacy,
+    };
+    try {
+      localStorage.setItem(STORAGE_KEY_PRIVACY, JSON.stringify(mergedPriv));
+      changed = true;
+    } catch {
+      // ignore
+    }
+  }
+
+  if (Array.isArray(payload.vcardTeam) && payload.vcardTeam.length > 0) {
+    try {
+      localStorage.setItem(STORAGE_KEY_TEAM, JSON.stringify(payload.vcardTeam));
+      changed = true;
+    } catch {
+      // ignore
+    }
+  }
+
+  if (changed) {
+    notifyVCardStoreUpdated(false);
   }
 }
 

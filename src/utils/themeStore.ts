@@ -141,8 +141,10 @@ export function getSavedThemeId(): string {
   return DEFAULT_THEME_ID;
 }
 
+export const SQA_THEME_USER_CHANGED_EVENT = 'sqa_theme_user_changed';
+
 /**
- * Sets and applies a theme by ID
+ * Sets and applies a theme by ID (triggered by user/admin action)
  */
 export function setAndApplyTheme(themeId: string): ColorTheme {
   const selected = COLOR_THEMES[themeId] || COLOR_THEMES[DEFAULT_THEME_ID];
@@ -158,9 +160,31 @@ export function setAndApplyTheme(themeId: string): ColorTheme {
 
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('sqa_theme_changed', { detail: selected }));
+    window.dispatchEvent(new CustomEvent(SQA_THEME_USER_CHANGED_EVENT, { detail: selected.id }));
   }
 
   return selected;
+}
+
+/**
+ * Hydrates theme silently from Cloud Database snapshot without triggering a write loop
+ */
+export function hydrateThemeFromCloud(themeId: string | undefined): void {
+  if (!themeId || !COLOR_THEMES[themeId]) return;
+  const current = getSavedThemeId();
+  if (current === themeId) return;
+  const selected = COLOR_THEMES[themeId];
+  try {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(THEME_STORAGE_KEY, selected.id);
+    }
+  } catch {
+    // ignore
+  }
+  applyThemeToDocument(selected);
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('sqa_theme_changed', { detail: selected }));
+  }
 }
 
 /**
@@ -172,3 +196,4 @@ export function initializeTheme(): ColorTheme {
   applyThemeToDocument(theme);
   return theme;
 }
+

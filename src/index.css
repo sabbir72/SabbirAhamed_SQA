@@ -37,6 +37,14 @@
   border-radius: 99px;
 }
 
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
 html {
   scroll-behavior: smooth;
   background-color: var(--color-dark-bg, #080B11);
