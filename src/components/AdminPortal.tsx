@@ -61,7 +61,11 @@ import {
   signOutOwnerFromGoogle,
   syncAllLocalDataToCloud,
 } from '../utils/cloudSync';
-import { PRIMARY_OWNER_EMAIL } from '../firebase';
+import {
+  OWNER_ADMIN_EMAILS,
+  PRIMARY_OWNER_EMAIL,
+  getPreferredOwnerEmail,
+} from '../firebase';
 import { PERSONAL_INFO } from '../data';
 import { 
   DEFAULT_CAREER_OBJECTIVE, 
@@ -1442,7 +1446,7 @@ ${profile.title || PERSONAL_INFO.title}`;
                       <span aria-hidden="true">·</span>
                       <span className={cloudStatus.isOwnerConnected ? 'text-emerald-400' : 'text-sky-300'}>
                         {cloudStatus.isOwnerConnected
-                          ? `Auto-Save Active (${PRIMARY_OWNER_EMAIL})`
+                          ? `Auto-Save Active (${cloudStatus.ownerEmail || getPreferredOwnerEmail()})`
                           : 'Saved on Device · Connect for Cloud Auto-Save'}
                       </span>
                       {cloudStatus.lastSyncedAt && (
@@ -4257,9 +4261,14 @@ ${profile.title || PERSONAL_INFO.title}`;
                     </div>
                     <p className="text-xs font-mono text-[#9CA3AF] max-w-2xl leading-relaxed">
                       {cloudStatus.isOwnerConnected
-                        ? `Connected as ${PRIMARY_OWNER_EMAIL}. Every Project, Blog, Story/Experience, Roadmap, Reference, Skill, Visiting Card, Theme, and Image is automatically saved in Google Cloud Firestore.`
-                        : `Connect ${PRIMARY_OWNER_EMAIL} once so every Project, Blog, Story/Experience, Roadmap, Reference, Skill, Visiting Card, and Profile update stays permanently saved across all devices and deployments.`}
+                        ? `Connected as ${cloudStatus.ownerEmail || getPreferredOwnerEmail()}. Every Project, Blog, Story/Experience, Roadmap, Reference, Skill, Visiting Card, Theme, and Image is automatically saved in Google Cloud Firestore.`
+                        : `Connect with ${OWNER_ADMIN_EMAILS.join(' or ')} once so every Project, Blog, Story/Experience, Roadmap, Reference, Skill, Visiting Card, and Profile update stays permanently saved across all devices and deployments.`}
                     </p>
+                    {cloudStatus.error && (
+                      <p className="text-xs font-mono text-red-300 bg-red-500/10 border border-red-500/25 rounded-lg px-3 py-2">
+                        {cloudStatus.error}
+                      </p>
+                    )}
                     {cloudStatus.lastSyncedAt && (
                       <p className="text-[11px] font-mono tabular-nums text-emerald-400/90">
                         Last Cloud Save: {new Date(cloudStatus.lastSyncedAt).toLocaleString()}
@@ -4311,9 +4320,10 @@ ${profile.title || PERSONAL_INFO.title}`;
                         if (onOpenCloudScan) {
                           onOpenCloudScan();
                         } else {
-                          void signInOwnerWithGoogle(PRIMARY_OWNER_EMAIL, false).then((res) => {
+                          const target = getPreferredOwnerEmail();
+                          void signInOwnerWithGoogle(target, false).then((res) => {
                             if (res.success) {
-                              showToast(`Connected Auto-Save as ${PRIMARY_OWNER_EMAIL}!`);
+                              showToast(`Connected Auto-Save as ${res.email || target}!`);
                             } else if (res.error) {
                               showToast(res.error);
                             }
@@ -4323,7 +4333,7 @@ ${profile.title || PERSONAL_INFO.title}`;
                       className="min-h-[46px] px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-mono text-xs font-bold flex items-center justify-center gap-2 cursor-pointer transition-colors shadow-lg shadow-emerald-600/20 whitespace-nowrap"
                     >
                       <Cloud className="w-4 h-4 shrink-0" />
-                      <span>Connect Auto-Save ({PRIMARY_OWNER_EMAIL})</span>
+                      <span>Connect Auto-Save ({getPreferredOwnerEmail() || PRIMARY_OWNER_EMAIL})</span>
                     </button>
                   )}
                 </div>

@@ -45,7 +45,9 @@ import {
   isTokenServiceDisabledError,
   isVerifiedFirebaseOwner,
   OperationType,
-  PRIMARY_OWNER_EMAIL,
+  OWNER_ADMIN_EMAILS,
+  getPreferredOwnerEmail,
+  setPreferredOwnerEmail,
   publicDb,
   purgeExpiredRuntimeAuthSession,
   TOKEN_SAFETY_BUFFER_MS,
@@ -776,6 +778,12 @@ async function upsertProtectedDocument(
           updatedAt: serverTimestamp(),
         });
       } catch (error) {
+        emitStatus({
+          error:
+            error instanceof Error
+              ? error.message
+              : `Cloud update failed for ${path}.`,
+        });
         handleFirestoreError(error, OperationType.UPDATE, path);
       }
     } else {
@@ -797,9 +805,21 @@ async function upsertProtectedDocument(
             });
             return;
           } catch (retryError) {
+            emitStatus({
+              error:
+                retryError instanceof Error
+                  ? retryError.message
+                  : `Cloud update failed for ${path}.`,
+            });
             handleFirestoreError(retryError, OperationType.UPDATE, path);
           }
         }
+        emitStatus({
+          error:
+            createError instanceof Error
+              ? createError.message
+              : `Cloud create failed for ${path}.`,
+        });
         handleFirestoreError(createError, OperationType.CREATE, path);
       }
     }
@@ -819,6 +839,10 @@ async function deleteProtectedDocument(collectionName: string, docId: string): P
     try {
       await deleteDoc(doc(db, collectionName, cleanId));
     } catch (error) {
+      emitStatus({
+        error:
+          error instanceof Error ? error.message : `Cloud delete failed for ${path}.`,
+      });
       handleFirestoreError(error, OperationType.DELETE, path);
     }
   });
@@ -979,7 +1003,7 @@ export async function syncAllLocalDataToCloud(): Promise<FullSyncResult> {
       success: false,
       projectsSynced: 0,
       blogsSynced: 0,
-      error: `ক্লাউড অটো-সেভ চালু করতে একবার "${PRIMARY_OWNER_EMAIL}" দিয়ে কানেক্ট করুন।`,
+      error: `ক্লাউড অটো-সেভ চালু করতে অনুমোদিত অ্যাডমিন ইমেইল (${OWNER_ADMIN_EMAILS.join(' বা ')}) দিয়ে কানেক্ট করুন।`,
     };
   }
 
@@ -1149,7 +1173,7 @@ export function formatMobileAwareAuthError(err: unknown): {
 }
 
 export async function signInOwnerWithGoogleRedirect(
-  preferredEmail: string = PRIMARY_OWNER_EMAIL,
+  preferredEmail: string = getPreferredOwnerEmail(),
   forceAccountSelect = false
 ): Promise<{ success: boolean; redirecting?: boolean; error?: string; errorCode?: string }> {
   if (!isAdminAuthenticated()) {
@@ -1169,6 +1193,9 @@ export async function signInOwnerWithGoogleRedirect(
 
   try {
     startAdminOAuthGracePeriod();
+    if (!forceAccountSelect && preferredEmail) {
+      setPreferredOwnerEmail(preferredEmail);
+    }
     const provider = createOwnerGoogleProvider(preferredEmail, forceAccountSelect);
     await signInWithRedirect(auth, provider, browserPopupRedirectResolver);
     return { success: true, redirecting: true };
@@ -1181,7 +1208,7 @@ export async function signInOwnerWithGoogleRedirect(
 }
 
 export async function signInOwnerWithGoogle(
-  preferredEmail: string = PRIMARY_OWNER_EMAIL,
+  preferredEmail: string = getPreferredOwnerEmail(),
   forceAccountSelect = false
 ): Promise<{
   success: boolean;
@@ -1199,6 +1226,9 @@ export async function signInOwnerWithGoogle(
 
   // Synchronous localStorage mark BEFORE signInWithPopup preserves mobile hardware tap gesture!
   startAdminOAuthGracePeriod();
+  if (!forceAccountSelect && preferredEmail) {
+    setPreferredOwnerEmail(preferredEmail);
+  }
   const provider = createOwnerGoogleProvider(preferredEmail, forceAccountSelect);
 
   try {
@@ -1211,10 +1241,13 @@ export async function signInOwnerWithGoogle(
       return {
         success: false,
         errorCode: 'auth/wrong-owner-email',
-        error: `"${wrongEmail}" অনুমোদিত নয়। শুধুমাত্র "${PRIMARY_OWNER_EMAIL}" ইমেইল দিয়ে কানেক্ট করুন।`,
+        error: `"${wrongEmail}" অনুমোদিত নয়। শুধুমাত্র অনুমোদিত অ্যাডমিন ইমেইল (${OWNER_ADMIN_EMAILS.join(' অথবা ')}) দিয়ে কানেক্ট করুন।`,
       };
     }
 
+    if (user.email) {
+      setPreferredOwnerEmail(user.email);
+    }
     recordAdminActivity();
     clearAdminOAuthGracePeriod();
     emitStatus({
@@ -1508,11 +1541,14 @@ export function initializeCloudRealtimeSync(callbacks: CloudBridgeCallbacks): vo
         emitStatus({
           isOwnerConnected: false,
           ownerEmail: null,
-          error: `"${wrongEmail}" অনুমোদিত নয়। শুধুমাত্র "${PRIMARY_OWNER_EMAIL}" ইমেইল দিয়ে কানেক্ট করুন।`,
+          error: `"${wrongEmail}" অনুমোদিত নয়। শুধুমাত্র অনুমোদিত অ্যাডমিন ইমেইল (${OWNER_ADMIN_EMAILS.join(' অথবা ')}) দিয়ে কানেক্ট করুন।`,
         });
         return;
       }
 
+      if (redirectRes.user.email) {
+        setPreferredOwnerEmail(redirectRes.user.email);
+      }
       completeAdminOAuthRedirectSession();
       emitStatus({
         isOwnerConnected: true,

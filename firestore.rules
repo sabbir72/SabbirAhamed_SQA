@@ -119,12 +119,13 @@ service cloud.firestore {
     function isValidVCardConfigMap(c) {
       return c is map &&
         c.keys().hasOnly([
-          'company', 'companyBn', 'department', 'departmentBn',
+          'company', 'companyBn', 'companyLogo', 'department', 'departmentBn',
           'verifiedBadge', 'permanentUrl', 'defaultSkin',
           'defaultQrMode', 'headlineEn', 'headlineBn'
         ]) &&
         (!('company' in c) || (c.company is string && c.company.size() <= 500)) &&
         (!('companyBn' in c) || (c.companyBn is string && c.companyBn.size() <= 500)) &&
+        (!('companyLogo' in c) || (c.companyLogo is string && c.companyLogo.size() <= 120000)) &&
         (!('department' in c) || (c.department is string && c.department.size() <= 500)) &&
         (!('departmentBn' in c) || (c.departmentBn is string && c.departmentBn.size() <= 500)) &&
         (!('verifiedBadge' in c) || (c.verifiedBadge is string && c.verifiedBadge.size() <= 120)) &&

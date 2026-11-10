@@ -35,7 +35,12 @@ import {
   signOutOwnerFromGoogle,
   syncAllLocalDataToCloud,
 } from '../utils/cloudSync';
-import { PRIMARY_OWNER_EMAIL } from '../firebase';
+import {
+  OWNER_ADMIN_EMAILS,
+  PRIMARY_OWNER_EMAIL,
+  getPreferredOwnerEmail,
+  setPreferredOwnerEmail,
+} from '../firebase';
 import {
   getStoredPortfolioData,
   PORTFOLIO_UPDATED_EVENT,
@@ -83,6 +88,9 @@ export default function AdminCloudScanModal({
   );
   const [isHostAuthorized, setIsHostAuthorized] = useState<boolean>(() =>
     isCurrentHostFirebaseAuthorized()
+  );
+  const [selectedOwnerEmail, setSelectedOwnerEmail] = useState<string>(() =>
+    getPreferredOwnerEmail()
   );
   const [feedback, setFeedback] = useState<{
     type: 'success' | 'error';
@@ -153,6 +161,7 @@ export default function AdminCloudScanModal({
       setIsAdmin(isAdminAuthenticated());
       const current = getCloudSyncStatus();
       setCloudStatus(current);
+      setSelectedOwnerEmail(current.ownerEmail || getPreferredOwnerEmail());
       if (!current.isSyncing && !current.isOwnerConnected) {
         setFeedback(null);
       }
@@ -201,12 +210,13 @@ export default function AdminCloudScanModal({
   const handleConnectAndSave = async (forceAccountPicker = false) => {
     if (isSyncingNow || cloudStatus.isSyncing) return;
 
+    const targetEmail = cloudStatus.ownerEmail || selectedOwnerEmail || PRIMARY_OWNER_EMAIL;
     // Trigger Google popup synchronously on user tap before React state updates
     const signInPromise = !cloudStatus.isOwnerConnected
-      ? signInOwnerWithGoogle(PRIMARY_OWNER_EMAIL, forceAccountPicker)
+      ? signInOwnerWithGoogle(targetEmail, forceAccountPicker)
       : Promise.resolve({
           success: true,
-          email: PRIMARY_OWNER_EMAIL,
+          email: targetEmail,
           redirecting: false,
           error: undefined,
           errorCode: undefined,
@@ -258,7 +268,8 @@ export default function AdminCloudScanModal({
 
   const handleMobileSameTabRedirect = async () => {
     if (isSyncingNow || cloudStatus.isSyncing) return;
-    const redirectPromise = signInOwnerWithGoogleRedirect(PRIMARY_OWNER_EMAIL, false);
+    const targetEmail = selectedOwnerEmail || PRIMARY_OWNER_EMAIL;
+    const redirectPromise = signInOwnerWithGoogleRedirect(targetEmail, false);
     setFeedback(null);
     setLastErrorCode('');
     setIsSyncingNow(true);
@@ -382,10 +393,41 @@ export default function AdminCloudScanModal({
         </div>
 
         {/* Calm Connection & Save State */}
-        <div className="space-y-2 text-xs text-slate-300 border-t border-b border-white/10 py-3">
-          <div className="flex items-center justify-between gap-3">
-            <span className="text-slate-400 shrink-0">Admin Account</span>
-            <span className="font-mono text-emerald-300 truncate">{PRIMARY_OWNER_EMAIL}</span>
+        <div className="space-y-2.5 text-xs text-slate-300 border-t border-b border-white/10 py-3">
+          <div className="flex flex-col gap-1.5">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-slate-400 shrink-0">Admin Account</span>
+              <span className="font-mono text-emerald-300 truncate">
+                {cloudStatus.isOwnerConnected
+                  ? cloudStatus.ownerEmail || selectedOwnerEmail
+                  : selectedOwnerEmail}
+              </span>
+            </div>
+
+            {!cloudStatus.isOwnerConnected && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 pt-1">
+                {OWNER_ADMIN_EMAILS.map((email) => {
+                  const active = selectedOwnerEmail === email;
+                  return (
+                    <button
+                      key={email}
+                      type="button"
+                      onClick={() => {
+                        const saved = setPreferredOwnerEmail(email);
+                        setSelectedOwnerEmail(saved);
+                      }}
+                      className={`min-h-[38px] px-2.5 py-1.5 rounded-lg font-mono text-[11px] border text-left transition-colors cursor-pointer truncate ${
+                        active
+                          ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-200 font-semibold'
+                          : 'bg-white/[0.03] hover:bg-white/[0.07] border-white/10 text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      {email}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           <div className="flex items-center justify-between gap-3">
@@ -506,7 +548,7 @@ export default function AdminCloudScanModal({
                 className="w-full min-h-[42px] px-3 py-2 rounded-lg bg-white/10 hover:bg-white/15 text-white font-medium text-xs flex items-center justify-center gap-2 cursor-pointer whitespace-nowrap"
               >
                 <Mail className="w-3.5 h-3.5 shrink-0" />
-                <span>সঠিক ইমেইল বেছে নিন ({PRIMARY_OWNER_EMAIL})</span>
+                <span>সঠিক ইমেইল বেছে নিন ({selectedOwnerEmail})</span>
               </button>
             )}
           </div>
@@ -526,7 +568,7 @@ export default function AdminCloudScanModal({
                 ? 'Saving to Google Cloud...'
                 : cloudStatus.isOwnerConnected
                 ? 'Save & Sync All Data Now'
-                : `Connect Auto-Save (${PRIMARY_OWNER_EMAIL})`}
+                : `Connect Auto-Save (${selectedOwnerEmail})`}
             </span>
           </button>
 

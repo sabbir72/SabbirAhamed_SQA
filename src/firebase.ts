@@ -92,12 +92,14 @@ export function purgeStaleFirebaseAuthStorage(forceClearAll = false): void {
     // Ignore sessionStorage restrictions
   }
 
-  try {
-    if (typeof window.indexedDB !== 'undefined') {
-      window.indexedDB.deleteDatabase('firebaseLocalStorageDb');
+  if (forceClearAll) {
+    try {
+      if (typeof window.indexedDB !== 'undefined') {
+        window.indexedDB.deleteDatabase('firebaseLocalStorageDb');
+      }
+    } catch {
+      // Ignore IndexedDB restrictions
     }
-  } catch {
-    // Ignore IndexedDB restrictions
   }
 }
 
@@ -135,27 +137,59 @@ export const auth = createMobileReadyAuth();
 export { browserPopupRedirectResolver };
 
 export const PRIMARY_OWNER_EMAIL = 'sabbircse72@gmail.com';
+export const SECONDARY_OWNER_EMAIL = 'sabbir.altersense@gmail.com';
 
 export const OWNER_ADMIN_EMAILS: readonly string[] = [
   'sabbircse72@gmail.com',
+  'sabbir.altersense@gmail.com',
 ];
 
+const PREFERRED_OWNER_EMAIL_KEY = 'sabbir_preferred_owner_email';
+
+export function getPreferredOwnerEmail(): string {
+  if (typeof window === 'undefined') return PRIMARY_OWNER_EMAIL;
+  try {
+    const saved = (localStorage.getItem(PREFERRED_OWNER_EMAIL_KEY) || '').trim().toLowerCase();
+    if (saved && OWNER_ADMIN_EMAILS.includes(saved)) {
+      return saved;
+    }
+  } catch {
+    // ignore
+  }
+  return PRIMARY_OWNER_EMAIL;
+}
+
+export function setPreferredOwnerEmail(email: string): string {
+  const normalized = (email || '').trim().toLowerCase();
+  const valid = OWNER_ADMIN_EMAILS.includes(normalized) ? normalized : PRIMARY_OWNER_EMAIL;
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.setItem(PREFERRED_OWNER_EMAIL_KEY, valid);
+    } catch {
+      // ignore
+    }
+  }
+  return valid;
+}
+
 export function createOwnerGoogleProvider(
-  _loginHintEmail: string = PRIMARY_OWNER_EMAIL,
+  loginHintEmail: string = getPreferredOwnerEmail(),
   forceAccountSelect = false
 ): GoogleAuthProvider {
   const provider = new GoogleAuthProvider();
-  const params: Record<string, string> = {
-    login_hint: PRIMARY_OWNER_EMAIL,
-  };
+  const params: Record<string, string> = {};
   if (forceAccountSelect) {
+    params.prompt = 'select_account';
+  } else {
+    const cleanHint = (loginHintEmail || '').trim().toLowerCase();
+    params.login_hint = OWNER_ADMIN_EMAILS.includes(cleanHint) ? cleanHint : getPreferredOwnerEmail();
     params.prompt = 'select_account';
   }
   provider.setCustomParameters(params);
   return provider;
 }
 
-export const googleProvider = createOwnerGoogleProvider(PRIMARY_OWNER_EMAIL);
+export const googleProvider = createOwnerGoogleProvider();
 
 export function getOwnerTokenExpiryMs(user: User | null | undefined): number {
   if (!user) return 0;
