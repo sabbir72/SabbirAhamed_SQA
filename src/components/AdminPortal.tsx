@@ -781,6 +781,11 @@ ${profile.title || PERSONAL_INFO.title}`;
     return () => window.removeEventListener(VCARD_STORE_UPDATED_EVENT, handleVcardSync);
   }, []);
 
+  const resolveTeamCardAvatar = (cardAvatar?: string) => {
+    const liveAvatar = profile.avatar || '/sabbir_avatar.jpeg';
+    return !cardAvatar || cardAvatar === '/sabbir_avatar.jpeg' ? liveAvatar : cardAvatar;
+  };
+
   const handleOpenAddCard = () => {
     setEditingCard(null);
     setCardForm({
@@ -792,7 +797,7 @@ ${profile.title || PERSONAL_INFO.title}`;
       departmentBn: vcardConfig.departmentBn || 'ম্যানুয়াল ও অটোমেশন টেস্ট',
       phone: '+8801681387906',
       email: 'sabbircse72@gmail.com',
-      avatar: '/sabbir_avatar.jpeg',
+      avatar: profile.avatar || '/sabbir_avatar.jpeg',
       verifiedId: '',
     });
     setIsCardModalOpen(true);
@@ -809,7 +814,7 @@ ${profile.title || PERSONAL_INFO.title}`;
       departmentBn: card.departmentBn || 'ম্যানুয়াল ও অটোমেশন টেস্ট',
       phone: card.phone || '',
       email: card.email || '',
-      avatar: card.avatar || '/sabbir_avatar.jpeg',
+      avatar: resolveTeamCardAvatar(card.avatar),
       verifiedId: card.verifiedId || '',
     });
     setIsCardModalOpen(true);
@@ -821,11 +826,20 @@ ${profile.title || PERSONAL_INFO.title}`;
       showToast('Please enter full Name and Role.');
       return;
     }
+    const cleanAvatar = cardForm.avatar?.trim() || '';
+    const syncedAvatar =
+      !cleanAvatar || cleanAvatar === (profile.avatar || '/sabbir_avatar.jpeg')
+        ? '/sabbir_avatar.jpeg'
+        : cleanAvatar;
+    const payload = {
+      ...cardForm,
+      avatar: syncedAvatar,
+    };
     if (editingCard) {
-      updateTeamMember(editingCard.id, cardForm);
+      updateTeamMember(editingCard.id, payload);
       showToast(`Visiting card for "${cardForm.name}" updated.`);
     } else {
-      addTeamMember(cardForm);
+      addTeamMember(payload);
       showToast(`New visiting card for "${cardForm.name}" created.`);
     }
     setTeamCards(loadTeamMembers());
@@ -3605,9 +3619,21 @@ ${profile.title || PERSONAL_INFO.title}`;
                     label="Profile Photo (Direct File Upload)"
                     value={profile.avatar}
                     onChange={(uploadedUrl) => {
+                      const prevAvatar = profile.avatar;
                       const nextProfile = { ...profile, avatar: uploadedUrl };
                       setProfile(nextProfile);
                       updateStoredProfile(nextProfile);
+                      // Keep team cards that inherited the previous profile photo linked to the new one
+                      let updatedAnyCard = false;
+                      loadTeamMembers().forEach((card) => {
+                        if (!card.avatar || (prevAvatar && card.avatar === prevAvatar)) {
+                          updateTeamMember(card.id, { avatar: '/sabbir_avatar.jpeg' });
+                          updatedAnyCard = true;
+                        }
+                      });
+                      if (updatedAnyCard) {
+                        setTeamCards(loadTeamMembers());
+                      }
                       showToast('Profile photo updated across portfolio!');
                     }}
                     shape="square"
@@ -4030,7 +4056,7 @@ ${profile.title || PERSONAL_INFO.title}`;
                       {/* Card Header & Avatar */}
                       <div className="flex items-start space-x-3">
                         <img
-                          src={card.avatar || '/sabbir_avatar.jpeg'}
+                          src={resolveTeamCardAvatar(card.avatar)}
                           alt={card.name}
                           className="w-12 h-12 rounded-xl object-cover border border-emerald-500/30 shadow-md shrink-0"
                           onError={(e) => {
