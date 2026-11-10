@@ -1,6 +1,18 @@
 import React, { useRef, useState } from 'react';
-import { Upload, Image as ImageIcon, Trash2, Loader2, Link2, CheckCircle2 } from 'lucide-react';
-import { uploadPortfolioImageFile } from '../utils/imageUpload';
+import {
+  Upload,
+  Image as ImageIcon,
+  Trash2,
+  Loader2,
+  Link2,
+  CheckCircle2,
+  Crop,
+} from 'lucide-react';
+import {
+  readFileAsDataUrl,
+  uploadPortfolioImageFile,
+} from '../utils/imageUpload';
+import ImageCropModal from './ImageCropModal';
 
 interface ImageUploadFieldProps {
   label: string;
@@ -8,11 +20,13 @@ interface ImageUploadFieldProps {
   onChange: (newUrl: string) => void;
   aspect?: 'square' | 'wide';
   shape?: 'square' | 'circle' | 'banner' | 'wide';
+  imageFit?: 'cover' | 'contain';
   accentColor?: string;
   uploadOptions?: {
     maxWidth?: number;
     maxHeight?: number;
     quality?: number;
+    maxDataUrlLength?: number;
   };
   helperText?: string;
   defaultResetUrl?: string;
@@ -25,6 +39,7 @@ export default function ImageUploadField({
   onChange,
   aspect = 'wide',
   shape,
+  imageFit = 'cover',
   accentColor = 'indigo',
   uploadOptions,
   helperText,
@@ -36,9 +51,19 @@ export default function ImageUploadField({
   const [isDragging, setIsDragging] = useState(false);
   const [showUrlInput, setShowUrlInput] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  const [lastDimensionLabel, setLastDimensionLabel] = useState('');
+
+  // Pending image source for interactive Crop & Size Adjust Studio
+  const [cropSourceUrl, setCropSourceUrl] = useState<string | null>(null);
+  const [pendingRawFile, setPendingRawFile] = useState<File | null>(null);
 
   const resolvedShape = shape || aspect;
   const isCompactSquare = resolvedShape === 'square' || resolvedShape === 'circle';
+  const defaultMaxW = uploadOptions?.maxWidth ?? (isCompactSquare ? 900 : 1280);
+  const defaultMaxH = uploadOptions?.maxHeight ?? (isCompactSquare ? 900 : 800);
+  const defaultQuality = uploadOptions?.quality ?? 0.88;
+  const defaultMaxDataUrlLen =
+    uploadOptions?.maxDataUrlLength ?? (isCompactSquare ? 280000 : 420000);
 
   const buttonAccentClasses =
     accentColor === 'cyan'
@@ -47,26 +72,82 @@ export default function ImageUploadField({
       ? 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-600/20'
       : accentColor === 'amber'
       ? 'bg-amber-600 hover:bg-amber-500 shadow-amber-600/20'
+      : accentColor === 'purple'
+      ? 'bg-purple-600 hover:bg-purple-500 shadow-purple-600/20'
       : 'bg-indigo-600 hover:bg-indigo-500 shadow-indigo-600/20';
 
   const processSelectedFile = async (file?: File | null) => {
     if (!file) return;
     setErrorMsg('');
+
+    if (!file.type.startsWith('image/')) {
+      setErrorMsg('অনুগ্রহ করে একটি সঠিক ছবির ফাইল (JPG, PNG, WebP, SVG) নির্বাচন করুন।');
+      return;
+    }
+
+    if (file.size > 20 * 1024 * 1024) {
+      setErrorMsg('ছবির সাইজ সর্বোচ্চ ২০ মেগাবাইট (20MB) হতে পারবে।');
+      return;
+    }
+
+    // Keep SVG & GIF direct without flattening vectors/animation
+    if (file.type === 'image/svg+xml' || file.type === 'image/gif') {
+      setIsUploading(true);
+      try {
+        const uploadedUrl = await uploadPortfolioImageFile(file, {
+          maxWidth: defaultMaxW,
+          maxHeight: defaultMaxH,
+          quality: defaultQuality,
+          maxDataUrlLength: defaultMaxDataUrlLen,
+        });
+        setLastDimensionLabel('');
+        onChange(uploadedUrl);
+      } catch (err) {
+        setErrorMsg(err instanceof Error ? err.message : 'ছবি আপলোড করতে সমস্যা হয়েছে।');
+      } finally {
+        setIsUploading(false);
+        if (inputRef.current) inputRef.current.value = '';
+      }
+      return;
+    }
+
+    // Open interactive Crop & Size Adjust modal with the selected file
     setIsUploading(true);
     try {
-      const uploadedUrl = await uploadPortfolioImageFile(file, {
-        maxWidth: uploadOptions?.maxWidth ?? (isCompactSquare ? 900 : 1400),
-        maxHeight: uploadOptions?.maxHeight ?? (isCompactSquare ? 900 : 1000),
-        quality: uploadOptions?.quality ?? 0.88,
-      });
-      onChange(uploadedUrl);
+      const rawDataUrl = await readFileAsDataUrl(file);
+      setPendingRawFile(file);
+      setCropSourceUrl(rawDataUrl);
     } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : 'ছবি আপলোড করতে সমস্যা হয়েছে।');
+      setErrorMsg(err instanceof Error ? err.message : 'ছবি পড়তে সমস্যা হয়েছে।');
     } finally {
       setIsUploading(false);
       if (inputRef.current) {
         inputRef.current.value = '';
       }
+    }
+  };
+
+  const handleQuickSaveWithoutCrop = async () => {
+    if (!pendingRawFile) {
+      setCropSourceUrl(null);
+      return;
+    }
+    setIsUploading(true);
+    try {
+      const uploadedUrl = await uploadPortfolioImageFile(pendingRawFile, {
+        maxWidth: defaultMaxW,
+        maxHeight: defaultMaxH,
+        quality: defaultQuality,
+        maxDataUrlLength: defaultMaxDataUrlLen,
+      });
+      setLastDimensionLabel('');
+      onChange(uploadedUrl);
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : 'ছবি সেভ করতে সমস্যা হয়েছে।');
+    } finally {
+      setIsUploading(false);
+      setCropSourceUrl(null);
+      setPendingRawFile(null);
     }
   };
 
@@ -79,6 +160,13 @@ export default function ImageUploadField({
     setIsDragging(false);
     const file = e.dataTransfer.files?.[0];
     processSelectedFile(file);
+  };
+
+  const handleOpenCropExisting = () => {
+    if (!value || !value.trim() || isUploading) return;
+    setErrorMsg('');
+    setPendingRawFile(null);
+    setCropSourceUrl(value);
   };
 
   const hasImage = Boolean(value && value.trim());
@@ -95,7 +183,10 @@ export default function ImageUploadField({
           {defaultResetUrl && value !== defaultResetUrl && (
             <button
               type="button"
-              onClick={() => onChange(defaultResetUrl)}
+              onClick={() => {
+                setLastDimensionLabel('');
+                onChange(defaultResetUrl);
+              }}
               className="text-[11px] font-mono text-emerald-400 hover:text-emerald-300 cursor-pointer"
             >
               {resetLabel}
@@ -137,7 +228,9 @@ export default function ImageUploadField({
           {/* Live Thumbnail Preview */}
           <div
             onClick={() => !isUploading && inputRef.current?.click()}
-            className={`relative overflow-hidden border border-white/15 bg-[#090D16] flex items-center justify-center shrink-0 cursor-pointer group ${
+            className={`relative overflow-hidden border border-white/15 flex items-center justify-center shrink-0 cursor-pointer group ${
+              hasImage && imageFit === 'contain' ? 'bg-white p-1.5' : 'bg-[#090D16]'
+            } ${
               resolvedShape === 'circle'
                 ? 'w-20 h-20 sm:w-24 sm:h-24 rounded-full'
                 : isCompactSquare
@@ -151,7 +244,7 @@ export default function ImageUploadField({
                 <img
                   src={value}
                   alt="Uploaded preview"
-                  className="w-full h-full object-cover"
+                  className={`w-full h-full ${imageFit === 'contain' ? 'object-contain' : 'object-cover'}`}
                   onError={(e) => {
                     (e.currentTarget as HTMLImageElement).style.opacity = '0.25';
                   }}
@@ -178,10 +271,11 @@ export default function ImageUploadField({
           <div className="flex-1 min-w-0 space-y-2.5">
             <div className="space-y-0.5">
               <p className="text-xs font-medium text-white">
-                ডিভাইস বা ফাইল থেকে সরাসরি ছবি আপলোড করুন
+                ডিভাইস বা ফাইল থেকে সরাসরি ছবি আপলোড ও ক্রপ করুন
               </p>
               <p className="text-[11px] text-slate-400 leading-relaxed">
-                {helperText || 'JPG, PNG, WebP বা SVG ফাইল নির্বাচন করুন অথবা এখানে ড্র্যাগ অ্যান্ড ড্রপ করুন।'}
+                {helperText ||
+                  'JPG, PNG, WebP বা SVG ফাইল বেছে নিয়ে পারফেক্ট সাইজ ও ক্রপ অ্যাডজাস্ট করতে পারবেন।'}
               </p>
             </div>
 
@@ -190,17 +284,19 @@ export default function ImageUploadField({
                 type="button"
                 disabled={isUploading}
                 onClick={() => inputRef.current?.click()}
-                className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-white text-xs font-mono font-bold shadow-md transition-colors cursor-pointer disabled:opacity-50 ${buttonAccentClasses}`}
+                className={`min-h-[40px] inline-flex items-center gap-2 px-4 py-2 rounded-xl text-white text-xs font-mono font-bold shadow-md transition-colors cursor-pointer disabled:opacity-50 ${buttonAccentClasses}`}
               >
                 {isUploading ? (
                   <>
                     <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    <span>Uploading...</span>
+                    <span>Loading...</span>
                   </>
                 ) : (
                   <>
                     <Upload className="w-3.5 h-3.5" />
-                    <span>{hasImage ? 'ফাইল থেকে ছবি পরিবর্তন করুন' : 'ফাইল থেকে ছবি আপলোড করুন'}</span>
+                    <span>
+                      {hasImage ? 'নতুন ছবি বাছুন' : 'ফাইল থেকে ছবি আপলোড করুন'}
+                    </span>
                   </>
                 )}
               </button>
@@ -209,8 +305,23 @@ export default function ImageUploadField({
                 <button
                   type="button"
                   disabled={isUploading}
-                  onClick={() => onChange('')}
-                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-300 border border-red-500/25 text-xs font-mono transition-colors cursor-pointer"
+                  onClick={handleOpenCropExisting}
+                  className="min-h-[40px] inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-300 border border-cyan-400/35 text-xs font-mono font-semibold transition-colors cursor-pointer"
+                >
+                  <Crop className="w-3.5 h-3.5" />
+                  <span>ক্রপ ও সাইজ ঠিক করুন</span>
+                </button>
+              )}
+
+              {hasImage && (
+                <button
+                  type="button"
+                  disabled={isUploading}
+                  onClick={() => {
+                    setLastDimensionLabel('');
+                    onChange('');
+                  }}
+                  className="min-h-[40px] inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-300 border border-red-500/25 text-xs font-mono transition-colors cursor-pointer"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                   <span>Remove</span>
@@ -222,7 +333,9 @@ export default function ImageUploadField({
               <div className="flex items-center gap-1.5 text-[11px] font-mono text-emerald-400 truncate">
                 <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
                 <span className="truncate">
-                  {value.startsWith('data:')
+                  {lastDimensionLabel
+                    ? `ক্রপ ও সাইজ সেট হয়েছে (${lastDimensionLabel})`
+                    : value.startsWith('data:')
                     ? 'ডিভাইস থেকে আপলোডকৃত ছবি যুক্ত আছে'
                     : value.startsWith('/uploads/')
                     ? `আপলোডকৃত ফাইল (${value.replace('/uploads/', '')})`
@@ -242,13 +355,43 @@ export default function ImageUploadField({
             <input
               type="text"
               value={value.startsWith('data:') ? '' : value}
-              onChange={(e) => onChange(e.target.value)}
+              onChange={(e) => {
+                setLastDimensionLabel('');
+                onChange(e.target.value);
+              }}
               placeholder="অথবা সরাসরি ছবির লিংক দিন (https://... বা /sabbir_avatar.jpeg)"
               className="w-full px-3.5 py-2 rounded-xl bg-black/40 border border-white/15 text-xs font-mono text-white placeholder:text-slate-500 focus:border-indigo-500 focus:outline-none"
             />
           </div>
         )}
       </div>
+
+      {/* Interactive Crop & Perfect Size Adjuster Modal */}
+      {cropSourceUrl && (
+        <ImageCropModal
+          isOpen={Boolean(cropSourceUrl)}
+          imageSrc={cropSourceUrl}
+          shape={resolvedShape}
+          recommendedMaxWidth={defaultMaxW}
+          recommendedMaxHeight={defaultMaxH}
+          maxDataUrlLength={defaultMaxDataUrlLen}
+          defaultQuality={defaultQuality}
+          onCancel={() => {
+            setCropSourceUrl(null);
+            setPendingRawFile(null);
+          }}
+          onQuickSaveOriginal={
+            pendingRawFile ? handleQuickSaveWithoutCrop : undefined
+          }
+          onApply={(result) => {
+            const kb = Math.max(1, Math.round(result.byteSize / 1024));
+            setLastDimensionLabel(`${result.width}×${result.height}px · ${kb}KB`);
+            onChange(result.dataUrl);
+            setCropSourceUrl(null);
+            setPendingRawFile(null);
+          }}
+        />
+      )}
     </div>
   );
 }

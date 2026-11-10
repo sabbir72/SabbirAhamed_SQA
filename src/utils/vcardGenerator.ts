@@ -291,19 +291,46 @@ export function getEmailSignatureText(profile: ProfileData, company = 'Altersens
   ].join('\n');
 }
 
+function escapeSignatureHtml(str: string): string {
+  return String(str || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+export function getCompanyMonogram(companyName: string): string {
+  const words = String(companyName || '')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (words.length === 0) return 'CO';
+  if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
+  return `${words[0][0]}${words[1][0]}`.toUpperCase();
+}
+
 /**
  * Generates an executive, email-client-safe HTML signature
  * compatible with Gmail, Outlook, Apple Mail, and Webmail clients.
+ * Renders the customizable Company Logo instead of a personal portrait photo.
  */
-export function generateEmailSignatureHtml(profile: ProfileData, cardUrl?: string, company = 'Altersense Ltd'): string {
-  const name = profile.name || 'Sabbir Ahamed';
-  const title = profile.title || 'Software Quality Assurance Engineer';
-  const email = profile.email || 'sabbircse72@gmail.com';
-  const phone = profile.phone || '+8801681387906';
-  const location = profile.location || 'Dhaka, Bangladesh';
-  const portfolioUrl = cardUrl && !cardUrl.includes('run.app') && !cardUrl.includes('aistudio')
-    ? cardUrl.replace(/\?card=1#vcard$/, '')
-    : 'https://sabbir-sqa.vercel.app';
+export function generateEmailSignatureHtml(
+  profile: ProfileData,
+  cardUrl?: string,
+  company = 'Altersense Ltd',
+  companyLogo?: string
+): string {
+  const name = escapeSignatureHtml(profile.name || 'Sabbir Ahamed');
+  const title = escapeSignatureHtml(profile.title || 'Software Quality Assurance Engineer');
+  const safeCompany = escapeSignatureHtml(company || 'Altersense Ltd');
+  const email = escapeSignatureHtml(profile.email || 'sabbircse72@gmail.com');
+  const phone = escapeSignatureHtml(profile.phone || '+8801681387906');
+  const location = escapeSignatureHtml(profile.location || 'Dhaka, Bangladesh');
+  const portfolioUrl =
+    cardUrl && !cardUrl.includes('run.app') && !cardUrl.includes('aistudio')
+      ? cardUrl.replace(/\?card=1#vcard$/, '').replace(/\/$/, '')
+      : 'https://sabbir-sqa.vercel.app';
   const linkedinUrl = profile.linkedin?.startsWith('http')
     ? profile.linkedin
     : `https://${profile.linkedin || 'www.linkedin.com/in/sabbir-ahamed72'}`;
@@ -311,11 +338,26 @@ export function generateEmailSignatureHtml(profile: ProfileData, cardUrl?: strin
     ? profile.github
     : `https://${profile.github || 'github.com/sabbir72'}`;
 
+  const trimmedLogo = (companyLogo || '').trim();
+  const resolvedLogoSrc = trimmedLogo
+    ? trimmedLogo.startsWith('/')
+      ? `${portfolioUrl}${trimmedLogo}`
+      : trimmedLogo
+    : '';
+
+  const logoCellHtml = resolvedLogoSrc
+    ? `<td style="padding-right: 14px; vertical-align: middle;">
+      <div style="width: 58px; height: 58px; border-radius: 12px; border: 1px solid #e2e8f0; background-color: #ffffff; padding: 5px; box-sizing: border-box; text-align: center;">
+        <img src="${escapeSignatureHtml(resolvedLogoSrc)}" alt="${safeCompany} Logo" width="46" height="46" style="width: 46px; height: 46px; object-fit: contain; display: block; margin: 0 auto; border-radius: 8px;" />
+      </div>
+    </td>\n    `
+    : '';
+
   return `<table cellpadding="0" cellspacing="0" border="0" style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #0f172a; line-height: 1.45; border-collapse: collapse;">
   <tr>
-    <td style="border-left: 3px solid #0284c7; padding-left: 14px;">
+    ${logoCellHtml}<td style="border-left: 3px solid #0284c7; padding-left: 14px; vertical-align: middle;">
       <div style="font-size: 16px; font-weight: 700; color: #0f172a; letter-spacing: -0.2px;">${name}</div>
-      <div style="font-size: 13px; font-weight: 600; color: #0284c7; margin-top: 2px;">${title} <span style="color: #94a3b8; font-weight: 400;">&bull;</span> <span style="color: #334155; font-weight: 600;">${company}</span></div>
+      <div style="font-size: 13px; font-weight: 600; color: #0284c7; margin-top: 2px;">${title} <span style="color: #94a3b8; font-weight: 400;">&bull;</span> <span style="color: #334155; font-weight: 600;">${safeCompany}</span></div>
       <table cellpadding="0" cellspacing="0" border="0" style="margin-top: 8px; font-size: 12px; color: #475569;">
         <tr>
           <td style="padding-bottom: 3px;">
@@ -328,11 +370,11 @@ export function generateEmailSignatureHtml(profile: ProfileData, cardUrl?: strin
         </tr>
         <tr>
           <td style="padding-top: 3px;">
-            <a href="${portfolioUrl}" style="color: #0284c7; text-decoration: none; font-weight: 600;">Portfolio</a>
+            <a href="${escapeSignatureHtml(portfolioUrl)}" style="color: #0284c7; text-decoration: none; font-weight: 600;">Portfolio</a>
             <span style="color: #cbd5e1; padding: 0 7px;">&bull;</span>
-            <a href="${linkedinUrl}" style="color: #0284c7; text-decoration: none; font-weight: 600;">LinkedIn</a>
+            <a href="${escapeSignatureHtml(linkedinUrl)}" style="color: #0284c7; text-decoration: none; font-weight: 600;">LinkedIn</a>
             <span style="color: #cbd5e1; padding: 0 7px;">&bull;</span>
-            <a href="${githubUrl}" style="color: #0284c7; text-decoration: none; font-weight: 600;">GitHub</a>
+            <a href="${escapeSignatureHtml(githubUrl)}" style="color: #0284c7; text-decoration: none; font-weight: 600;">GitHub</a>
           </td>
         </tr>
       </table>

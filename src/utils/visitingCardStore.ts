@@ -386,6 +386,7 @@ const STORAGE_KEY_CONFIG = 'sqa_vcard_global_config_v1';
 export interface VisitingCardConfig {
   company: string;
   companyBn: string;
+  companyLogo?: string;
   department: string;
   departmentBn: string;
   verifiedBadge: string;
@@ -399,6 +400,7 @@ export interface VisitingCardConfig {
 export const DEFAULT_VCARD_CONFIG: VisitingCardConfig = {
   company: 'Altersense Ltd',
   companyBn: 'অল্টারসেন্স লিমিটেড',
+  companyLogo: '',
   department: 'Manual & automation Test',
   departmentBn: 'ম্যানুয়াল ও অটোমেশন টেস্ট',
   verifiedBadge: 'SQA',

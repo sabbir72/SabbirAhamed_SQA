@@ -3612,7 +3612,7 @@ ${profile.title || PERSONAL_INFO.title}`;
                     }}
                     shape="square"
                     accentColor="cyan"
-                    uploadOptions={{ maxWidth: 900, maxHeight: 900 }}
+                    uploadOptions={{ maxWidth: 900, maxHeight: 900, maxDataUrlLength: 320000 }}
                     helperText="Upload directly from your computer or mobile gallery (JPG, PNG, WebP)"
                   />
                 </div>
@@ -3911,6 +3911,32 @@ ${profile.title || PERSONAL_INFO.title}`;
                       className="w-full px-3.5 py-2.5 rounded-xl bg-white/5 border border-white/10 text-xs font-mono text-white focus:border-emerald-500 focus:outline-none"
                     />
                   </div>
+                </div>
+
+                <div className="pt-1">
+                  <ImageUploadField
+                    label="Company Logo (Email Signature Logo)"
+                    value={vcardConfig.companyLogo || ''}
+                    onChange={(newLogoUrl) => {
+                      const next = saveVisitingCardConfig({ ...vcardConfig, companyLogo: newLogoUrl });
+                      setVcardConfig(next);
+                      showToast(
+                        newLogoUrl
+                          ? 'কোম্পানির লোগো ইমেইল সিগনেচারে সেট করা হয়েছে।'
+                          : 'কোম্পানির লোগো সরানো হয়েছে।'
+                      );
+                    }}
+                    shape="square"
+                    imageFit="contain"
+                    accentColor="emerald"
+                    uploadOptions={{
+                      maxWidth: 600,
+                      maxHeight: 600,
+                      quality: 0.9,
+                      maxDataUrlLength: 85000,
+                    }}
+                    helperText="ইমেইল সিগনেচারে আপনার নিজের ছবির পরিবর্তে এই কোম্পানির লোগো দেখাবে। যেকোনো সময় লোগো পরিবর্তন বা ক্রপ করতে পারবেন (Gmail/Outlook HTML-এর জন্য Image Link বা ক্রপড লোগো ব্যবহার করুন)।"
+                  />
                 </div>
 
                 <div className="flex justify-end pt-2">
@@ -4642,9 +4668,9 @@ ${profile.title || PERSONAL_INFO.title}`;
                   label="Card Profile Photo"
                   value={cardForm.avatar}
                   onChange={(uploadedUrl) => setCardForm({ ...cardForm, avatar: uploadedUrl })}
-                  shape="square"
+                  shape="circle"
                   accentColor="emerald"
-                  uploadOptions={{ maxWidth: 800, maxHeight: 800 }}
+                  uploadOptions={{ maxWidth: 720, maxHeight: 720, maxDataUrlLength: 95000 }}
                   helperText="Upload photo directly from your device (JPG, PNG, WebP)"
                 />
               </div>

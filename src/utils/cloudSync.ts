@@ -313,6 +313,16 @@ function safeStr(val: unknown, maxLen: number, fallback = ''): string {
   return str.slice(0, maxLen);
 }
 
+function safeImageStr(val: unknown, maxLen: number, fallback = ''): string {
+  const str = typeof val === 'string' ? val.trim() : '';
+  if (!str) return fallback;
+  if (str.startsWith('data:image/') && str.length > maxLen) {
+    // Never slice mid-base64 (which corrupts images); fallback cleanly if oversized
+    return fallback;
+  }
+  return str.slice(0, maxLen);
+}
+
 function safeNonEmptyStr(val: unknown, maxLen: number, fallback: string): string {
   const trimmed = safeStr(val, maxLen).trim();
   return (trimmed || fallback).slice(0, maxLen);
@@ -335,7 +345,7 @@ function sanitizeProfileMap(p: Partial<ProfileData> | undefined) {
   return {
     name: safeStr(p?.name, 200, 'Sabbir Ahamed'),
     title: safeStr(p?.title, 300, 'Software Quality Assurance Engineer'),
-    avatar: safeStr(p?.avatar, 450000, '/sabbir_avatar.jpeg'),
+    avatar: safeImageStr(p?.avatar, 450000, '/sabbir_avatar.jpeg'),
     email: safeStr(p?.email, 200, 'sabbircse72@gmail.com'),
     phone: safeStr(p?.phone, 100, '+8801681387906'),
     location: safeStr(p?.location, 200, 'Dhaka, Bangladesh'),
@@ -360,6 +370,7 @@ function sanitizeVCardConfigMap(c: Partial<VisitingCardConfig> | undefined) {
   return {
     company: safeStr(c?.company, 200, 'Altersense Ltd'),
     companyBn: safeStr(c?.companyBn, 200, 'অল্টারসেন্স লিমিটেড'),
+    companyLogo: safeImageStr(c?.companyLogo, 95000, ''),
     department: safeStr(c?.department, 200, 'Manual & automation Test'),
     departmentBn: safeStr(c?.departmentBn, 200, 'ম্যানুয়াল ও অটোমেশন টেস্ট'),
     verifiedBadge: safeStr(c?.verifiedBadge, 64, 'SQA'),
@@ -388,14 +399,14 @@ function sanitizeVCardTeamList(
   if (!Array.isArray(team)) return [];
   let cumulativeAvatarBytes = 0;
   return team.slice(0, 50).map((m) => {
-    const rawAvatar = safeStr(m?.avatar, 75000, '/sabbir_avatar.jpeg');
+    const rawAvatar = safeImageStr(m?.avatar, 110000, '/sabbir_avatar.jpeg');
     let deduplicatedAvatar =
       rawAvatar.startsWith('data:image/') && mainProfileAvatar && rawAvatar === mainProfileAvatar
         ? '/sabbir_avatar.jpeg'
         : rawAvatar;
 
     if (deduplicatedAvatar.startsWith('data:image/')) {
-      if (cumulativeAvatarBytes + deduplicatedAvatar.length > 240000) {
+      if (cumulativeAvatarBytes + deduplicatedAvatar.length > 300000) {
         deduplicatedAvatar = '/sabbir_avatar.jpeg';
       } else {
         cumulativeAvatarBytes += deduplicatedAvatar.length;
@@ -501,7 +512,7 @@ function sanitizeProjectMutableFields(project: Project, orderIndex: number) {
     logs,
     tags: sanitizeStringArray(project.tags, 40, 100),
     link: safeStr(project.link, 2048),
-    image: safeStr(project.image, 750000),
+    image: safeImageStr(project.image, 750000, ''),
     updatedAtIso: safeNonEmptyStr(project.updatedAt, 64, new Date().toISOString()),
   };
 }
@@ -536,7 +547,7 @@ function sanitizeBlogMutableFields(blog: BlogPost, orderIndex: number) {
     category: safeNonEmptyStr(blog.category, 120, 'Software Testing'),
     description: safeStr(blog.description, 5000),
     content: safeStr(blog.content, 200000),
-    coverImage: safeStr(
+    coverImage: safeImageStr(
       blog.coverImage,
       550000,
       'https://images.unsplash.com/photo-1618401471353-b98afee0b2eb?auto=format&fit=crop&q=80&w=1200'

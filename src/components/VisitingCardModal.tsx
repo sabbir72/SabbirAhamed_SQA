@@ -41,7 +41,6 @@ import {
   isWebNfcSupported,
   writeVisitingCardToNfc,
   playNfcTapAudio,
-  getFormattedCardText,
   getEmailSignatureText,
   generateEmailSignatureHtml,
 } from '../utils/vcardGenerator';
@@ -145,6 +144,8 @@ export const VisitingCardModal: React.FC<VisitingCardModalProps> = ({ isOpen, on
     return list[0]?.id || 'sabbir-lead';
   });
   const [cardConfig, setCardConfig] = useState<VisitingCardConfig>(() => loadVisitingCardConfig());
+  const [logoImgError, setLogoImgError] = useState(false);
+  const [downloadingSignaturePng, setDownloadingSignaturePng] = useState(false);
   const [showVerificationModal, setShowVerificationModal] = useState(false);
   const [cardViewMode, setCardViewMode] = useState<'flip' | 'both'>('flip');
 
@@ -212,6 +213,10 @@ export const VisitingCardModal: React.FC<VisitingCardModalProps> = ({ isOpen, on
   const githubFullUrl = profile.github?.startsWith('http')
     ? profile.github
     : `https://${profile.github || 'github.com/sabbir72'}`;
+
+  useEffect(() => {
+    setLogoImgError(false);
+  }, [cardConfig.companyLogo]);
 
   useEffect(() => {
     if (isOpen) {
@@ -352,21 +357,6 @@ export const VisitingCardModal: React.FC<VisitingCardModalProps> = ({ isOpen, on
     handleCopyValue(cardUrl, 'link');
   };
 
-  const handleCopyAllInfo = () => {
-    const text = getFormattedCardText(
-      {
-        ...profile,
-        name: selectedMember.name,
-        title: selectedMember.role,
-        phone: rawPhone,
-        email: rawEmail,
-      },
-      cardUrl
-    );
-    navigator.clipboard.writeText(text);
-    triggerCopied('text');
-  };
-
   const handleCopySignature = async () => {
     const activeProfile: ProfileData = {
       ...profile,
@@ -376,7 +366,12 @@ export const VisitingCardModal: React.FC<VisitingCardModalProps> = ({ isOpen, on
       email: rawEmail,
     };
     const plainText = getEmailSignatureText(activeProfile, userCompany);
-    const html = generateEmailSignatureHtml(activeProfile, cardUrl, userCompany);
+    const html = generateEmailSignatureHtml(
+      activeProfile,
+      cardUrl,
+      userCompany,
+      cardConfig.companyLogo
+    );
 
     try {
       if (typeof ClipboardItem !== 'undefined' && navigator.clipboard?.write) {
@@ -403,9 +398,235 @@ export const VisitingCardModal: React.FC<VisitingCardModalProps> = ({ isOpen, on
       phone: rawPhone,
       email: rawEmail,
     };
-    const html = generateEmailSignatureHtml(activeProfile, cardUrl, userCompany);
+    const html = generateEmailSignatureHtml(
+      activeProfile,
+      cardUrl,
+      userCompany,
+      cardConfig.companyLogo
+    );
     navigator.clipboard.writeText(html);
     triggerCopied('signature-html');
+  };
+
+  const handleDownloadSignaturePng = async () => {
+    if (downloadingSignaturePng) return;
+    setDownloadingSignaturePng(true);
+
+    const loadLogoImage = (src: string): Promise<HTMLImageElement | null> =>
+      new Promise((resolve) => {
+        const cleanSrc = src.trim();
+        if (!cleanSrc) {
+          resolve(null);
+          return;
+        }
+        const img = new Image();
+        const isSameOriginOrData =
+          cleanSrc.startsWith('data:') ||
+          cleanSrc.startsWith('/') ||
+          (typeof window !== 'undefined' && cleanSrc.startsWith(window.location.origin));
+        if (!isSameOriginOrData) {
+          img.crossOrigin = 'anonymous';
+        }
+        img.onload = () => resolve(img);
+        img.onerror = () => resolve(null);
+        img.src =
+          cleanSrc.startsWith('/') && typeof window !== 'undefined'
+            ? `${window.location.origin}${cleanSrc}`
+            : cleanSrc;
+      });
+
+    try {
+      const hasLogo = Boolean(cardConfig.companyLogo && cardConfig.companyLogo.trim() && !logoImgError);
+      const loadedLogo = hasLogo ? await loadLogoImage(cardConfig.companyLogo!) : null;
+
+      const dpr = 2;
+      const paddingX = 28;
+      const paddingY = 24;
+      const logoBoxSize = 60;
+      const logoGap = 16;
+      const accentBarW = 3.5;
+      const accentGap = 15;
+
+      // Measure text lines accurately first so the card fits cleanly without clipping
+      const measureCanvas = document.createElement('canvas');
+      const mCtx = measureCanvas.getContext('2d');
+      let maxTextW = 420;
+      const roleLine = `${displayedTitle}  •  ${userCompany}`;
+      const contactLine = `${rawEmail}  |  ${rawPhone}  |  ${displayedLocation}`;
+      const linksLine = 'Portfolio  •  LinkedIn  •  GitHub';
+
+      if (mCtx) {
+        mCtx.font = '700 17px "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+        maxTextW = Math.max(maxTextW, mCtx.measureText(displayedName).width);
+        mCtx.font = '600 13px "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+        maxTextW = Math.max(maxTextW, mCtx.measureText(roleLine).width);
+        mCtx.font = '500 12px "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+        maxTextW = Math.max(maxTextW, mCtx.measureText(contactLine).width);
+        mCtx.font = '600 12px "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+        maxTextW = Math.max(maxTextW, mCtx.measureText(linksLine).width);
+      }
+
+      const logoSectionW = loadedLogo ? logoBoxSize + logoGap : 0;
+      const logicalW = Math.ceil(
+        Math.max(540, paddingX * 2 + logoSectionW + accentBarW + accentGap + maxTextW + 12)
+      );
+      const textBlockH = 92;
+      const logicalH = Math.ceil(paddingY * 2 + Math.max(textBlockH, loadedLogo ? logoBoxSize : textBlockH));
+
+      const canvas = document.createElement('canvas');
+      canvas.width = logicalW * dpr;
+      canvas.height = logicalH * dpr;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+
+      ctx.scale(dpr, dpr);
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+
+      const isLight = signatureLightPreview;
+
+      const paintSignatureContent = (targetCtx: CanvasRenderingContext2D, logoImg: HTMLImageElement | null) => {
+        const lW = Math.ceil(
+          Math.max(
+            540,
+            paddingX * 2 + (logoImg ? logoBoxSize + logoGap : 0) + accentBarW + accentGap + maxTextW + 12
+          )
+        );
+        const lH = Math.ceil(paddingY * 2 + Math.max(textBlockH, logoImg ? logoBoxSize : textBlockH));
+        const cTop = (lH - textBlockH) / 2;
+        let curX = paddingX;
+
+        targetCtx.fillStyle = isLight ? '#FFFFFF' : '#070B14';
+        drawRoundedRect(targetCtx, 0.5, 0.5, lW - 1, lH - 1, 14);
+        targetCtx.fill();
+        targetCtx.strokeStyle = isLight ? '#E2E8F0' : 'rgba(255, 255, 255, 0.14)';
+        targetCtx.lineWidth = 1;
+        targetCtx.stroke();
+
+        if (logoImg) {
+          const logoY = (lH - logoBoxSize) / 2;
+          targetCtx.fillStyle = '#FFFFFF';
+          drawRoundedRect(targetCtx, curX, logoY, logoBoxSize, logoBoxSize, 12);
+          targetCtx.fill();
+          targetCtx.strokeStyle = isLight ? '#E2E8F0' : 'rgba(56, 189, 248, 0.35)';
+          targetCtx.lineWidth = 1;
+          targetCtx.stroke();
+
+          const innerPad = 6;
+          const maxDraw = logoBoxSize - innerPad * 2;
+          const aspect =
+            logoImg.naturalWidth > 0 && logoImg.naturalHeight > 0
+              ? logoImg.naturalWidth / logoImg.naturalHeight
+              : 1;
+          let drawW = maxDraw;
+          let drawH = maxDraw;
+          if (aspect > 1) {
+            drawH = maxDraw / aspect;
+          } else if (aspect < 1) {
+            drawW = maxDraw * aspect;
+          }
+          const imgX = curX + (logoBoxSize - drawW) / 2;
+          const imgY = logoY + (logoBoxSize - drawH) / 2;
+          targetCtx.drawImage(logoImg, imgX, imgY, drawW, drawH);
+
+          curX += logoBoxSize + logoGap;
+        }
+
+        // Sky-blue vertical accent bar
+        targetCtx.fillStyle = '#0EA5E9';
+        drawRoundedRect(targetCtx, curX, cTop + 2, accentBarW, textBlockH - 4, 2);
+        targetCtx.fill();
+
+        const txtX = curX + accentBarW + accentGap;
+
+        // Line 1: Name
+        targetCtx.fillStyle = isLight ? '#0F172A' : '#FFFFFF';
+        targetCtx.font =
+          '700 17px "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+        targetCtx.fillText(displayedName, txtX, cTop + 17);
+
+        // Line 2: Title • Company
+        targetCtx.font = '600 13px "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+        targetCtx.fillStyle = isLight ? '#0284C7' : '#38BDF8';
+        targetCtx.fillText(displayedTitle, txtX, cTop + 37);
+        let l2X = txtX + targetCtx.measureText(displayedTitle).width;
+        targetCtx.fillStyle = isLight ? '#CBD5E1' : '#475569';
+        targetCtx.fillText(' • ', l2X, cTop + 37);
+        l2X += targetCtx.measureText(' • ').width;
+        targetCtx.fillStyle = isLight ? '#334155' : '#CBD5E1';
+        targetCtx.fillText(userCompany, l2X, cTop + 37);
+
+        // Line 3: Email | Phone | Location
+        targetCtx.font = '500 12px "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+        let l3X = txtX;
+        const l3Y = cTop + 62;
+        const contactSegments = [rawEmail, rawPhone, displayedLocation];
+        contactSegments.forEach((seg, idx) => {
+          targetCtx.fillStyle = isLight ? '#475569' : '#CBD5E1';
+          targetCtx.fillText(seg, l3X, l3Y);
+          l3X += targetCtx.measureText(seg).width;
+          if (idx < contactSegments.length - 1) {
+            targetCtx.fillStyle = isLight ? '#CBD5E1' : '#475569';
+            targetCtx.fillText('  |  ', l3X, l3Y);
+            l3X += targetCtx.measureText('  |  ').width;
+          }
+        });
+
+        // Line 4: Links
+        targetCtx.font = '600 12px "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+        let l4X = txtX;
+        const l4Y = cTop + 85;
+        const linkLabels = ['Portfolio', 'LinkedIn', 'GitHub'];
+        linkLabels.forEach((label, idx) => {
+          targetCtx.fillStyle = isLight ? '#0284C7' : '#38BDF8';
+          targetCtx.fillText(label, l4X, l4Y);
+          l4X += targetCtx.measureText(label).width;
+          if (idx < linkLabels.length - 1) {
+            targetCtx.fillStyle = isLight ? '#94A3B8' : '#64748B';
+            targetCtx.fillText('  •  ', l4X, l4Y);
+            l4X += targetCtx.measureText('  •  ').width;
+          }
+        });
+      };
+
+      paintSignatureContent(ctx, loadedLogo);
+
+      let dataUrl = '';
+      try {
+        dataUrl = canvas.toDataURL('image/png');
+      } catch {
+        // Fallback if an external third-party image URL taints canvas CORS
+        const cleanW = Math.ceil(
+          Math.max(540, paddingX * 2 + accentBarW + accentGap + maxTextW + 12)
+        );
+        const cleanH = Math.ceil(paddingY * 2 + textBlockH);
+        const fallbackCanvas = document.createElement('canvas');
+        fallbackCanvas.width = cleanW * dpr;
+        fallbackCanvas.height = cleanH * dpr;
+        const fCtx = fallbackCanvas.getContext('2d');
+        if (fCtx) {
+          fCtx.scale(dpr, dpr);
+          fCtx.imageSmoothingEnabled = true;
+          fCtx.imageSmoothingQuality = 'high';
+          paintSignatureContent(fCtx, null);
+        }
+        dataUrl = fallbackCanvas.toDataURL('image/png');
+      }
+
+      if (dataUrl) {
+        const a = document.createElement('a');
+        a.href = dataUrl;
+        a.download = `${selectedMember.name.replace(/\s+/g, '_')}_Email_Signature.png`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        triggerCopied('signature-png');
+      }
+    } catch (err) {
+      console.error('Failed to export signature PNG:', err);
+    } finally {
+      setDownloadingSignaturePng(false);
+    }
   };
 
   const handleDownloadQrPng = () => {
@@ -1639,55 +1860,7 @@ export const VisitingCardModal: React.FC<VisitingCardModalProps> = ({ isOpen, on
           {activeTab === 'vcard' && (
             <div className="space-y-5 animate-fadeIn">
               {/* Smart Executive Contact Profile */}
-              <div className="p-5 sm:p-6 rounded-2xl bg-[#0B101D] border border-white/10 space-y-5">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-white/10">
-                  <div className="flex items-center space-x-3.5">
-                    <img
-                      src={selectedMember.avatar || '/sabbir_avatar.jpeg'}
-                      alt={displayedName}
-                      className="w-14 h-14 rounded-2xl object-cover border border-white/20 shadow-lg shrink-0"
-                      onError={(e) => {
-                        (e.target as HTMLElement).style.display = 'none';
-                      }}
-                    />
-                    <div>
-                      <h4 className="font-display font-bold text-white text-lg tracking-tight">
-                        {displayedName}
-                      </h4>
-                      <p className="text-xs font-semibold text-[var(--color-accent)]">
-                        {displayedTitle}
-                      </p>
-                      <p className="text-xs text-slate-400 mt-0.5">
-                        {userCompany} • {displayedDepartment}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2 self-start sm:self-auto">
-                    <button
-                      type="button"
-                      onClick={handleDownloadVcf}
-                      className="px-4 py-2.5 rounded-xl bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-black font-semibold text-xs flex items-center space-x-1.5 transition-all cursor-pointer shadow-md"
-                    >
-                      <UserPlus className="w-4 h-4" />
-                      <span>{copied === 'vcf' ? 'Saved' : 'Save Contact'}</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={handleCopyAllInfo}
-                      className="px-3.5 py-2.5 rounded-xl bg-white/[0.06] hover:bg-white/10 text-white font-medium text-xs flex items-center space-x-1.5 transition-colors border border-white/10 cursor-pointer"
-                    >
-                      {copied === 'text' ? (
-                        <Check className="w-3.5 h-3.5 text-emerald-400" />
-                      ) : (
-                        <Copy className="w-3.5 h-3.5" />
-                      )}
-                      <span>{copied === 'text' ? 'Copied' : 'Copy Details'}</span>
-                    </button>
-                  </div>
-                </div>
-
+              <div className="p-5 sm:p-6 rounded-2xl bg-[#0B101D] border border-white/10">
                 {/* Smart Interactive Contact Rows */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
                   {/* Phone */}
@@ -1836,11 +2009,11 @@ export const VisitingCardModal: React.FC<VisitingCardModalProps> = ({ isOpen, on
                       Email Signature
                     </h4>
                     <p className="text-xs text-slate-400">
-                      Ready to paste directly into Gmail, Outlook, or Apple Mail.
+                      Ready to paste directly into Gmail, Outlook, or Apple Mail with your company logo.
                     </p>
                   </div>
 
-                  <div className="flex items-center gap-2 self-start sm:self-auto">
+                  <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
                     <button
                       type="button"
                       onClick={() => setSignatureLightPreview((prev) => !prev)}
@@ -1856,8 +2029,29 @@ export const VisitingCardModal: React.FC<VisitingCardModalProps> = ({ isOpen, on
 
                     <button
                       type="button"
+                      onClick={handleDownloadSignaturePng}
+                      disabled={downloadingSignaturePng}
+                      className="px-3 py-2 rounded-xl bg-white/[0.05] hover:bg-white/10 text-slate-200 font-medium text-xs flex items-center space-x-1.5 border border-white/10 transition-colors cursor-pointer whitespace-nowrap disabled:opacity-50"
+                      title="Download Email Signature as PNG Image"
+                    >
+                      {copied === 'signature-png' ? (
+                        <Check className="w-3.5 h-3.5 text-emerald-400" />
+                      ) : (
+                        <Download className="w-3.5 h-3.5 text-emerald-400" />
+                      )}
+                      <span>
+                        {copied === 'signature-png'
+                          ? 'Image Saved'
+                          : downloadingSignaturePng
+                          ? 'Saving...'
+                          : 'Download Image'}
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
                       onClick={handleCopySignatureHtml}
-                      className="px-3 py-2 rounded-xl bg-white/[0.05] hover:bg-white/10 text-slate-200 font-medium text-xs flex items-center space-x-1.5 border border-white/10 transition-colors cursor-pointer"
+                      className="px-3 py-2 rounded-xl bg-white/[0.05] hover:bg-white/10 text-slate-200 font-medium text-xs flex items-center space-x-1.5 border border-white/10 transition-colors cursor-pointer whitespace-nowrap"
                       title="Copy raw HTML code"
                     >
                       {copied === 'signature-html' ? (
@@ -1871,7 +2065,7 @@ export const VisitingCardModal: React.FC<VisitingCardModalProps> = ({ isOpen, on
                     <button
                       type="button"
                       onClick={handleCopySignature}
-                      className="px-4 py-2 rounded-xl bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-black font-semibold text-xs flex items-center space-x-1.5 transition-colors cursor-pointer shadow-md"
+                      className="px-4 py-2 rounded-xl bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-black font-semibold text-xs flex items-center space-x-1.5 transition-colors cursor-pointer shadow-md whitespace-nowrap"
                     >
                       {copied === 'signature' ? (
                         <Check className="w-4 h-4 text-black" />
@@ -1892,14 +2086,20 @@ export const VisitingCardModal: React.FC<VisitingCardModalProps> = ({ isOpen, on
                   }`}
                 >
                   <div className="flex items-start gap-4">
-                    <img
-                      src={selectedMember.avatar || '/sabbir_avatar.jpeg'}
-                      alt={displayedName}
-                      className="w-13 h-13 rounded-xl object-cover shrink-0 shadow-sm border border-sky-500/30 hidden sm:block"
-                      onError={(e) => {
-                        (e.target as HTMLElement).style.display = 'none';
-                      }}
-                    />
+                    {cardConfig.companyLogo && cardConfig.companyLogo.trim() && !logoImgError && (
+                      <div
+                        className={`w-14 h-14 rounded-xl p-1.5 flex items-center justify-center shrink-0 shadow-sm border bg-white ${
+                          signatureLightPreview ? 'border-slate-200' : 'border-sky-500/30'
+                        }`}
+                      >
+                        <img
+                          src={cardConfig.companyLogo}
+                          alt={`${userCompany} Logo`}
+                          className="w-full h-full object-contain rounded-lg"
+                          onError={() => setLogoImgError(true)}
+                        />
+                      </div>
+                    )}
 
                     <div className="border-l-[3px] border-sky-500 pl-3.5 space-y-1.5 min-w-0">
                       <div>
