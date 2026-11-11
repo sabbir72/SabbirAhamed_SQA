@@ -748,9 +748,9 @@ Subject: Application for ${targetJobTitle} Position
 
 Dear Hiring Manager,
 
-I am writing to express my strong enthusiasm for the ${targetJobTitle} position at ${targetCompany}. With over 2 years of hands-on experience in Software Quality Assurance at Altersense Ltd, I have developed deep expertise in Manual Testing, REST API Verification, and Web UI Automation using Playwright (Python) and Selenium.
+I am writing to express my strong enthusiasm for the ${targetJobTitle} position at ${targetCompany}. With hands-on Automation & Quality Engineering experience across Courier Management and ERP systems at CarryBee and Altersense Ltd, I have developed deep expertise in Web & Mobile UI Automation, Backend Microservices API Testing, and CI/CD Quality Pipelines.
 
-In my current role as Jr. SQA Engineer, I actively participate in Agile sprints, write comprehensive test cases, perform thorough regression and exploratory testing across complex ERP commercial modules, and report actionable defects in Jira. Additionally, I lead API test automation using Postman & Newman, verifying endpoint payloads and data integrity in SQL databases.
+In my current Mid-Level Automation & Quality Engineering role at CarryBee, I design and maintain end-to-end UI, API, and integration regression suites across web and mobile platforms, integrate AI-assisted and agentic testing workflows into CI/CD pipelines, and collaborate closely with developers on root-cause analysis—building on my prior ERP & API testing experience at Altersense Ltd.
 
 Key strengths I bring to ${targetCompany}:
 • Proven track record in designing 150+ test cases and catching critical edge-case defects before production deployment.

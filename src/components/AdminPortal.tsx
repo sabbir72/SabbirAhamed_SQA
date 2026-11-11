@@ -720,7 +720,7 @@ export default function AdminPortal({
       intro = `I am thrilled to submit my application for the ${jTitle} role at ${cName}! Having tracked ${cName}'s commitment to quality software, I am genuinely excited about the prospect of bringing my Playwright automation, API testing, and defect prevention skills to your engineering team.`;
     }
 
-    const techFocus = `Throughout my engineering journey, I have built complete end-to-end testing pipelines using Playwright, pytest, and GitHub Actions CI/CD, authored over 150+ comprehensive test scenarios, and executed exploratory testing that prevented critical production vulnerabilities. In my recent role at Altersense Limited, I spearheaded ERPNext quality audits, verified complex backend payloads, and worked in close collaboration with developers to slash regression cycle times by 40%.`;
+    const techFocus = `Throughout my engineering journey, I have built complete end-to-end UI, API, and mobile testing pipelines using Playwright, pytest, Postman, and CI/CD integration, authored over 150+ comprehensive test scenarios, and pioneered AI-assisted testing workflows. In my roles at CarryBee (Courier Management & ERP systems) and Altersense Limited, I spearheaded end-to-end quality audits, verified backend microservices & payloads, and collaborated closely with developers to cut regression cycle times.`;
 
     const projectHighlight = `In my live SQA Portfolio (https://github.com/sabbir72), I maintain documented testing repositories with source code available on GitHub. Key showcases include an automated eCommerce E2E Playwright Python Suite, comprehensive REST API collections with automated assertions, and a live bug reporting system.`;
 
@@ -4167,7 +4167,7 @@ ${profile.title || PERSONAL_INFO.title}`;
                       value={vcardConfig.company}
                       onChange={(e) => setVcardConfig({ ...vcardConfig, company: e.target.value })}
                       required
-                      placeholder="Altersense Ltd"
+                      placeholder="CarryBee"
                       className="w-full px-3.5 py-2.5 rounded-xl bg-white/5 border border-white/10 text-xs font-mono text-white focus:border-emerald-500 focus:outline-none"
                     />
                   </div>
@@ -4179,7 +4179,7 @@ ${profile.title || PERSONAL_INFO.title}`;
                       type="text"
                       value={vcardConfig.companyBn}
                       onChange={(e) => setVcardConfig({ ...vcardConfig, companyBn: e.target.value })}
-                      placeholder="অল্টারসেন্স লিমিটেড"
+                      placeholder="ক্যারিবি"
                       className="w-full px-3.5 py-2.5 rounded-xl bg-white/5 border border-white/10 text-xs font-mono text-white focus:border-emerald-500 focus:outline-none"
                     />
                   </div>
@@ -5634,7 +5634,7 @@ function ExperienceModal({ isOpen, initialExperience, onClose, onSave }: Experie
                 type="text"
                 value={company}
                 onChange={(e) => setCompany(e.target.value)}
-                placeholder="e.g. Altersense Ltd"
+                placeholder="e.g. CarryBee"
                 required
                 className="w-full px-4 py-2.5 rounded-xl bg-white/[0.05] border border-white/15 text-sm font-mono text-white focus:border-blue-500 focus:outline-none"
               />

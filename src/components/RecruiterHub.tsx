@@ -163,7 +163,7 @@ Whether it is catching a subtle edge-case crash or automating a 50-step regressi
     id: 'sec-18',
     title: '18. Long Bio (250 words)',
     category: 'Bios & Summaries',
-    content: 'Sabbir Ahamed is a Software Quality Assurance (SQA) Engineer who believes that world-class software is built on a foundation of unyielding quality and rigorous validation. Holding a B.Sc. in Computer Science & Engineering from Daffodil International University, Sabbir brings a strong technical foundation combined with over 2 years of hands-on experience in manual functional testing, API testing, performance benchmarks, and automated UI regression testing.\n\nThroughout his career at Altersense Ltd and Quantigo AI, Sabbir has played a key role in testing complex ERP software modules—including Inventory, Sales, HR, Accounts, and Manufacturing—as well as leading machine learning data quality control initiatives. He is adept at dissecting complex software specifications to design exhaustive test cases, creating automated REST API collections with Postman and Newman CLI, and building maintainable UI automation scripts using Playwright (Python) and Cypress.\n\nSabbir is proficient in database queries with SQL for backend data integrity checks, defect management using Jira, and continuous integration via GitHub Actions with Allure reporting. An active participant in Agile/Scrum ceremonies, he excels at bridging the communication gap between product requirements and developer execution. Driven by continuous learning, Sabbir is committed to helping software organizations eliminate bugs, elevate user satisfaction, and accelerate continuous deployment cycles through modern, scalable QA practices.'
+    content: 'Sabbir Ahamed is a Mid-Level Automation & Quality Engineer who believes that world-class software is built on a foundation of unyielding quality and rigorous automation. Holding a B.Sc. in Computer Science & Engineering from Daffodil International University, Sabbir currently drives QA automation across Courier Management & ERP systems at CarryBee, following impactful roles at Altersense Ltd and Quantigo AI.\n\nAt CarryBee, Sabbir designs end-to-end UI, API, and integration test suites across web and mobile platforms, automates backend microservice contract & data-integrity checks, pilots AI-assisted and agentic testing workflows, and integrates automated regression into CI/CD pipelines. Previously at Altersense Ltd and Quantigo AI, he tested multi-module enterprise ERP systems and led ML data quality pipelines.\n\nProficient in Playwright (Python), Cypress, Postman, Newman CLI, SQL, Jira, and GitHub Actions with Allure reporting, Sabbir excels at bridging product requirements, developer root-cause analysis, and exploratory testing to accelerate zero-defect software delivery.'
   },
   {
     id: 'sec-19',
@@ -215,7 +215,7 @@ Whether it is catching a subtle edge-case crash or automating a 50-step regressi
       '2. SQA Engineer | Specializing in API Test Automation, UI Regression & ERP System Testing',
       '3. Junior SQA Engineer | B.Sc. in CSE | Playwright, Cypress, Postman, JMeter & SQL',
       '4. Quality Assurance Engineer | STLC & SDLC | API Automation (Newman) & Defect Management',
-      '5. SQA Engineer @ Altersense | Functional Testing, REST API Testing & Bug Tracking in Jira',
+      '5. Mid-Level Automation & Quality Engineer @ CarryBee | Courier & ERP Systems, UI/API & AI Testing',
       '6. Software QA Engineer | Automated UI Testing (Playwright Python) & Backend Verification (SQL)',
       '7. Passionate SQA Engineer | Manual Testing, Regression Suites & Agile Scrum Advocate',
       '8. SQA Engineer | Elevating Web Application Reliability via Automated & Exploratory Sweeps',
@@ -245,7 +245,7 @@ Whether it is catching a subtle edge-case crash or automating a 50-step regressi
       '5. SQA Engineer | Breaking code to make it unbreakable 🛡️',
       '6. Automated API & UI Test Suites | Playwright, Cypress, Postman & JMeter 🛠️',
       '7. Junior SQA Engineer | Manual Testing, Bug Reporting & SQL Database Queries 🔍',
-      '8. SQA Engineer @ Altersense | Test Case Design, STLC & Agile Testing 📂',
+      '8. Automation & Quality Engineer @ CarryBee | Web, Mobile, API & CI/CD Testing 📂',
       '9. Crafting maintainable test automation frameworks with Playwright & Postman 💻',
       '10. Software Quality Assurance | Turning specs into bulletproof test suites 🔥'
     ]
@@ -300,13 +300,13 @@ B.Sc. in Computer Science & Engineering
     id: 'sec-30',
     title: '30. Interview Self Introduction (English)',
     category: 'Interviews',
-    content: '“Hello! My name is Sabbir Ahamed, and I am a Software Quality Assurance Engineer with a B.Sc. in Computer Science & Engineering from Daffodil International University. I have over 2 years of professional experience in software testing, currently working as a Junior SQA Engineer at Altersense Ltd.\n\nIn my current role, I perform manual and API testing on enterprise ERP software covering modules like Sales, Inventory, HR, and Accounts. I author test cases, track defects in Jira, and verify backend data accuracy using SQL. On the automation front, I build API test scripts with Postman and Newman, as well as UI automation scripts using Playwright and Cypress.\n\nI am passionate about quality assurance because I enjoy problem-solving and ensuring that software operates seamlessly for end-users. I am excited about this opportunity because I want to bring my technical skills and QA rigor to your team while continuing to grow as an SQA professional.”'
+    content: '“Hello! My name is Sabbir Ahamed, and I am a Mid-Level Automation & Quality Engineer with a B.Sc. in Computer Science & Engineering from Daffodil International University. Currently at CarryBee (Baridhara Diplomatic Zone, Dhaka), I oversee automation and quality engineering across our Courier Management System and ERP platform—building on my prior SQA experience at Altersense Ltd.\n\nIn my current role, I design and maintain UI, API, and integration test suites across web and mobile platforms, automate backend microservice contract and data-integrity checks, pilot AI-assisted and agentic testing workflows, and integrate regression suites into CI/CD pipelines while collaborating closely with developers on root-cause analysis.\n\nI am passionate about combining automation engineering with strategic exploratory testing so engineering teams ship reliable products with confidence.”'
   },
   {
     id: 'sec-31',
     title: '31. Interview Self Introduction (Bangla)',
     category: 'Interviews',
-    content: '“আসসালামু আলাইকুম। আমার নাম সাব্বির আহমেদ। আমি ড্যাফোডিল ইন্টারন্যাশনাল ইউনিভার্সিটি থেকে কম্পিউটার সায়েন্স এন্ড ইঞ্জিনিয়ারিং (CSE)-এ বি.এসসি সম্পন্ন করেছি এবং বর্তমানে অল্টারসেন্স লিমিটেডে জুনিয়র সফটওয়্যার কোয়ালিটি অ্যাসিওরেন্স (SQA) ইঞ্জিনিয়ার হিসেবে কাজ করছি।\n\nআমার প্রায় ২ বছরের অভিজ্ঞতা রয়েছে ম্যানুয়াল এবং অটোমেশন টেস্টিং-এ। আমি এন্টারপ্রাইজ ERP সফটওয়্যার যেমন ইনভেন্টরি, সেলস, অ্যাকাউন্টস ও এইচআর মডিউলের ম্যানুয়াল ফাংশনাল টেস্টিং এবং পোস্টম্যান ও নিউম্যান দিয়ে রেস্ট এপিআই টেস্টিং করি। এর পাশাপাশি প্লেরাইট ও সাইপ্রেস ব্যবহার করে ইউআই অটোমেশন স্ক্রিপ্ট তৈরি করি এবং এসকিউএল দিয়ে ডাটাবেজ ভ্যালিডেশন করে থাকি। জিরা টুলস ব্যবহার করে বাগ রিপোর্ট ও ট্র্যাকিং করা আমার প্রতিদিনের কাজের অংশ।\n\nআমি সবসময় চেষ্টা করি সফটওয়্যারের কোয়ালিটি নিশ্চিত করতে এবং কোনো বাগ যেন প্রোডাকশনে না যায়। আপনাদের টিমে আমার কোয়ালিটি অ্যাসুরেন্স স্কিল যুক্ত করে অবদান রাখার জন্য আমি অত্যন্ত আগ্রহী।”'
+    content: '“আসসালামু আলাইকুম। আমার নাম সাব্বির আহমেদ। আমি ড্যাফোডিল ইন্টারন্যাশনাল ইউনিভার্সিটি থেকে কম্পিউটার সায়েন্স এন্ড ইঞ্জিনিয়ারিং (CSE)-এ বি.এসসি সম্পন্ন করেছি এবং বর্তমানে CarryBee-তে Mid-Level Automation & Quality Engineering হিসেবে কাজ করছি (এর আগে আমি Altersense Ltd-এ Jr. SQA Engineer ছিলাম)।\n\nবর্তমানে আমি Courier Management System ও ERP সিস্টেমের ওয়েব ও মোবাইল প্ল্যাটফর্মে UI, API এবং ইন্টিগ্রেশন অটোমেশন স্যুট তৈরি ও মেইনটেইন করি। পাশাপাশি মাইক্রোসার্ভিসেস API কন্ট্র্যাক্ট চেক, AI-assisted ও agentic টেস্টিং ওয়ার্কফ্লো এবং CI/CD পাইপলাইন ইন্টিগ্রেশন নিয়ে কাজ করছি।\n\nসফটওয়্যারের কোয়ালিটি নিশ্চিত করতে অটোমেশন ও এক্সপ্লোরেটরি টেস্টিং-এর সমন্বয় করে ডেভেলপারদের সাথে রুট-কজ অ্যানালাইসিসে কাজ করাই আমার মূল লক্ষ্য।”'
   },
   {
     id: 'sec-32',

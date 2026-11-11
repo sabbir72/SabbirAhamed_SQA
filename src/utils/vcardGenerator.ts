@@ -46,17 +46,17 @@ export function buildVCardString(profile: ProfileData, portfolioUrl?: string): s
     `REV:${now}`,
     `N:${lastName};${firstName};;;`,
     `FN:${name}`,
-    `ORG:Altersense Ltd;Manual & automation Test`,
+    `ORG:CarryBee;Manual & automation Test`,
     `TITLE:${title}`,
-    `ROLE:Software Quality Assurance Engineer`,
+    `ROLE:Mid-Level Automation & Quality Engineering`,
     `TEL;TYPE=CELL,VOICE,PREF:${cleanPhone}`,
     `EMAIL;TYPE=INTERNET,PREF:${email}`,
     `URL;TYPE=WORK:${url}`,
     `URL;TYPE=LinkedIn:${linkedin}`,
     `URL;TYPE=GitHub:${github}`,
-    `ADR;TYPE=WORK,POSTAL,PARCEL:;;Tongi East;Gazipur;Dhaka;1710;Bangladesh`,
+    `ADR;TYPE=WORK,POSTAL,PARCEL:;;Baridhara Diplomatic Zone;;Dhaka;;Bangladesh`,
     `LABEL;TYPE=WORK,POSTAL,PARCEL:${location}`,
-    `NOTE:Altersense Ltd | SQA Engineer with 2+ years experience in manual and automation testing (Selenium, Playwright, Cypress), Postman API testing, and defect lifecycle management.`,
+    `NOTE:CarryBee | Mid-Level Automation & Quality Engineering covering Courier Management & ERP systems across UI, API, Mobile, AI-assisted testing & CI/CD.`,
     'CATEGORIES:SQA Engineer,Software Tester,Manual and Automation,Tech Contact',
     'END:VCARD'
   ];
@@ -185,7 +185,7 @@ export function getFormattedCardText(profile: ProfileData, cardUrl: string): str
 
   return [
     `${profile.name}`,
-    `${profile.title} — Altersense Ltd`,
+    `${profile.title} — CarryBee`,
     `Phone / WhatsApp: ${profile.phone}`,
     `Email: ${profile.email}`,
     `Location: ${profile.location}`,
@@ -273,7 +273,7 @@ export function getGoogleCalendarMeetingUrl(profile: ProfileData, cardUrl: strin
 /**
  * Executive Plain-Text Email Signature
  */
-export function getEmailSignatureText(profile: ProfileData, company = 'Altersense Ltd'): string {
+export function getEmailSignatureText(profile: ProfileData, company = 'CarryBee'): string {
   const name = profile.name || 'Sabbir Ahamed';
   const title = profile.title || 'Software Quality Assurance Engineer';
   const email = profile.email || 'sabbircse72@gmail.com';
@@ -318,12 +318,12 @@ export function getCompanyMonogram(companyName: string): string {
 export function generateEmailSignatureHtml(
   profile: ProfileData,
   cardUrl?: string,
-  company = 'Altersense Ltd',
+  company = 'CarryBee',
   companyLogo?: string
 ): string {
   const name = escapeSignatureHtml(profile.name || 'Sabbir Ahamed');
   const title = escapeSignatureHtml(profile.title || 'Software Quality Assurance Engineer');
-  const safeCompany = escapeSignatureHtml(company || 'Altersense Ltd');
+  const safeCompany = escapeSignatureHtml(company || 'CarryBee');
   const email = escapeSignatureHtml(profile.email || 'sabbircse72@gmail.com');
   const phone = escapeSignatureHtml(profile.phone || '+8801681387906');
   const location = escapeSignatureHtml(profile.location || 'Dhaka, Bangladesh');

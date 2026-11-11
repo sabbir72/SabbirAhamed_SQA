@@ -46,10 +46,11 @@ export const SKILL_CATEGORIES: Skill[] = [
   {
     category: 'Automation Testing',
     items: [
-      'Cypress (Basic)',
-      'Playwright (Basic)',
+      'Playwright (Python / TS)',
+      'Cypress & Web E2E',
+      'Mobile Test Automation',
+      'AI-Assisted & Agentic QA',
       'Selenium WebDriver',
-      'TestNG',
       'Page Object Model (POM)',
       'Allure Reporting'
     ]
@@ -61,7 +62,7 @@ export const SKILL_CATEGORIES: Skill[] = [
       'Insomnia',
       'Newman CLI',
       'API Test Automation',
-      'Dynamic Assertions'
+      'Contract & Integrity Checks'
     ]
   },
   {
@@ -89,8 +90,8 @@ export const SKILL_CATEGORIES: Skill[] = [
       'STLC (Software Testing Life Cycle)',
       'SDLC (Software Development Life Cycle)',
       'Agile / Scrum Ceremonies',
-      'ERP Systems',
-      'SaaS & Fintech Manual Testing'
+      'Courier Management & ERP Systems',
+      'Backend Microservices QA'
     ]
   }
 ];
@@ -100,10 +101,29 @@ export const SKILL_CATEGORIES: Skill[] = [
  */
 export const WORK_EXPERIENCE: Experience[] = [
   {
+    id: 'exp-carrybee',
+    role: 'Mid-Level Automation & Quality Engineering',
+    company: 'CarryBee',
+    period: '11/2026 - Present',
+    location: 'Baridhara Diplomatic Zone, Dhaka, Bangladesh',
+    highlights: [
+      '>> System Coverage: Courier Management System & ERP System <<',
+      'Design, write, and maintain automated test suites (UI, API, and integration) across web and mobile platforms.',
+      'Build and maintain end-to-end regression coverage for critical business workflows across Courier and ERP systems.',
+      'Develop and maintain API test automation for backend microservices, including contract and data-integrity checks.',
+      'Pilot and integrate AI-assisted testing tools for test case generation, self-healing locators, visual regression, and log/anomaly analysis.',
+      'Explore agentic testing workflows where autonomous agents generate, execute, and triage test scenarios.',
+      'Integrate automated tests into CI/CD pipelines; monitor, triage, and report on test health and flakiness.',
+      'Write clear bug reports with reproducible steps and collaborate with developers on root-cause analysis.',
+      'Contribute to test strategy, coverage planning, and QA process improvements.',
+      'Perform exploratory and manual testing where automation is not yet cost-effective.'
+    ]
+  },
+  {
     id: 'exp-1',
     role: 'Jr. SQA Engineer',
     company: 'Altersense Ltd',
-    period: '03/2025 - Present',
+    period: '03/2025 - 10/2026',
     location: 'Tejgaon, Dhaka, Bangladesh',
     highlights: [
       'Performing manual testing on ERP-based software including Inventory, Sales, Purchase, HR, Accounts, and Manufacturing commercial modules.',

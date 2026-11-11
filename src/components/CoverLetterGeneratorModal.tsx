@@ -166,12 +166,12 @@ export default function CoverLetterGeneratorModal({
     // Greeting & Intro Paragraph
     let intro = '';
     if (tne === 'formal') {
-      intro = `I am submitting this letter to formally express my strong interest in the ${jTitle} position at ${cName}. With over two years of dedicated experience in Software Quality Assurance at Altersense Ltd, I have developed extensive competence in end-to-end testing, REST API validation, and automated test scripting.`;
+      intro = `I am submitting this letter to formally express my strong interest in the ${jTitle} position at ${cName}. With dedicated Automation & Quality Engineering experience across Courier Management and ERP platforms at CarryBee and Altersense Ltd, I have developed extensive competence in UI/API/mobile automation, microservices validation, and CI/CD test pipelines.`;
     } else if (tne === 'enthusiastic') {
-      intro = `I was thrilled to learn about the ${jTitle} opportunity at ${cName}! As an SQA Engineer with a proven track record of shipping reliable, bug-free applications at Altersense Ltd, I am inspired by ${cName}'s technical vision and eager to bring my quality assurance testing toolkit to your team.`;
+      intro = `I was thrilled to learn about the ${jTitle} opportunity at ${cName}! As a Mid-Level Automation & Quality Engineer with a proven track record of shipping reliable Courier and ERP platforms at CarryBee and Altersense Ltd, I am inspired by ${cName}'s technical vision and eager to bring my QA automation toolkit to your team.`;
     } else {
       // Professional (Default)
-      intro = `I am writing to express my strong enthusiasm for the ${jTitle} position at ${cName}. With over 2 years of hands-on Software Quality Assurance experience at Altersense Ltd, I bring deep expertise across manual test planning, REST API verification, and UI automation using Playwright (Python).`;
+      intro = `I am writing to express my strong enthusiasm for the ${jTitle} position at ${cName}. With hands-on Automation & Quality Engineering experience across Courier Management and ERP systems at CarryBee and Altersense Ltd, I bring deep expertise across end-to-end UI/mobile automation, backend microservices API testing, and CI/CD quality integration.`;
     }
 
     // Technical Focus Paragraph based on SQA Role Category
@@ -183,7 +183,7 @@ export default function CoverLetterGeneratorModal({
     } else if (roleCat === 'manual') {
       techFocus = `Throughout my software quality career, I strictly follow SDLC and STLC methodologies. I excel at converting complex functional requirements into 150+ granular test cases, executing smoke, functional, and exploratory testing across ERP and web applications, and reporting detailed, reproducible defects in Jira.`;
     } else {
-      techFocus = `My testing approach bridges rigorous manual verification with modern automation. At Altersense Ltd, I manage the complete testing life cycle—writing detailed test cases, performing regression testing, validating REST API endpoints with Postman, and developing automated web test scripts in Playwright with Python.`;
+      techFocus = `My testing approach bridges rigorous manual verification with modern AI-assisted and agentic automation. Currently at CarryBee (and previously at Altersense Ltd), I design end-to-end UI, API, and mobile regression suites across Courier Management and ERP systems, integrate automated runs into CI/CD pipelines, and collaborate closely with developers on root-cause analysis.`;
     }
 
     // Projects & Value Highlight Paragraph

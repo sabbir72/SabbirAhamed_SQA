@@ -439,8 +439,8 @@ function sanitizeVCardConfigMap(c: Partial<VisitingCardConfig> | undefined) {
     : 'url';
 
   return {
-    company: safeStr(c?.company, 200, 'Altersense Ltd'),
-    companyBn: safeStr(c?.companyBn, 200, 'অল্টারসেন্স লিমিটেড'),
+    company: safeStr(c?.company, 200, 'CarryBee'),
+    companyBn: safeStr(c?.companyBn, 200, 'ক্যারিবি'),
     companyLogo: safeImageStr(c?.companyLogo, 95000, ''),
     department: safeStr(c?.department, 200, 'Manual & automation Test'),
     departmentBn: safeStr(c?.departmentBn, 200, 'ম্যানুয়াল ও অটোমেশন টেস্ট'),

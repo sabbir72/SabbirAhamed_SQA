@@ -398,8 +398,8 @@ export interface VisitingCardConfig {
 }
 
 export const DEFAULT_VCARD_CONFIG: VisitingCardConfig = {
-  company: 'Altersense Ltd',
-  companyBn: 'অল্টারসেন্স লিমিটেড',
+  company: 'CarryBee',
+  companyBn: 'ক্যারিবি',
   companyLogo: '',
   department: 'Manual & automation Test',
   departmentBn: 'ম্যানুয়াল ও অটোমেশন টেস্ট',

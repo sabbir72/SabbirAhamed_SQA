@@ -194,7 +194,7 @@ export const VisitingCardModal: React.FC<VisitingCardModalProps> = ({ isOpen, on
   }, []);
 
   const cardUrl = sanitizePermanentCardUrl(cardConfig.permanentUrl);
-  const userCompany = cardConfig.company || 'Altersense Ltd';
+  const userCompany = cardConfig.company || 'CarryBee';
   const currentSkinConfig = CARD_SKINS.find((s) => s.id === selectedSkin) || CARD_SKINS[0];
   const selectedMember =
     teamMembers.find((m) => m.id === selectedTeamMemberId) ||

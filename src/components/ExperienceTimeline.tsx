@@ -34,7 +34,7 @@ export default function ExperienceTimeline() {
             Professional Experience & Milestones
           </h2>
           <p className="text-[#D1D5DB] text-sm sm:text-base leading-relaxed font-light">
-            Over 2 years of hands-on software quality engineering experience across commercial SaaS platforms, enterprise ERP systems, and ML solution deployments in Bangladesh.
+            Hands-on automation &amp; software quality engineering experience across Courier Management systems, enterprise ERP platforms, backend microservices, and ML solution deployments in Bangladesh.
           </p>
 
           {isAdmin && (
