@@ -1,5 +1,10 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import crypto from 'crypto';
+import {
+  extractAdminTokenFromHeaders,
+  issueSignedAdminToken,
+  verifyServerPasscode,
+  verifySignedAdminToken,
+} from '../_lib/adminToken';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
@@ -7,8 +12,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    const token = (req.headers['x-admin-token'] as string) || req.body?.token;
-    if (!token || typeof token !== 'string' || !token.startsWith('sabbir_sqa_admin_')) {
+    const token = extractAdminTokenFromHeaders(
+      req.headers as Record<string, string | string[] | undefined>,
+      req.body
+    );
+    if (!verifySignedAdminToken(token)) {
       return res.status(403).json({
         success: false,
         error: 'Unauthorized: Valid Admin session required.',
@@ -29,20 +37,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    const expectedPasscode = (process.env.ADMIN_PASSCODE || 'sabbir@sqa2026').trim();
-    const inputCurrent = currentPasscode.trim();
-
-    const isMatch = (expected: string, input: string) => {
-      const b1 = Buffer.from(expected);
-      const b2 = Buffer.from(input);
-      return b1.length === b2.length && crypto.timingSafeEqual(b1, b2);
-    };
-
-    // Allow either server env passcode or active verified session when updating device hash on serverless
-    const matchesServerDefault =
-      isMatch(expectedPasscode, inputCurrent) ||
-      isMatch('sabbir@sqa2026', inputCurrent) ||
-      isMatch('sabbir2026', inputCurrent);
+    const matchesServerDefault = verifyServerPasscode(currentPasscode);
 
     if (!matchesServerDefault && !req.body?.verifiedLocalHash) {
       return res.status(401).json({
@@ -51,7 +46,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    const nextToken = `sabbir_sqa_admin_${crypto.randomBytes(16).toString('hex')}`;
+    const nextToken = issueSignedAdminToken();
     return res.status(200).json({
       success: true,
       message: 'Main security password updated successfully.',

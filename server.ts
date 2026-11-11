@@ -16,6 +16,19 @@ import os from 'os';
 import crypto from 'crypto';
 import fs from 'fs';
 import { createServer as createViteServer } from 'vite';
+import {
+  extractAdminTokenFromHeaders,
+  issueSignedAdminToken,
+  verifyServerPasscode,
+  verifySignedAdminToken,
+} from './api/_lib/adminToken';
+import {
+  getCloudflareStatus,
+  readCloudflareMedia,
+  readCloudflareSnapshot,
+  uploadCloudflareMedia,
+  writeCloudflareSnapshot,
+} from './api/_lib/cloudflareStore';
 
 /**
  * Runtime Storage Isolation (Strictly outside Git repository workspace in os.tmpdir())
@@ -78,18 +91,7 @@ function verifyPasscodeOnServer(inputRaw: string): boolean {
     return b1.length === b2.length && crypto.timingSafeEqual(b1, b2);
   }
 
-  const expectedPasscode = (process.env.ADMIN_PASSCODE || 'sabbir@sqa2026').trim();
-  const isMatch = (expected: string, input: string) => {
-    const b1 = Buffer.from(expected);
-    const b2 = Buffer.from(input);
-    return b1.length === b2.length && crypto.timingSafeEqual(b1, b2);
-  };
-
-  return (
-    isMatch(expectedPasscode, inputPasscode) ||
-    isMatch('sabbir@sqa2026', inputPasscode) ||
-    isMatch('sabbir2026', inputPasscode)
-  );
+  return verifyServerPasscode(inputPasscode);
 }
 
 interface VisitorStats {
@@ -310,7 +312,7 @@ async function startServer(): Promise<void> {
       const isValid = verifyPasscodeOnServer(passcode);
 
       if (isValid) {
-        const token = `sabbir_sqa_admin_${crypto.randomBytes(16).toString('hex')}`;
+        const token = issueSignedAdminToken();
         validOwnerTokens.add(token);
 
         return res.status(200).json({
@@ -360,7 +362,7 @@ async function startServer(): Promise<void> {
       saveAdminSecurity(newPasscode.trim());
       validOwnerTokens.clear();
 
-      const token = `sabbir_sqa_admin_${crypto.randomBytes(16).toString('hex')}`;
+      const token = issueSignedAdminToken();
       validOwnerTokens.add(token);
 
       return res.status(200).json({
@@ -445,9 +447,12 @@ async function startServer(): Promise<void> {
    */
   app.post('/api/owner/verify-token', (req: Request, res: Response) => {
     try {
-      const token = (req.headers['x-admin-token'] as string) || req.body?.token;
+      const token = extractAdminTokenFromHeaders(
+        req.headers as Record<string, string | string[] | undefined>,
+        req.body
+      );
 
-      if (token && typeof token === 'string' && (validOwnerTokens.has(token) || token.startsWith('sabbir_sqa_admin_'))) {
+      if (verifySignedAdminToken(token, validOwnerTokens)) {
         validOwnerTokens.add(token);
         return res.status(200).json({
           success: true,
@@ -473,9 +478,12 @@ async function startServer(): Promise<void> {
    */
   app.post('/api/owner/suite-access', (req: Request, res: Response) => {
     try {
-      const token = (req.headers['x-admin-token'] as string) || req.body?.token;
+      const token = extractAdminTokenFromHeaders(
+        req.headers as Record<string, string | string[] | undefined>,
+        req.body
+      );
 
-      if (!token || typeof token !== 'string' || (!validOwnerTokens.has(token) && !token.startsWith('sabbir_sqa_admin_'))) {
+      if (!verifySignedAdminToken(token, validOwnerTokens)) {
         return res.status(403).json({
           success: false,
           error: 'Access Denied: AI SQA Application Suite is strictly restricted to portfolio owner.',
@@ -492,8 +500,167 @@ async function startServer(): Promise<void> {
   });
 
   /**
+   * Cloudflare Free Data & Media Store Endpoints (Parity with Vercel /api/cloud/*)
+   */
+  app.get('/api/cloud/status', (_req: Request, res: Response) => {
+    res.setHeader('Cache-Control', 'no-store, max-age=0');
+    return res.status(200).json({
+      success: true,
+      ...getCloudflareStatus(),
+    });
+  });
+
+  app.get('/api/cloud/portfolio', async (_req: Request, res: Response) => {
+    res.setHeader('Cache-Control', 'no-store, max-age=0');
+    const result = await readCloudflareSnapshot();
+    const status = getCloudflareStatus();
+    return res.status(200).json({
+      success: !result.error,
+      configured: result.configured,
+      mode: result.mode,
+      providerLabel: status.providerLabel,
+      data: result.data,
+      error: result.error || null,
+    });
+  });
+
+  const handleCloudPortfolioWrite = async (req: Request, res: Response) => {
+    res.setHeader('Cache-Control', 'no-store, max-age=0');
+    const token = extractAdminTokenFromHeaders(
+      req.headers as Record<string, string | string[] | undefined>,
+      req.body
+    );
+
+    if (!verifySignedAdminToken(token, validOwnerTokens)) {
+      return res.status(403).json({
+        success: false,
+        error: 'Unauthorized: Valid Admin session required to update Cloudflare Store.',
+      });
+    }
+
+    const body = (req.body || {}) as Record<string, unknown>;
+    const snapshotInput =
+      body.snapshot && typeof body.snapshot === 'object'
+        ? (body.snapshot as Record<string, unknown>)
+        : body;
+
+    const writeRes = await writeCloudflareSnapshot({
+      version: 1,
+      lastModified:
+        typeof snapshotInput.lastModified === 'string' && snapshotInput.lastModified
+          ? snapshotInput.lastModified
+          : new Date().toISOString(),
+      updatedBy: 'sabbir-admin',
+      meta:
+        snapshotInput.meta && typeof snapshotInput.meta === 'object'
+          ? (snapshotInput.meta as Record<string, unknown>)
+          : {},
+      projects: Array.isArray(snapshotInput.projects) ? snapshotInput.projects : [],
+      experiences: Array.isArray(snapshotInput.experiences) ? snapshotInput.experiences : [],
+      blogs: Array.isArray(snapshotInput.blogs) ? snapshotInput.blogs : [],
+    });
+
+    if (!writeRes.configured) {
+      return res.status(200).json({
+        success: false,
+        configured: false,
+        mode: 'none',
+        error: writeRes.error,
+      });
+    }
+
+    if (!writeRes.success) {
+      return res.status(502).json({
+        success: false,
+        configured: true,
+        mode: writeRes.mode,
+        error: writeRes.error || 'Failed to save portfolio data to Cloudflare.',
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      configured: true,
+      mode: writeRes.mode,
+      lastModified: writeRes.lastModified,
+      savedAt: new Date().toISOString(),
+    });
+  };
+
+  app.post('/api/cloud/portfolio', handleCloudPortfolioWrite);
+  app.put('/api/cloud/portfolio', handleCloudPortfolioWrite);
+
+  app.post('/api/cloud/upload', async (req: Request, res: Response) => {
+    const token = extractAdminTokenFromHeaders(
+      req.headers as Record<string, string | string[] | undefined>,
+      req.body
+    );
+
+    if (!verifySignedAdminToken(token, validOwnerTokens)) {
+      return res.status(403).json({
+        success: false,
+        error: 'Unauthorized: Valid Admin session required to upload media.',
+      });
+    }
+
+    const { dataUrl, fileName } = (req.body || {}) as {
+      dataUrl?: string;
+      fileName?: string;
+    };
+
+    if (!dataUrl || typeof dataUrl !== 'string') {
+      return res.status(400).json({ success: false, error: 'Image dataUrl is required.' });
+    }
+
+    const result = await uploadCloudflareMedia(dataUrl, fileName);
+    if (!result.configured) {
+      return res.status(200).json({
+        success: true,
+        configured: false,
+        storedInCloudflare: false,
+        url: null,
+      });
+    }
+
+    if (!result.success) {
+      return res.status(502).json({
+        success: false,
+        configured: true,
+        storedInCloudflare: false,
+        error: result.error || 'Cloudflare image upload failed.',
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      configured: true,
+      storedInCloudflare: true,
+      mode: result.mode,
+      key: result.key,
+      url: result.url,
+    });
+  });
+
+  app.get('/api/cloud/media', async (req: Request, res: Response) => {
+    const keyParam = req.query?.key;
+    const rawKey = Array.isArray(keyParam) ? keyParam[0] : keyParam;
+    if (!rawKey || typeof rawKey !== 'string') {
+      return res.status(400).json({ error: 'Missing media key.' });
+    }
+
+    const media = await readCloudflareMedia(rawKey);
+    if (!media.found || !media.buffer) {
+      return res.status(404).json({ error: 'Media not found.' });
+    }
+
+    res.setHeader('Content-Type', media.contentType || 'image/webp');
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    return res.status(200).send(media.buffer);
+  });
+
+  /**
    * API Route: GET /api/portfolio/data
-   * Read-only seed endpoint (never mutates Git repository files; live updates go strictly to Google Cloud Firestore)
+   * Read-only seed endpoint (never mutates Git repository files; live updates go strictly to Cloud Store)
    */
   app.get('/api/portfolio/data', (_req: Request, res: Response) => {
     try {
@@ -511,29 +678,31 @@ async function startServer(): Promise<void> {
 
   /**
    * API Route: POST /api/portfolio/data
-   * Intentional no-op on Git repo files: all portfolio & blog updates are stored exclusively in Google Cloud Firestore.
    */
   app.post('/api/portfolio/data', (req: Request, res: Response) => {
-    const token = (req.headers['x-admin-token'] as string) || req.body?.token;
-    const isAuthorized = Boolean(token && (validOwnerTokens.has(token) || token.startsWith('sabbir_sqa_admin_')));
-    if (!isAuthorized) {
+    const token = extractAdminTokenFromHeaders(
+      req.headers as Record<string, string | string[] | undefined>,
+      req.body
+    );
+    if (!verifySignedAdminToken(token, validOwnerTokens)) {
       return res.status(403).json({ success: false, error: 'Unauthorized: Admin token required.' });
     }
     return res.json({
       success: true,
       cloudOnly: true,
-      message: 'Git repo untouched. Portfolio updates are persisted exclusively to Google Cloud.',
+      message: 'Git repo untouched. Portfolio updates are persisted to Cloud storage.',
     });
   });
 
   /**
    * API Route: POST /api/portfolio/reset
-   * Intentional no-op on Git repo files: reset applies only to Google Cloud Firestore & browser state.
    */
   app.post('/api/portfolio/reset', (req: Request, res: Response) => {
-    const token = (req.headers['x-admin-token'] as string) || req.body?.token;
-    const isAuthorized = Boolean(token && (validOwnerTokens.has(token) || token.startsWith('sabbir_sqa_admin_')));
-    if (!isAuthorized) {
+    const token = extractAdminTokenFromHeaders(
+      req.headers as Record<string, string | string[] | undefined>,
+      req.body
+    );
+    if (!verifySignedAdminToken(token, validOwnerTokens)) {
       return res.status(403).json({ success: false, error: 'Unauthorized: Admin token required.' });
     }
     return res.json({

@@ -70,6 +70,7 @@ import {
   ADMIN_AUTH_CHANGED_EVENT,
   clearAdminOAuthGracePeriod,
   completeAdminOAuthRedirectSession,
+  getAdminToken,
   isAdminAuthenticated,
   isAdminOAuthGraceActive,
   recordAdminActivity,
@@ -130,11 +131,18 @@ export function isCurrentHostFirebaseAuthorized(): boolean {
   return knownAuthorizedDomains.has(window.location.hostname.toLowerCase());
 }
 
-export function canAdminWriteToCloud(): boolean {
+export function canFirebaseOwnerWrite(): boolean {
   return (
     isAdminAuthenticated() &&
     isVerifiedFirebaseOwner(auth.currentUser) &&
     hasFreshOwnerAuthToken(auth.currentUser)
+  );
+}
+
+export function canAdminWriteToCloud(): boolean {
+  return (
+    isAdminAuthenticated() &&
+    (currentStatus.cloudflareConfigured || canFirebaseOwnerWrite())
   );
 }
 
@@ -165,8 +173,14 @@ export function isTopLevelBrowserWindow(): boolean {
 export const CLOUD_SYNC_STATUS_EVENT = 'sabbir_cloud_sync_status';
 export const CLOUD_AUTO_SCAN_COMPLETED_EVENT = 'sabbir_cloud_auto_scan_completed';
 
+export type CloudflareStorageMode = 'worker' | 'kv-rest' | 'none';
+
 export interface CloudSyncStatus {
   isOwnerConnected: boolean;
+  cloudflareConfigured: boolean;
+  cloudflareMode: CloudflareStorageMode;
+  cloudflareProviderLabel: string;
+  firebaseConnected: boolean;
   ownerEmail: string | null;
   isSyncing: boolean;
   lastSyncedAt: string | null;
@@ -236,6 +250,10 @@ function enqueuePathWrite(path: string, task: () => Promise<void>): Promise<void
 
 let currentStatus: CloudSyncStatus = {
   isOwnerConnected: false,
+  cloudflareConfigured: false,
+  cloudflareMode: 'none',
+  cloudflareProviderLabel: 'Not Configured',
+  firebaseConnected: false,
   ownerEmail: null,
   isSyncing: false,
   lastSyncedAt:
@@ -251,11 +269,34 @@ let latestCloudMeta: CloudPortfolioSnapshotPayload['meta'] | undefined;
 let latestCloudProjects: Project[] | undefined;
 let latestCloudExperiences: Experience[] | undefined;
 let latestCloudBlogs: BlogPost[] | undefined;
+let latestMetaTimestampMs = 0;
+
+function parseIsoMs(iso: unknown): number {
+  if (typeof iso !== 'string' || !iso.trim()) return 0;
+  const ms = Date.parse(iso);
+  return Number.isFinite(ms) ? ms : 0;
+}
 
 function emitStatus(partial: Partial<CloudSyncStatus>): void {
+  const nextCloudflare =
+    partial.cloudflareConfigured !== undefined
+      ? partial.cloudflareConfigured
+      : currentStatus.cloudflareConfigured;
+  const nextFirebase =
+    partial.firebaseConnected !== undefined
+      ? partial.firebaseConnected
+      : currentStatus.firebaseConnected;
+  const nextOwnerConnected =
+    partial.isOwnerConnected !== undefined
+      ? partial.isOwnerConnected
+      : nextCloudflare || nextFirebase;
+
   currentStatus = {
     ...currentStatus,
     ...partial,
+    cloudflareConfigured: nextCloudflare,
+    firebaseConnected: nextFirebase,
+    isOwnerConnected: nextOwnerConnected,
     hasUnsyncedChanges:
       partial.hasUnsyncedChanges !== undefined
         ? partial.hasUnsyncedChanges
@@ -270,6 +311,31 @@ function emitStatus(partial: Partial<CloudSyncStatus>): void {
   }
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent(CLOUD_SYNC_STATUS_EVENT, { detail: currentStatus }));
+  }
+}
+
+export async function refreshCloudflareStatus(): Promise<boolean> {
+  if (typeof window === 'undefined') return false;
+  try {
+    const res = await fetch('/api/cloud/status', { cache: 'no-store' });
+    if (!res.ok) return currentStatus.cloudflareConfigured;
+    const data = (await res.json()) as {
+      configured?: boolean;
+      mode?: CloudflareStorageMode;
+      providerLabel?: string;
+    };
+    const configured = Boolean(data.configured);
+    const mode: CloudflareStorageMode =
+      data.mode === 'worker' || data.mode === 'kv-rest' ? data.mode : 'none';
+    const providerLabel = data.providerLabel || (configured ? 'Cloudflare Store' : 'Not Configured');
+    emitStatus({
+      cloudflareConfigured: configured,
+      cloudflareMode: mode,
+      cloudflareProviderLabel: providerLabel,
+    });
+    return configured;
+  } catch {
+    return currentStatus.cloudflareConfigured;
   }
 }
 
@@ -381,7 +447,7 @@ function sanitizeVCardConfigMap(c: Partial<VisitingCardConfig> | undefined) {
     verifiedBadge: safeStr(c?.verifiedBadge, 64, 'SQA'),
     permanentUrl: safeStr(c?.permanentUrl, 1024, 'https://sabbir-sqa.vercel.app/?card=1#vcard'),
     defaultSkin: safeStr(c?.defaultSkin, 64, 'executive-dark'),
-    defaultQrMode: safeStr(resolvedQrMode, 32, 'url'),
+    defaultQrMode: resolvedQrMode,
     headlineEn: safeStr(c?.headlineEn, 300, 'Software Quality Assurance & Automation Engineering'),
     headlineBn: safeStr(c?.headlineBn, 300, 'সফটওয়্যার কোয়ালিটি অ্যাসিউরেন্স ও অটোমেশন ইঞ্জিনিয়ারিং'),
   };
@@ -851,6 +917,106 @@ async function deleteProtectedDocument(collectionName: string, docId: string): P
   });
 }
 
+async function pushFullSnapshotToCloudflare(
+  dataOverride?: PortfolioData,
+  blogsOverride?: BlogPost[],
+  categoriesOverride?: string[]
+): Promise<boolean> {
+  if (typeof window === 'undefined' || isApplyingSnapshot) return false;
+  if (!isAdminAuthenticated()) return false;
+
+  const isCfConfigured = currentStatus.cloudflareConfigured || (await refreshCloudflareStatus());
+  if (!isCfConfigured) return false;
+
+  const token = getAdminToken();
+  if (!token) return false;
+
+  const portfolio = dataOverride ?? bridge?.getPortfolioData();
+  if (!portfolio) return false;
+
+  const blogs = blogsOverride ?? portfolio.blogs ?? bridge?.getBlogs() ?? [];
+  const categories =
+    categoriesOverride ?? portfolio.blogCategories ?? bridge?.getBlogCategories() ?? [];
+
+  const deletedProjSet = new Set((portfolio.deletedProjectIds || []).map(sanitizeDocId));
+  const deletedExpSet = new Set((portfolio.deletedExperienceIds || []).map(sanitizeDocId));
+  const deletedBlogSet = new Set((portfolio.deletedBlogIds || []).map(sanitizeDocId));
+
+  const activeProjects = (portfolio.projects || []).filter(
+    (p) => !deletedProjSet.has(sanitizeDocId(p.id))
+  );
+  const activeExperiences = (portfolio.experiences || []).filter(
+    (e) => !deletedExpSet.has(sanitizeDocId(e.id))
+  );
+  const activeBlogs = blogs.filter((b) => !deletedBlogSet.has(sanitizeDocId(b.id)));
+
+  const lastModified = safeNonEmptyStr(portfolio.lastModified, 64, new Date().toISOString());
+  const snapshotPayload = {
+    version: 1,
+    lastModified,
+    updatedBy: 'sabbir-admin',
+    meta: {
+      profile: sanitizeProfileMap(portfolio.profile),
+      skills: sanitizeSkillsList(portfolio.skills),
+      references: sanitizeReferencesList(portfolio.references),
+      careerRoadmap: sanitizeRoadmapList(portfolio.careerRoadmap),
+      blogCategories: sanitizeStringArray(categories, 100, 120),
+      deletedProjectIds: sanitizeStringArray(portfolio.deletedProjectIds, 500, 128).map(sanitizeDocId),
+      deletedExperienceIds: sanitizeStringArray(portfolio.deletedExperienceIds, 500, 128).map(
+        sanitizeDocId
+      ),
+      deletedBlogIds: sanitizeStringArray(portfolio.deletedBlogIds, 500, 128).map(sanitizeDocId),
+      deletedReferenceIds: sanitizeStringArray(portfolio.deletedReferenceIds, 500, 128).map(
+        sanitizeDocId
+      ),
+      deletedRoadmapIds: sanitizeStringArray(portfolio.deletedRoadmapIds, 500, 128).map(sanitizeDocId),
+      themeId: safeNonEmptyStr(portfolio.themeId, 64, 'cyber-cyan'),
+      vcardConfig: sanitizeVCardConfigMap(portfolio.vcardConfig),
+      vcardPrivacy: sanitizeVCardPrivacyMap(portfolio.vcardPrivacy),
+      vcardTeam: sanitizeVCardTeamList(portfolio.vcardTeam, portfolio.profile?.avatar),
+      lastModified,
+    },
+    projects: activeProjects,
+    experiences: activeExperiences,
+    blogs: activeBlogs,
+  };
+
+  let pushed = false;
+  await enqueuePathWrite('cloudflare:portfolio', async () => {
+    const res = await fetch('/api/cloud/portfolio', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-admin-token': token,
+      },
+      body: JSON.stringify({ snapshot: snapshotPayload }),
+    });
+
+    const json = (await res.json().catch(() => ({}))) as {
+      success?: boolean;
+      configured?: boolean;
+      error?: string;
+    };
+
+    if (!res.ok || json.success === false) {
+      throw new Error(json.error || `Cloudflare save failed (${res.status}).`);
+    }
+
+    latestCloudMeta = snapshotPayload.meta;
+    latestCloudProjects = activeProjects;
+    latestCloudExperiences = activeExperiences;
+    latestCloudBlogs = activeBlogs;
+    latestMetaTimestampMs = Math.max(latestMetaTimestampMs, parseIsoMs(lastModified));
+    emitStatus({
+      cloudProjectsCount: activeProjects.length,
+      cloudBlogsCount: activeBlogs.length,
+    });
+    pushed = true;
+  });
+
+  return pushed;
+}
+
 // ------------------------------------------------------------------------
 // Granular Cloud Writers Called Automatically on Every Save/Edit
 // ------------------------------------------------------------------------
@@ -860,80 +1026,113 @@ export async function pushPortfolioMetaToCloud(
   blogCategories?: string[]
 ): Promise<boolean> {
   if (isApplyingSnapshot) return false;
-  if (!canAdminWriteToCloud()) {
+  const cfAvailable = currentStatus.cloudflareConfigured || (await refreshCloudflareStatus());
+  const fbAvailable = canFirebaseOwnerWrite();
+
+  if (!isAdminAuthenticated() || (!cfAvailable && !fbAvailable)) {
     emitStatus({ hasUnsyncedChanges: hasLocalUnsyncedEdits() });
     return false;
   }
 
   emitStatus({ isSyncing: true, error: null });
 
-  const resolvedCats =
-    blogCategories ?? data.blogCategories ?? (bridge ? bridge.getBlogCategories() : []);
-  const sanitizedProfile = sanitizeProfileMap(data.profile);
-  const cleanRoadmap = sanitizeRoadmapList(data.careerRoadmap);
+  let cfSynced = false;
+  let fbSynced = false;
+  let firstError: string | null = null;
 
-  // Embed extended portfolio settings inside a dedicated native map entry within
-  // careerRoadmap (bounded <= 50 maps) so top-level portfolio_meta/main keys
-  // remain 100% within the strict 14-key allowlist of deployed Firestore rules.
-  const extEnvelope = {
-    id: SYS_EXT_META_ID,
-    _sysExt: true,
-    deletedReferenceIds: sanitizeStringArray(data.deletedReferenceIds, 500, 128).map(sanitizeDocId),
-    deletedRoadmapIds: sanitizeStringArray(data.deletedRoadmapIds, 500, 128).map(sanitizeDocId),
-    themeId: safeNonEmptyStr(data.themeId, 64, 'cyber-cyan'),
-    vcardConfig: sanitizeVCardConfigMap(data.vcardConfig),
-    vcardPrivacy: sanitizeVCardPrivacyMap(data.vcardPrivacy),
-    vcardTeam: sanitizeVCardTeamList(data.vcardTeam, sanitizedProfile.avatar),
-  };
-
-  const mutableMeta = {
-    isPublic: true,
-    profile: sanitizedProfile,
-    skills: sanitizeSkillsList(data.skills),
-    references: sanitizeReferencesList(data.references),
-    careerRoadmap: [...cleanRoadmap, extEnvelope],
-    blogCategories: sanitizeStringArray(resolvedCats, 100, 120),
-    deletedProjectIds: sanitizeStringArray(data.deletedProjectIds, 500, 128).map(sanitizeDocId),
-    deletedExperienceIds: sanitizeStringArray(data.deletedExperienceIds, 500, 128).map(
-      sanitizeDocId
-    ),
-    deletedBlogIds: sanitizeStringArray(data.deletedBlogIds, 500, 128).map(sanitizeDocId),
-    lastModifiedIso: safeNonEmptyStr(data.lastModified, 64, new Date().toISOString()),
-  };
-
-  try {
-    const approxBytes = JSON.stringify(mutableMeta).length;
-    if (approxBytes > 950000) {
-      throw new Error(
-        'Uploaded photo or portfolio metadata exceeds Cloud Firestore size limit (~950KB). Please use a smaller cropped photo.'
-      );
+  if (cfAvailable) {
+    try {
+      cfSynced = await pushFullSnapshotToCloudflare(data, data.blogs, blogCategories);
+    } catch (err) {
+      firstError =
+        err instanceof Error ? err.message : 'Cloudflare save failed while saving profile/metadata.';
     }
-    await upsertProtectedDocument('portfolio_meta', 'main', mutableMeta);
+  }
+
+  if (fbAvailable) {
+    const resolvedCats =
+      blogCategories ?? data.blogCategories ?? (bridge ? bridge.getBlogCategories() : []);
+    const sanitizedProfile = sanitizeProfileMap(data.profile);
+    const cleanRoadmap = sanitizeRoadmapList(data.careerRoadmap);
+
+    const extEnvelope = {
+      id: SYS_EXT_META_ID,
+      _sysExt: true,
+      deletedReferenceIds: sanitizeStringArray(data.deletedReferenceIds, 500, 128).map(sanitizeDocId),
+      deletedRoadmapIds: sanitizeStringArray(data.deletedRoadmapIds, 500, 128).map(sanitizeDocId),
+      themeId: safeNonEmptyStr(data.themeId, 64, 'cyber-cyan'),
+      vcardConfig: sanitizeVCardConfigMap(data.vcardConfig),
+      vcardPrivacy: sanitizeVCardPrivacyMap(data.vcardPrivacy),
+      vcardTeam: sanitizeVCardTeamList(data.vcardTeam, sanitizedProfile.avatar),
+    };
+
+    const mutableMeta = {
+      isPublic: true,
+      profile: sanitizedProfile,
+      skills: sanitizeSkillsList(data.skills),
+      references: sanitizeReferencesList(data.references),
+      careerRoadmap: [...cleanRoadmap, extEnvelope],
+      blogCategories: sanitizeStringArray(resolvedCats, 100, 120),
+      deletedProjectIds: sanitizeStringArray(data.deletedProjectIds, 500, 128).map(sanitizeDocId),
+      deletedExperienceIds: sanitizeStringArray(data.deletedExperienceIds, 500, 128).map(
+        sanitizeDocId
+      ),
+      deletedBlogIds: sanitizeStringArray(data.deletedBlogIds, 500, 128).map(sanitizeDocId),
+      lastModifiedIso: safeNonEmptyStr(data.lastModified, 64, new Date().toISOString()),
+    };
+
+    try {
+      const approxBytes = JSON.stringify(mutableMeta).length;
+      if (approxBytes > 950000) {
+        throw new Error(
+          'Uploaded photo or portfolio metadata exceeds Cloud Firestore size limit (~950KB). Please use Cloudflare Store or a smaller cropped photo.'
+        );
+      }
+      await upsertProtectedDocument('portfolio_meta', 'main', mutableMeta);
+      fbSynced = true;
+    } catch (err) {
+      if (!cfSynced) {
+        firstError =
+          err instanceof Error ? err.message : 'Cloud sync failed while saving profile/metadata.';
+      }
+    }
+  }
+
+  if (cfSynced || fbSynced) {
     markGranularWriteSyncedIfIdle();
     return true;
-  } catch (err) {
-    const msg =
-      err instanceof Error ? err.message : 'Cloud sync failed while saving profile/metadata.';
-    emitStatus({ isSyncing: false, error: msg });
-    throw err;
   }
+
+  const finalError = firstError || 'Cloud sync failed.';
+  emitStatus({ isSyncing: false, error: finalError });
+  throw new Error(finalError);
 }
 
 export async function pushProjectToCloud(project: Project, orderIndex = 0): Promise<void> {
   if (isApplyingSnapshot || !canAdminWriteToCloud()) return;
-  const cleanId = sanitizeDocId(project.id);
-  const mutable = sanitizeProjectMutableFields({ ...project, id: cleanId }, orderIndex);
-  await upsertProtectedDocument('projects', cleanId, mutable);
+  if (currentStatus.cloudflareConfigured) {
+    await pushFullSnapshotToCloudflare();
+  }
+  if (canFirebaseOwnerWrite()) {
+    const cleanId = sanitizeDocId(project.id);
+    const mutable = sanitizeProjectMutableFields({ ...project, id: cleanId }, orderIndex);
+    await upsertProtectedDocument('projects', cleanId, mutable);
+  }
   markGranularWriteSyncedIfIdle();
 }
 
 export async function pushAllProjectsToCloud(projects: Project[]): Promise<void> {
   if (isApplyingSnapshot || !canAdminWriteToCloud()) return;
-  for (let i = 0; i < projects.length; i++) {
-    const p = projects[i];
-    const cleanId = sanitizeDocId(p.id);
-    const mutable = sanitizeProjectMutableFields({ ...p, id: cleanId }, i);
-    await upsertProtectedDocument('projects', cleanId, mutable);
+  if (currentStatus.cloudflareConfigured) {
+    await pushFullSnapshotToCloudflare();
+  }
+  if (canFirebaseOwnerWrite()) {
+    for (let i = 0; i < projects.length; i++) {
+      const p = projects[i];
+      const cleanId = sanitizeDocId(p.id);
+      const mutable = sanitizeProjectMutableFields({ ...p, id: cleanId }, i);
+      await upsertProtectedDocument('projects', cleanId, mutable);
+    }
   }
   emitStatus({ cloudProjectsCount: projects.length });
   markGranularWriteSyncedIfIdle();
@@ -941,50 +1140,80 @@ export async function pushAllProjectsToCloud(projects: Project[]): Promise<void>
 
 export async function deleteProjectFromCloud(projectId: string): Promise<void> {
   if (isApplyingSnapshot || !canAdminWriteToCloud()) return;
-  await deleteProtectedDocument('projects', projectId);
+  if (currentStatus.cloudflareConfigured) {
+    await pushFullSnapshotToCloudflare();
+  }
+  if (canFirebaseOwnerWrite()) {
+    await deleteProtectedDocument('projects', projectId);
+  }
   markGranularWriteSyncedIfIdle();
 }
 
 export async function pushExperienceToCloud(exp: Experience, orderIndex = 0): Promise<void> {
   if (isApplyingSnapshot || !canAdminWriteToCloud()) return;
-  const cleanId = sanitizeDocId(exp.id);
-  const mutable = sanitizeExperienceMutableFields({ ...exp, id: cleanId }, orderIndex);
-  await upsertProtectedDocument('experiences', cleanId, mutable);
+  if (currentStatus.cloudflareConfigured) {
+    await pushFullSnapshotToCloudflare();
+  }
+  if (canFirebaseOwnerWrite()) {
+    const cleanId = sanitizeDocId(exp.id);
+    const mutable = sanitizeExperienceMutableFields({ ...exp, id: cleanId }, orderIndex);
+    await upsertProtectedDocument('experiences', cleanId, mutable);
+  }
   markGranularWriteSyncedIfIdle();
 }
 
 export async function pushAllExperiencesToCloud(experiences: Experience[]): Promise<void> {
   if (isApplyingSnapshot || !canAdminWriteToCloud()) return;
-  for (let i = 0; i < experiences.length; i++) {
-    const e = experiences[i];
-    const cleanId = sanitizeDocId(e.id);
-    const mutable = sanitizeExperienceMutableFields({ ...e, id: cleanId }, i);
-    await upsertProtectedDocument('experiences', cleanId, mutable);
+  if (currentStatus.cloudflareConfigured) {
+    await pushFullSnapshotToCloudflare();
+  }
+  if (canFirebaseOwnerWrite()) {
+    for (let i = 0; i < experiences.length; i++) {
+      const e = experiences[i];
+      const cleanId = sanitizeDocId(e.id);
+      const mutable = sanitizeExperienceMutableFields({ ...e, id: cleanId }, i);
+      await upsertProtectedDocument('experiences', cleanId, mutable);
+    }
   }
   markGranularWriteSyncedIfIdle();
 }
 
 export async function deleteExperienceFromCloud(expId: string): Promise<void> {
   if (isApplyingSnapshot || !canAdminWriteToCloud()) return;
-  await deleteProtectedDocument('experiences', expId);
+  if (currentStatus.cloudflareConfigured) {
+    await pushFullSnapshotToCloudflare();
+  }
+  if (canFirebaseOwnerWrite()) {
+    await deleteProtectedDocument('experiences', expId);
+  }
   markGranularWriteSyncedIfIdle();
 }
 
 export async function pushBlogToCloud(blog: BlogPost, orderIndex = 0): Promise<void> {
   if (isApplyingSnapshot || !canAdminWriteToCloud()) return;
-  const cleanId = sanitizeDocId(blog.id);
-  const mutable = sanitizeBlogMutableFields({ ...blog, id: cleanId }, orderIndex);
-  await upsertProtectedDocument('blogs', cleanId, mutable);
+  if (currentStatus.cloudflareConfigured) {
+    await pushFullSnapshotToCloudflare(undefined, bridge?.getBlogs());
+  }
+  if (canFirebaseOwnerWrite()) {
+    const cleanId = sanitizeDocId(blog.id);
+    const mutable = sanitizeBlogMutableFields({ ...blog, id: cleanId }, orderIndex);
+    await upsertProtectedDocument('blogs', cleanId, mutable);
+  }
   markGranularWriteSyncedIfIdle();
 }
 
 export async function pushAllBlogsToCloud(blogs: BlogPost[]): Promise<void> {
   if (isApplyingSnapshot || !canAdminWriteToCloud()) return;
-  for (let i = 0; i < blogs.length; i++) {
-    const b = blogs[i];
-    const cleanId = sanitizeDocId(b.id);
-    const mutable = sanitizeBlogMutableFields({ ...b, id: cleanId }, i);
-    await upsertProtectedDocument('blogs', cleanId, mutable);
+  if (currentStatus.cloudflareConfigured) {
+    await pushFullSnapshotToCloudflare(undefined, blogs);
+  }
+  if (canFirebaseOwnerWrite()) {
+    for (let i = 0; i < blogs.length; i++) {
+      const b = blogs[i];
+      const cleanId = sanitizeDocId(b.id);
+      const mutable = sanitizeBlogMutableFields({ ...b, id: cleanId }, i);
+      await upsertProtectedDocument('blogs', cleanId, mutable);
+    }
   }
   emitStatus({ cloudBlogsCount: blogs.length });
   markGranularWriteSyncedIfIdle();
@@ -992,7 +1221,12 @@ export async function pushAllBlogsToCloud(blogs: BlogPost[]): Promise<void> {
 
 export async function deleteBlogFromCloud(blogId: string): Promise<void> {
   if (isApplyingSnapshot || !canAdminWriteToCloud()) return;
-  await deleteProtectedDocument('blogs', blogId);
+  if (currentStatus.cloudflareConfigured) {
+    await pushFullSnapshotToCloudflare(undefined, bridge?.getBlogs());
+  }
+  if (canFirebaseOwnerWrite()) {
+    await deleteProtectedDocument('blogs', blogId);
+  }
   markGranularWriteSyncedIfIdle();
 }
 
@@ -1017,16 +1251,20 @@ export async function syncAllLocalDataToCloud(): Promise<FullSyncResult> {
   if (!bridge) {
     return { success: false, projectsSynced: 0, blogsSynced: 0, error: 'Cloud bridge not ready.' };
   }
-  if (!isVerifiedFirebaseOwner(auth.currentUser) || !hasFreshOwnerAuthToken(auth.currentUser)) {
+
+  const cfAvailable = currentStatus.cloudflareConfigured || (await refreshCloudflareStatus());
+  const fbAvailable = canFirebaseOwnerWrite();
+
+  if (!cfAvailable && !fbAvailable) {
     if (auth.currentUser && !hasFreshOwnerAuthToken(auth.currentUser)) {
       await purgeExpiredRuntimeAuthSession();
-      emitStatus({ isOwnerConnected: false, ownerEmail: null });
+      emitStatus({ firebaseConnected: false, ownerEmail: null });
     }
     return {
       success: false,
       projectsSynced: 0,
       blogsSynced: 0,
-      error: `ক্লাউড অটো-সেভ চালু করতে অনুমোদিত অ্যাডমিন ইমেইল (${OWNER_ADMIN_EMAILS.join(' বা ')}) দিয়ে কানেক্ট করুন।`,
+      error: `ফ্রি Cloudflare Cloud Store সেটআপ করুন অথবা অনুমোদিত Google ইমেইল (${OWNER_ADMIN_EMAILS.join(' / ')}) দিয়ে কানেক্ট করুন।`,
     };
   }
 
@@ -1037,7 +1275,7 @@ export async function syncAllLocalDataToCloud(): Promise<FullSyncResult> {
       // Step 1: Pull latest cloud documents first and merge non-destructively so zero cloud data is ever lost!
       await pullCloudSnapshotOnce();
 
-      // Step 2: Read the freshly merged complete local state (Projects, Blogs, Story, Roadmap, References, Skills, Profile, VCard, Theme)
+      // Step 2: Read the freshly merged complete local state
       const portfolio = bridge.getPortfolioData();
       const blogs = bridge.getBlogs();
       const categories = bridge.getBlogCategories();
@@ -1046,32 +1284,38 @@ export async function syncAllLocalDataToCloud(): Promise<FullSyncResult> {
       const deletedExpSet = new Set((portfolio.deletedExperienceIds || []).map(sanitizeDocId));
       const deletedBlogSet = new Set((portfolio.deletedBlogIds || []).map(sanitizeDocId));
 
-      // Step 3: Push complete metadata (Profile, Skills, References, Roadmap, Blog Categories, Visiting Card, Theme)
-      await pushPortfolioMetaToCloud(portfolio, categories);
-
-      // Step 4: Push all active projects & remove tombstoned docs
       const activeProjects = portfolio.projects.filter(
         (p) => !deletedProjSet.has(sanitizeDocId(p.id))
       );
-      await pushAllProjectsToCloud(activeProjects);
-      for (const delId of deletedProjSet) {
-        await deleteProtectedDocument('projects', delId);
-      }
-
-      // Step 5: Push all active experiences (stories) & remove tombstoned docs
       const activeExperiences = portfolio.experiences.filter(
         (e) => !deletedExpSet.has(sanitizeDocId(e.id))
       );
-      await pushAllExperiencesToCloud(activeExperiences);
-      for (const delId of deletedExpSet) {
-        await deleteProtectedDocument('experiences', delId);
+      const activeBlogs = blogs.filter((b) => !deletedBlogSet.has(sanitizeDocId(b.id)));
+
+      let cfDone = false;
+      if (cfAvailable) {
+        cfDone = await pushFullSnapshotToCloudflare(portfolio, blogs, categories);
       }
 
-      // Step 6: Push all active blogs & remove tombstoned docs
-      const activeBlogs = blogs.filter((b) => !deletedBlogSet.has(sanitizeDocId(b.id)));
-      await pushAllBlogsToCloud(activeBlogs);
-      for (const delId of deletedBlogSet) {
-        await deleteProtectedDocument('blogs', delId);
+      if (fbAvailable) {
+        try {
+          await pushPortfolioMetaToCloud(portfolio, categories);
+          await pushAllProjectsToCloud(activeProjects);
+          for (const delId of deletedProjSet) {
+            await deleteProtectedDocument('projects', delId);
+          }
+          await pushAllExperiencesToCloud(activeExperiences);
+          for (const delId of deletedExpSet) {
+            await deleteProtectedDocument('experiences', delId);
+          }
+          await pushAllBlogsToCloud(activeBlogs);
+          for (const delId of deletedBlogSet) {
+            await deleteProtectedDocument('blogs', delId);
+          }
+        } catch (fbErr) {
+          if (!cfDone) throw fbErr;
+          console.warn('Firestore secondary backup warning:', fbErr);
+        }
       }
 
       clearLocalUnsyncedEdits();
@@ -1094,10 +1338,10 @@ export async function syncAllLocalDataToCloud(): Promise<FullSyncResult> {
       if (isTokenServiceDisabledError(err)) {
         await purgeExpiredRuntimeAuthSession();
         const reconnectMsg =
-          'পূর্বের Google সেশনের মেয়াদ শেষ হয়েছে। আপনার সব ডাটা ব্রাউজারে সেভ আছে—ক্লাউডে পাঠাতে একবার রিকানেক্ট করুন।';
+          'পূর্বের Google সেশনের মেয়াদ শেষ হয়েছে। আপনার সব ডাটা ব্রাউজারে সেভ আছে—ক্লাউডে পাঠাতে আবার কানেক্ট করুন।';
         emitStatus({
           isSyncing: false,
-          isOwnerConnected: false,
+          firebaseConnected: false,
           ownerEmail: null,
           error: reconnectMsg,
         });
@@ -1274,7 +1518,7 @@ export async function signInOwnerWithGoogle(
     recordAdminActivity();
     clearAdminOAuthGracePeriod();
     emitStatus({
-      isOwnerConnected: true,
+      firebaseConnected: true,
       ownerEmail: user.email || null,
       error: null,
     });
@@ -1328,7 +1572,7 @@ export async function signOutOwnerFromGoogle(): Promise<void> {
     await purgeExpiredRuntimeAuthSession();
   } finally {
     emitStatus({
-      isOwnerConnected: false,
+      firebaseConnected: false,
       ownerEmail: null,
     });
   }
@@ -1368,7 +1612,68 @@ async function pullCloudSnapshotOnce(): Promise<void> {
     lastServerPullTimestamp = Date.now();
     let anyUpdated = false;
 
-    // 1. portfolio_meta/main (read via unauthenticated publicDb from server first so mobile browsers never get stuck on stale cache)
+    // 0. Check & pull from Cloudflare Free Cloud Store first (fast global edge / zero popup)
+    let cfTimestampMs = 0;
+    try {
+      const cfRes = await fetch('/api/cloud/portfolio', { cache: 'no-store' });
+      if (cfRes.ok) {
+        const cfJson = (await cfRes.json()) as {
+          configured?: boolean;
+          mode?: CloudflareStorageMode;
+          providerLabel?: string;
+          data?: {
+            lastModified?: string;
+            meta?: CloudPortfolioSnapshotPayload['meta'];
+            projects?: Project[];
+            experiences?: Experience[];
+            blogs?: BlogPost[];
+          } | null;
+        };
+
+        if (cfJson.configured) {
+          emitStatus({
+            cloudflareConfigured: true,
+            cloudflareMode:
+              cfJson.mode === 'worker' || cfJson.mode === 'kv-rest' ? cfJson.mode : 'none',
+            cloudflareProviderLabel: cfJson.providerLabel || 'Cloudflare Free Store',
+          });
+        }
+
+        const cfData = cfJson.data;
+        if (cfData && typeof cfData === 'object') {
+          const cfMetaTs = Math.max(
+            parseIsoMs(cfData.lastModified),
+            parseIsoMs(cfData.meta?.lastModified),
+            parseIsoMs(cfData.meta?.profile?.updatedAt)
+          );
+          cfTimestampMs = cfMetaTs || Date.now();
+
+          if (cfData.meta && cfMetaTs >= latestMetaTimestampMs) {
+            latestCloudMeta = cfData.meta;
+            latestMetaTimestampMs = cfMetaTs;
+            anyUpdated = true;
+          }
+          if (Array.isArray(cfData.projects) && cfData.projects.length > 0) {
+            latestCloudProjects = cfData.projects;
+            emitStatus({ cloudProjectsCount: cfData.projects.length });
+            anyUpdated = true;
+          }
+          if (Array.isArray(cfData.experiences) && cfData.experiences.length > 0) {
+            latestCloudExperiences = cfData.experiences;
+            anyUpdated = true;
+          }
+          if (Array.isArray(cfData.blogs) && cfData.blogs.length > 0) {
+            latestCloudBlogs = cfData.blogs;
+            emitStatus({ cloudBlogsCount: cfData.blogs.length });
+            anyUpdated = true;
+          }
+        }
+      }
+    } catch (error) {
+      console.warn('Cloudflare portfolio pull warning:', error);
+    }
+
+    // 1. portfolio_meta/main from Firestore publicDb (server-first so mobile never sticks on stale cache)
     try {
       const metaRef = doc(publicDb, 'portfolio_meta', 'main');
       let metaSnap;
@@ -1378,14 +1683,22 @@ async function pullCloudSnapshotOnce(): Promise<void> {
         metaSnap = await getDoc(metaRef);
       }
       if (metaSnap.exists()) {
-        latestCloudMeta = parseCloudMetaDoc(metaSnap.data() as Record<string, unknown>);
-        anyUpdated = true;
+        const parsedMeta = parseCloudMetaDoc(metaSnap.data() as Record<string, unknown>);
+        const fbMetaTs = Math.max(
+          parseIsoMs(parsedMeta?.lastModified),
+          parseIsoMs(parsedMeta?.profile?.updatedAt)
+        );
+        if (fbMetaTs >= Math.max(latestMetaTimestampMs, cfTimestampMs)) {
+          latestCloudMeta = parsedMeta;
+          latestMetaTimestampMs = fbMetaTs;
+          anyUpdated = true;
+        }
       }
     } catch (error) {
       console.warn('Cloud meta server pull warning:', error);
     }
 
-    // 2. projects
+    // 2. projects from Firestore publicDb
     try {
       const projQuery = query(collection(publicDb, 'projects'), where('visibility', '==', 'public'));
       let projSnap;
@@ -1398,16 +1711,16 @@ async function pullCloudSnapshotOnce(): Promise<void> {
         .map((docItem) => docToProject(docItem.data() as Record<string, unknown>))
         .sort((a, b) => a._orderIndex - b._orderIndex)
         .map(({ _orderIndex: _, ...rest }) => rest);
-      emitStatus({ cloudProjectsCount: parsedProjects.length });
-      if (parsedProjects.length > 0) {
+      if (parsedProjects.length > 0 && (!latestCloudProjects || latestMetaTimestampMs > cfTimestampMs)) {
         latestCloudProjects = parsedProjects;
+        emitStatus({ cloudProjectsCount: parsedProjects.length });
         anyUpdated = true;
       }
     } catch (error) {
       console.warn('Cloud projects server pull warning:', error);
     }
 
-    // 3. experiences
+    // 3. experiences from Firestore publicDb
     try {
       const expQuery = query(collection(publicDb, 'experiences'), where('visibility', '==', 'public'));
       let expSnap;
@@ -1420,7 +1733,7 @@ async function pullCloudSnapshotOnce(): Promise<void> {
         .map((docItem) => docToExperience(docItem.data() as Record<string, unknown>))
         .sort((a, b) => a._orderIndex - b._orderIndex)
         .map(({ _orderIndex: _, ...rest }) => rest);
-      if (parsedExp.length > 0) {
+      if (parsedExp.length > 0 && (!latestCloudExperiences || latestMetaTimestampMs > cfTimestampMs)) {
         latestCloudExperiences = parsedExp;
         anyUpdated = true;
       }
@@ -1428,9 +1741,9 @@ async function pullCloudSnapshotOnce(): Promise<void> {
       console.warn('Cloud experiences server pull warning:', error);
     }
 
-    // 4. blogs
+    // 4. blogs from Firestore publicDb/db
     try {
-      const ownerSignedIn = canAdminWriteToCloud();
+      const ownerSignedIn = canFirebaseOwnerWrite();
       const blogQuery = ownerSignedIn
         ? collection(db, 'blogs')
         : query(collection(publicDb, 'blogs'), where('status', '==', 'Published'));
@@ -1444,9 +1757,9 @@ async function pullCloudSnapshotOnce(): Promise<void> {
         .map((docItem) => docToBlog(docItem.data() as Record<string, unknown>))
         .sort((a, b) => a._orderIndex - b._orderIndex)
         .map(({ _orderIndex: _, ...rest }) => rest);
-      emitStatus({ cloudBlogsCount: parsedBlogs.length });
-      if (parsedBlogs.length > 0) {
+      if (parsedBlogs.length > 0 && (!latestCloudBlogs || latestMetaTimestampMs > cfTimestampMs)) {
         latestCloudBlogs = parsedBlogs;
+        emitStatus({ cloudBlogsCount: parsedBlogs.length });
         anyUpdated = true;
       }
     } catch (error) {
@@ -1490,6 +1803,7 @@ export function initializeCloudRealtimeSync(callbacks: CloudBridgeCallbacks): vo
   syncInitialized = true;
 
   void refreshKnownAuthorizedDomains();
+  void refreshCloudflareStatus();
   // Immediately pull fresh server state so mobile browsers bypass any stale cached snapshot
   void pullCloudSnapshotOnce();
 
@@ -1524,7 +1838,16 @@ export function initializeCloudRealtimeSync(callbacks: CloudBridgeCallbacks): vo
     doc(publicDb, 'portfolio_meta', 'main'),
     (snap) => {
       if (!snap.exists()) return;
-      latestCloudMeta = parseCloudMetaDoc(snap.data() as Record<string, unknown>);
+      const incomingMeta = parseCloudMetaDoc(snap.data() as Record<string, unknown>);
+      const incomingTs = Math.max(
+        parseIsoMs(incomingMeta?.lastModified),
+        parseIsoMs(incomingMeta?.profile?.updatedAt)
+      );
+      if (incomingTs < latestMetaTimestampMs) {
+        return;
+      }
+      latestMetaTimestampMs = Math.max(latestMetaTimestampMs, incomingTs);
+      latestCloudMeta = incomingMeta;
       notifyBridgeSnapshot();
     },
     (error) => {
@@ -1541,8 +1864,8 @@ export function initializeCloudRealtimeSync(callbacks: CloudBridgeCallbacks): vo
         .sort((a, b) => a._orderIndex - b._orderIndex)
         .map(({ _orderIndex: _, ...rest }) => rest);
 
-      emitStatus({ cloudProjectsCount: parsedProjects.length });
-      if (parsedProjects.length > 0) {
+      if (parsedProjects.length > 0 && !currentStatus.cloudflareConfigured) {
+        emitStatus({ cloudProjectsCount: parsedProjects.length });
         latestCloudProjects = parsedProjects;
         notifyBridgeSnapshot();
       }
@@ -1561,7 +1884,7 @@ export function initializeCloudRealtimeSync(callbacks: CloudBridgeCallbacks): vo
         .sort((a, b) => a._orderIndex - b._orderIndex)
         .map(({ _orderIndex: _, ...rest }) => rest);
 
-      if (parsedExp.length > 0) {
+      if (parsedExp.length > 0 && !currentStatus.cloudflareConfigured) {
         latestCloudExperiences = parsedExp;
         notifyBridgeSnapshot();
       }
@@ -1588,8 +1911,8 @@ export function initializeCloudRealtimeSync(callbacks: CloudBridgeCallbacks): vo
           .sort((a, b) => a._orderIndex - b._orderIndex)
           .map(({ _orderIndex: _, ...rest }) => rest);
 
-        emitStatus({ cloudBlogsCount: parsedBlogs.length });
-        if (parsedBlogs.length > 0) {
+        if (parsedBlogs.length > 0 && !currentStatus.cloudflareConfigured) {
+          emitStatus({ cloudBlogsCount: parsedBlogs.length });
           latestCloudBlogs = parsedBlogs;
           notifyBridgeSnapshot();
         }
@@ -1597,7 +1920,7 @@ export function initializeCloudRealtimeSync(callbacks: CloudBridgeCallbacks): vo
       (error) => {
         if (ownerSignedInWithFreshToken && isTokenServiceDisabledError(error)) {
           void purgeExpiredRuntimeAuthSession();
-          emitStatus({ isOwnerConnected: false, ownerEmail: null });
+          emitStatus({ firebaseConnected: false, ownerEmail: null });
           attachBlogsListener(false);
           return;
         }
@@ -1606,7 +1929,7 @@ export function initializeCloudRealtimeSync(callbacks: CloudBridgeCallbacks): vo
     );
   };
 
-  attachBlogsListener(canAdminWriteToCloud());
+  attachBlogsListener(canFirebaseOwnerWrite());
 
   // Complete any returning mobile same-tab Google OAuth redirect cleanly
   getRedirectResult(auth, browserPopupRedirectResolver)
@@ -1627,7 +1950,7 @@ export function initializeCloudRealtimeSync(callbacks: CloudBridgeCallbacks): vo
         await purgeExpiredRuntimeAuthSession();
         clearAdminOAuthGracePeriod();
         emitStatus({
-          isOwnerConnected: false,
+          firebaseConnected: false,
           ownerEmail: null,
           error: `"${wrongEmail}" অনুমোদিত নয়। শুধুমাত্র অনুমোদিত অ্যাডমিন ইমেইল (${OWNER_ADMIN_EMAILS.join(' অথবা ')}) দিয়ে কানেক্ট করুন।`,
         });
@@ -1639,7 +1962,7 @@ export function initializeCloudRealtimeSync(callbacks: CloudBridgeCallbacks): vo
       }
       completeAdminOAuthRedirectSession();
       emitStatus({
-        isOwnerConnected: true,
+        firebaseConnected: true,
         ownerEmail: redirectRes.user.email || null,
         error: null,
       });
@@ -1665,11 +1988,13 @@ export function initializeCloudRealtimeSync(callbacks: CloudBridgeCallbacks): vo
 
   // Refresh blog query privileges & auto-flush pending local edits when Admin unlocks
   window.addEventListener(ADMIN_AUTH_CHANGED_EVENT, () => {
-    const canWrite = canAdminWriteToCloud();
-    attachBlogsListener(canWrite);
-    if (canWrite && hasLocalUnsyncedEdits()) {
-      void syncAllLocalDataToCloud();
-    }
+    void refreshCloudflareStatus().then(() => {
+      const canWrite = canAdminWriteToCloud();
+      attachBlogsListener(canFirebaseOwnerWrite());
+      if (canWrite && hasLocalUnsyncedEdits()) {
+        void syncAllLocalDataToCloud();
+      }
+    });
   });
 
   // 4. Listen to Firebase Auth state changes & schedule clean sign-out BEFORE 5-min refresh offset
@@ -1679,20 +2004,20 @@ export function initializeCloudRealtimeSync(callbacks: CloudBridgeCallbacks): vo
     if (user && !hasFreshOwnerAuthToken(user)) {
       void purgeExpiredRuntimeAuthSession();
       emitStatus({
-        isOwnerConnected: false,
+        firebaseConnected: false,
         ownerEmail: null,
       });
       attachBlogsListener(false);
       return;
     }
 
-    const ownerConnected = isVerifiedFirebaseOwner(user) && hasFreshOwnerAuthToken(user);
+    const fbConnected = isVerifiedFirebaseOwner(user) && hasFreshOwnerAuthToken(user);
     emitStatus({
-      isOwnerConnected: ownerConnected,
-      ownerEmail: ownerConnected && user ? user.email : null,
+      firebaseConnected: fbConnected,
+      ownerEmail: fbConnected && user ? user.email : null,
     });
 
-    if (ownerConnected && user) {
+    if (fbConnected && user) {
       const msUntilSafeCutoff = Math.max(
         5_000,
         getOwnerTokenExpiryMs(user) - Date.now() - TOKEN_SAFETY_BUFFER_MS
@@ -1700,7 +2025,7 @@ export function initializeCloudRealtimeSync(callbacks: CloudBridgeCallbacks): vo
       tokenExpiryTimerId = window.setTimeout(() => {
         void purgeExpiredRuntimeAuthSession().then(() => {
           emitStatus({
-            isOwnerConnected: false,
+            firebaseConnected: false,
             ownerEmail: null,
           });
           attachBlogsListener(false);
@@ -1708,9 +2033,9 @@ export function initializeCloudRealtimeSync(callbacks: CloudBridgeCallbacks): vo
       }, msUntilSafeCutoff);
     }
 
-    attachBlogsListener(isAdminAuthenticated() && ownerConnected);
+    attachBlogsListener(isAdminAuthenticated() && fbConnected);
 
-    if (ownerConnected && isAdminAuthenticated()) {
+    if (fbConnected && isAdminAuthenticated()) {
       void syncAllLocalDataToCloud();
     }
   });

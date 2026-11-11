@@ -12,6 +12,9 @@ import {
   Check,
   Mail,
   ExternalLink,
+  ChevronDown,
+  ChevronUp,
+  Server,
 } from 'lucide-react';
 import {
   isAdminAuthenticated,
@@ -29,6 +32,7 @@ import {
   isEmbeddedInAppWebView,
   isMobileBrowserDevice,
   isTopLevelBrowserWindow,
+  refreshCloudflareStatus,
   refreshKnownAuthorizedDomains,
   signInOwnerWithGoogle,
   signInOwnerWithGoogleRedirect,
@@ -51,6 +55,12 @@ export const CLOUD_PROMPT_DISMISSED_SESSION_KEY = 'sabbir_cloud_prompt_dismissed
 
 const STANDALONE_SHARED_ADMIN_URL =
   'https://ais-pre-f7abqgvus7ali36cbsgtcy-609487281458.asia-southeast1.run.app/admin';
+
+const CLOUDFLARE_ENV_KEYS = [
+  'CLOUDFLARE_ACCOUNT_ID',
+  'CLOUDFLARE_KV_NAMESPACE_ID',
+  'CLOUDFLARE_API_TOKEN',
+] as const;
 
 interface AdminCloudScanModalProps {
   isOpen: boolean;
@@ -81,7 +91,7 @@ export default function AdminCloudScanModal({
   );
   const [localCounts, setLocalCounts] = useState(readLiveCounts);
   const [isSyncingNow, setIsSyncingNow] = useState(false);
-  const [copiedKey, setCopiedKey] = useState<'url' | 'domain' | null>(null);
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [lastErrorCode, setLastErrorCode] = useState<string>('');
   const [domainsLoaded, setDomainsLoaded] = useState<boolean>(() =>
     areAuthorizedDomainsLoaded()
@@ -92,6 +102,8 @@ export default function AdminCloudScanModal({
   const [selectedOwnerEmail, setSelectedOwnerEmail] = useState<string>(() =>
     getPreferredOwnerEmail()
   );
+  const [showCfGuide, setShowCfGuide] = useState<boolean>(false);
+  const [showFirebaseFallback, setShowFirebaseFallback] = useState<boolean>(false);
   const [feedback, setFeedback] = useState<{
     type: 'success' | 'error';
     message: string;
@@ -125,7 +137,7 @@ export default function AdminCloudScanModal({
       setFeedback({
         type: 'success',
         message:
-          'সব প্রজেক্ট, ব্লগ, স্টোরি, রোডম্যাপ, রেফারেন্স, স্কিল ও প্রোফাইল Google Cloud Database-এ সফলভাবে সেভ হয়েছে।',
+          'সব প্রজেক্ট, ব্লগ, স্টোরি, রোডম্যাপ, রেফারেন্স, স্কিল, ছবি ও প্রোফাইল ক্লাউড ডাটাবেসে সফলভাবে সেভ হয়েছে।',
       });
     };
 
@@ -162,10 +174,12 @@ export default function AdminCloudScanModal({
       const current = getCloudSyncStatus();
       setCloudStatus(current);
       setSelectedOwnerEmail(current.ownerEmail || getPreferredOwnerEmail());
+      setShowCfGuide(!current.cloudflareConfigured && !current.firebaseConnected);
       if (!current.isSyncing && !current.isOwnerConnected) {
         setFeedback(null);
       }
       setLocalCounts(readLiveCounts());
+      void refreshCloudflareStatus();
       void refreshKnownAuthorizedDomains(true).then((authorized) => {
         setDomainsLoaded(true);
         setIsHostAuthorized(authorized);
@@ -197,7 +211,7 @@ export default function AdminCloudScanModal({
     return `${window.location.origin}/admin`;
   };
 
-  const handleCopyText = async (text: string, key: 'url' | 'domain') => {
+  const handleCopyText = async (text: string, key: string) => {
     try {
       await navigator.clipboard.writeText(text);
       setCopiedKey(key);
@@ -207,12 +221,35 @@ export default function AdminCloudScanModal({
     }
   };
 
-  const handleConnectAndSave = async (forceAccountPicker = false) => {
+  const handleSyncCloudflareNow = async () => {
+    if (isSyncingNow || cloudStatus.isSyncing) return;
+    setFeedback(null);
+    setLastErrorCode('');
+    setIsSyncingNow(true);
+    try {
+      const syncRes = await syncAllLocalDataToCloud();
+      if (syncRes.success) {
+        setFeedback({
+          type: 'success',
+          message:
+            'সব প্রজেক্ট, ব্লগ, স্টোরি, রোডম্যাপ, রেফারেন্স, স্কিল ও প্রোফাইল সফলভাবে Cloudflare/Cloud-এ সেভ হয়েছে—ফোনে এখনই আপডেট দেখা যাবে!',
+        });
+      } else {
+        setFeedback({
+          type: 'error',
+          message: syncRes.error || 'ক্লাউডে সেভ সম্পন্ন হয়নি। অনুগ্রহ করে আবার চেষ্টা করুন।',
+        });
+      }
+    } finally {
+      setIsSyncingNow(false);
+    }
+  };
+
+  const handleConnectAndSaveFirebase = async (forceAccountPicker = false) => {
     if (isSyncingNow || cloudStatus.isSyncing) return;
 
     const targetEmail = cloudStatus.ownerEmail || selectedOwnerEmail || PRIMARY_OWNER_EMAIL;
-    // Trigger Google popup synchronously on user tap before React state updates
-    const signInPromise = !cloudStatus.isOwnerConnected
+    const signInPromise = !cloudStatus.firebaseConnected
       ? signInOwnerWithGoogle(targetEmail, forceAccountPicker)
       : Promise.resolve({
           success: true,
@@ -247,7 +284,7 @@ export default function AdminCloudScanModal({
         setFeedback({
           type: 'success',
           message:
-            'সব প্রজেক্ট, ব্লগ, স্টোরি, রোডম্যাপ, রেফারেন্স, স্কিল ও প্রোফাইল Google Cloud Database-এ সফলভাবে সেভ হয়েছে।',
+            'সব প্রজেক্ট, ব্লগ, স্টোরি, রোডম্যাপ, রেফারেন্স, স্কিল ও প্রোফাইল ক্লাউড ডাটাবেসে সফলভাবে সেভ হয়েছে।',
         });
       } else {
         setFeedback({
@@ -293,12 +330,12 @@ export default function AdminCloudScanModal({
   const busy = isSyncingNow || cloudStatus.isSyncing;
   const currentHost = typeof window !== 'undefined' ? window.location.hostname : '';
   const needsDomainAuthSetup =
-    !cloudStatus.isOwnerConnected &&
+    !cloudStatus.firebaseConnected &&
     Boolean(currentHost) &&
     currentHost !== 'localhost' &&
     ((domainsLoaded && !isHostAuthorized) || lastErrorCode === 'auth/unauthorized-domain');
   const showMobileSameTabOption =
-    !cloudStatus.isOwnerConnected &&
+    !cloudStatus.firebaseConnected &&
     isMobile &&
     isTopLevel &&
     !isInAppWebView &&
@@ -311,7 +348,7 @@ export default function AdminCloudScanModal({
       aria-modal="true"
       aria-labelledby="admin-cloud-autosave-title"
     >
-      <div className="relative w-full max-w-lg bg-[#0E1320] border border-white/15 rounded-2xl p-5 sm:p-6 shadow-2xl text-white space-y-4 my-auto max-h-[92dvh] overflow-y-auto">
+      <div className="relative w-full max-w-xl bg-[#0E1320] border border-white/15 rounded-2xl p-5 sm:p-6 shadow-2xl text-white space-y-4 my-auto max-h-[92dvh] overflow-y-auto">
         {/* Close Button */}
         <button
           type="button"
@@ -329,23 +366,18 @@ export default function AdminCloudScanModal({
           </div>
           <div className="space-y-1 min-w-0">
             <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
-              <span className="text-emerald-400 font-medium">Admin Exclusive</span>
+              <span className="text-emerald-400 font-medium">Zero Google Popup</span>
               <span aria-hidden="true">·</span>
-              <span>Zero Data Loss</span>
+              <span>Cloudflare Free Store</span>
             </div>
             <h2
               id="admin-cloud-autosave-title"
               className="font-display font-bold text-lg sm:text-xl text-white tracking-tight"
             >
-              Cloud Auto-Save Database
+              Cloudflare &amp; Cloud Sync Center
             </h2>
           </div>
         </div>
-
-        {/* Simple Reassuring Bengali Explanation */}
-        <p className="text-[13px] text-slate-300 leading-relaxed">
-          একবার কানেক্ট করলেই আপনার নতুন <strong className="text-white font-semibold">প্রজেক্ট, ব্লগ, স্টোরি (অভিজ্ঞতা), রোডম্যাপ, রেফারেন্স ও প্রোফাইল</strong> অটোমেটিক সেভ হবে—কোনো ডাটা কখনো হারাবে না।
-        </p>
 
         {/* Complete 6-Dataset Inventory Grid */}
         <div className="space-y-2">
@@ -387,139 +419,131 @@ export default function AdminCloudScanModal({
               <div className="text-[11px] text-slate-400">Skills</div>
             </div>
           </div>
-          <div className="text-[11px] text-slate-400 text-center">
-            Profile · Visiting Card · Color Theme — সবগুলো ডাটাবেসে অন্তর্ভুক্ত আছে
-          </div>
         </div>
 
-        {/* Calm Connection & Save State */}
-        <div className="space-y-2.5 text-xs text-slate-300 border-t border-b border-white/10 py-3">
-          <div className="flex flex-col gap-1.5">
-            <div className="flex items-center justify-between gap-3">
-              <span className="text-slate-400 shrink-0">Admin Account</span>
-              <span className="font-mono text-emerald-300 truncate">
-                {cloudStatus.isOwnerConnected
-                  ? cloudStatus.ownerEmail || selectedOwnerEmail
-                  : selectedOwnerEmail}
-              </span>
+        {/* Primary Card: Cloudflare Free Server Store */}
+        <div
+          className={`rounded-2xl p-4 border space-y-3 ${
+            cloudStatus.cloudflareConfigured
+              ? 'bg-emerald-500/10 border-emerald-500/35'
+              : 'bg-sky-500/10 border-sky-500/30'
+          }`}
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-start gap-2.5 min-w-0">
+              <Server
+                className={`w-4 h-4 shrink-0 mt-0.5 ${
+                  cloudStatus.cloudflareConfigured ? 'text-emerald-400' : 'text-sky-400'
+                }`}
+              />
+              <div className="space-y-1 min-w-0">
+                <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-white">
+                  <span>Cloudflare Free Store (1 GB Free · No Card)</span>
+                  <span
+                    className={`font-mono text-[11px] ${
+                      cloudStatus.cloudflareConfigured ? 'text-emerald-300' : 'text-amber-300'
+                    }`}
+                  >
+                    {cloudStatus.cloudflareConfigured
+                      ? `· ${cloudStatus.cloudflareProviderLabel}`
+                      : '· Setup Needed'}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  {cloudStatus.cloudflareConfigured
+                    ? 'চালু আছে! এখন Admin আনলক করে ছবি বা ডাটা সেভ করলেই সরাসরি Cloudflare সার্ভারে সেভ হবে এবং ফোনে সাথে সাথে আপডেট দেখা যাবে—Google পপআপ ছাড়াই।'
+                    : 'একবার Vercel-এ ফ্রি Cloudflare KV সেটআপ করলে আর কখনো Google পপআপ বা ডোমেইন অ্যাপ্রুভাল লাগবে না—ডেক্সটপ থেকে সেভ করলেই ফোনে চলে যাবে।'}
+                </p>
+              </div>
             </div>
 
-            {!cloudStatus.isOwnerConnected && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 pt-1">
-                {OWNER_ADMIN_EMAILS.map((email) => {
-                  const active = selectedOwnerEmail === email;
-                  return (
-                    <button
-                      key={email}
-                      type="button"
-                      onClick={() => {
-                        const saved = setPreferredOwnerEmail(email);
-                        setSelectedOwnerEmail(saved);
-                      }}
-                      className={`min-h-[38px] px-2.5 py-1.5 rounded-lg font-mono text-[11px] border text-left transition-colors cursor-pointer truncate ${
-                        active
-                          ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-200 font-semibold'
-                          : 'bg-white/[0.03] hover:bg-white/[0.07] border-white/10 text-slate-400 hover:text-white'
-                      }`}
-                    >
-                      {email}
-                    </button>
-                  );
-                })}
+            {!cloudStatus.cloudflareConfigured && (
+              <button
+                type="button"
+                onClick={() => setShowCfGuide((prev) => !prev)}
+                className="min-h-[36px] px-2.5 py-1.5 rounded-lg bg-white/10 hover:bg-white/15 text-xs font-medium text-white inline-flex items-center gap-1 shrink-0 cursor-pointer whitespace-nowrap"
+              >
+                <span>Setup Guide</span>
+                {showCfGuide ? (
+                  <ChevronUp className="w-3.5 h-3.5" />
+                ) : (
+                  <ChevronDown className="w-3.5 h-3.5" />
+                )}
+              </button>
+            )}
+          </div>
+
+          {cloudStatus.cloudflareConfigured && (
+            <button
+              type="button"
+              onClick={handleSyncCloudflareNow}
+              disabled={busy}
+              className="w-full min-h-[46px] px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs sm:text-sm font-semibold inline-flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 whitespace-nowrap"
+            >
+              <RefreshCw className={`w-4 h-4 shrink-0 ${busy ? 'animate-spin' : ''}`} />
+              <span>
+                {busy
+                  ? 'Saving to Cloudflare...'
+                  : 'Save & Sync All Updates to Cloudflare & Phone'}
+              </span>
+            </button>
+          )}
+
+          {showCfGuide && !cloudStatus.cloudflareConfigured && (
+            <div className="pt-2 border-t border-white/10 space-y-2.5 text-xs text-slate-200 leading-relaxed">
+              <div className="space-y-1.5">
+                <p>
+                  <strong className="text-white">১.</strong>{' '}
+                  <a
+                    href="https://dash.cloudflare.com/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-sky-300 underline inline-flex items-center gap-1"
+                  >
+                    Cloudflare Dashboard
+                    <ExternalLink className="w-3 h-3" />
+                  </a>{' '}
+                  এ গিয়ে <strong className="text-white">Storage &amp; Databases &gt; KV</strong> থেকে ফ্রি Namespace তৈরি করুন (ক্রেডিট কার্ড লাগে না)।
+                </p>
+                <p>
+                  <strong className="text-white">২.</strong>{' '}
+                  <strong className="text-white">My Profile &gt; API Tokens &gt; Create Custom Token</strong> এ{' '}
+                  <span className="font-mono text-sky-200">Account : Workers KV Storage : Edit</span> পারমিশন দিয়ে টোকেন তৈরি করুন।
+                </p>
+                <p>
+                  <strong className="text-white">৩.</strong>{' '}
+                  <strong className="text-white">Vercel Project &gt; Settings &gt; Environment Variables</strong>-এ এই ৩টি যোগ করে Redeploy করুন:
+                </p>
               </div>
-            )}
-          </div>
 
-          <div className="flex items-center justify-between gap-3">
-            <span className="text-slate-400 shrink-0">Database Status</span>
-            {cloudStatus.isOwnerConnected ? (
-              <span className="inline-flex items-center gap-1.5 font-medium text-emerald-400 truncate">
-                <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
-                <span className="truncate">
-                  {cloudStatus.hasUnsyncedChanges ? 'Auto-Saving...' : 'Auto-Save Active'}
-                </span>
-              </span>
-            ) : (
-              <span className="inline-flex items-center gap-1.5 font-medium text-sky-300 truncate">
-                <ShieldCheck className="w-3.5 h-3.5 shrink-0 text-sky-400" />
-                <span className="truncate">Saved on Device · Connect for Cloud</span>
-              </span>
-            )}
-          </div>
-
-          {cloudStatus.lastSyncedAt && (
-            <div className="flex items-center justify-between gap-3">
-              <span className="text-slate-400 shrink-0">Last Cloud Save</span>
-              <span className="font-mono tabular-nums text-slate-200 truncate">
-                {new Date(cloudStatus.lastSyncedAt).toLocaleString()}
-              </span>
+              <div className="grid grid-cols-1 gap-1.5">
+                {CLOUDFLARE_ENV_KEYS.map((envKey) => (
+                  <button
+                    key={envKey}
+                    type="button"
+                    onClick={() => handleCopyText(envKey, envKey)}
+                    className="min-h-[38px] px-3 py-1.5 rounded-lg bg-[#090D16] hover:bg-white/10 border border-white/10 flex items-center justify-between gap-2 font-mono text-[11px] text-sky-200 cursor-pointer"
+                  >
+                    <span className="truncate">{envKey}</span>
+                    {copiedKey === envKey ? (
+                      <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                    ) : (
+                      <Copy className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                    )}
+                  </button>
+                ))}
+              </div>
             </div>
           )}
         </div>
 
-        {/* Mobile In-App WebView Helper (Messenger / WhatsApp / Facebook) */}
-        {!cloudStatus.isOwnerConnected && isInAppWebView && (
-          <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 space-y-2.5 text-xs text-amber-200">
-            <p className="leading-relaxed">
-              ইন-অ্যাপ ব্রাউজারে Google লগইন বন্ধ থাকে। নিচের বাটনে লিংক কপি করে <strong>Chrome</strong> বা <strong>Safari</strong> ব্রাউজারে ওপেন করুন:
-            </p>
-            <button
-              type="button"
-              onClick={() => handleCopyText(getDirectBrowserUrl(), 'url')}
-              className="w-full min-h-[44px] px-4 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/40 text-white font-semibold flex items-center justify-center gap-2 cursor-pointer whitespace-nowrap"
-            >
-              {copiedKey === 'url' ? (
-                <>
-                  <Check className="w-4 h-4 text-emerald-300 shrink-0" />
-                  <span>লিংক কপি হয়েছে — Chrome/Safari-তে পেস্ট করুন</span>
-                </>
-              ) : (
-                <>
-                  <Copy className="w-4 h-4 shrink-0" />
-                  <span>অ্যাডমিন লিংক কপি করুন (Chrome/Safari)</span>
-                </>
-              )}
-            </button>
-          </div>
-        )}
-
-        {/* Vercel / Custom Domain One-Time Setup Helper */}
-        {needsDomainAuthSetup && (
-          <div className="p-3.5 rounded-xl bg-sky-500/10 border border-sky-500/30 text-xs text-sky-100 leading-relaxed space-y-2.5">
-            <div className="flex items-start gap-2.5">
-              <ShieldCheck className="w-4 h-4 shrink-0 mt-0.5 text-sky-400" />
-              <span>
-                ভিজিটররা এখনই সব ডাটা লাইভ দেখতে পাচ্ছে। এই ডোমেইন (<strong className="font-mono text-white">{currentHost}</strong>) থেকে অ্যাডমিন Google Auto-Save চালু করতে শুধু ১ বার Firebase Authorized Domains-এ ডোমেইনটি যোগ করুন:
-              </span>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-0.5">
-              <button
-                type="button"
-                onClick={() => handleCopyText(currentHost, 'domain')}
-                className="w-full min-h-[42px] px-3 py-2 rounded-lg bg-white/10 hover:bg-white/15 text-white font-mono text-xs flex items-center justify-center gap-2 cursor-pointer whitespace-nowrap"
-              >
-                {copiedKey === 'domain' ? (
-                  <>
-                    <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                    <span className="truncate">Copied: {currentHost}</span>
-                  </>
-                ) : (
-                  <>
-                    <Copy className="w-3.5 h-3.5 shrink-0" />
-                    <span className="truncate">1. Copy: {currentHost}</span>
-                  </>
-                )}
-              </button>
-              <a
-                href="https://console.firebase.google.com/project/splendid-meridian-64mm2/authentication/settings"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="w-full min-h-[42px] px-3 py-2 rounded-lg bg-sky-500/20 hover:bg-sky-500/30 border border-sky-400/30 text-sky-100 font-medium text-xs flex items-center justify-center gap-1.5 whitespace-nowrap"
-              >
-                <ExternalLink className="w-3.5 h-3.5 shrink-0" />
-                <span className="truncate">2. Add in Firebase Settings</span>
-              </a>
-            </div>
+        {/* Last Sync Timestamp Row */}
+        {cloudStatus.lastSyncedAt && (
+          <div className="flex items-center justify-between gap-3 text-xs text-slate-300 px-1">
+            <span className="text-slate-400 shrink-0">Last Cloud Save</span>
+            <span className="font-mono tabular-nums text-emerald-300 truncate">
+              {new Date(cloudStatus.lastSyncedAt).toLocaleString()}
+            </span>
           </div>
         )}
 
@@ -544,7 +568,7 @@ export default function AdminCloudScanModal({
             {lastErrorCode === 'auth/wrong-owner-email' && (
               <button
                 type="button"
-                onClick={() => handleConnectAndSave(true)}
+                onClick={() => handleConnectAndSaveFirebase(true)}
                 className="w-full min-h-[42px] px-3 py-2 rounded-lg bg-white/10 hover:bg-white/15 text-white font-medium text-xs flex items-center justify-center gap-2 cursor-pointer whitespace-nowrap"
               >
                 <Mail className="w-3.5 h-3.5 shrink-0" />
@@ -554,82 +578,195 @@ export default function AdminCloudScanModal({
           </div>
         )}
 
-        {/* Single Clear Primary Button + Optional Mobile Helper */}
-        <div className="space-y-2.5 pt-1">
+        {/* Firebase Cloud Sync (Ready Now with sabbir.altersense@gmail.com) */}
+        <div
+          className={`rounded-2xl p-3.5 border space-y-3 ${
+            cloudStatus.firebaseConnected
+              ? 'bg-emerald-500/10 border-emerald-500/35'
+              : !cloudStatus.cloudflareConfigured
+              ? 'bg-[#090D16] border-emerald-500/30'
+              : 'bg-[#090D16] border-white/10'
+          }`}
+        >
           <button
             type="button"
-            onClick={() => handleConnectAndSave(false)}
-            disabled={busy}
-            className="w-full min-h-[48px] px-5 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs sm:text-sm font-semibold shadow-lg shadow-emerald-950/50 inline-flex items-center justify-center gap-2 transition-colors cursor-pointer disabled:opacity-60 whitespace-nowrap"
+            onClick={() => setShowFirebaseFallback((prev) => !prev)}
+            className="w-full flex items-center justify-between gap-2 text-left cursor-pointer"
           >
-            <RefreshCw className={`w-4 h-4 shrink-0 ${busy ? 'animate-spin' : ''}`} />
-            <span className="truncate">
-              {busy
-                ? 'Saving to Google Cloud...'
-                : cloudStatus.isOwnerConnected
-                ? 'Save & Sync All Data Now'
-                : `Connect Auto-Save (${selectedOwnerEmail})`}
-            </span>
+            <div className="flex items-center gap-2 text-xs font-medium text-slate-200 min-w-0">
+              <ShieldCheck
+                className={`w-4 h-4 shrink-0 ${
+                  cloudStatus.firebaseConnected ? 'text-emerald-400' : 'text-sky-400'
+                }`}
+              />
+              <span className="truncate">
+                Firebase Cloud Database:{' '}
+                <strong
+                  className={
+                    cloudStatus.firebaseConnected ? 'text-emerald-300' : 'text-sky-300'
+                  }
+                >
+                  {cloudStatus.firebaseConnected
+                    ? `Connected (${cloudStatus.ownerEmail})`
+                    : `Ready (${selectedOwnerEmail})`}
+                </strong>
+              </span>
+            </div>
+            {showFirebaseFallback || !cloudStatus.cloudflareConfigured ? (
+              <ChevronUp className="w-4 h-4 text-slate-400 shrink-0" />
+            ) : (
+              <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />
+            )}
           </button>
 
-          {showMobileSameTabOption && (
-            <button
-              type="button"
-              onClick={handleMobileSameTabRedirect}
-              disabled={busy}
-              className="w-full min-h-[44px] px-4 py-2.5 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] border border-white/15 text-slate-200 text-xs font-medium inline-flex items-center justify-center gap-2 transition-colors cursor-pointer disabled:opacity-50 whitespace-nowrap"
-            >
-              <Smartphone className="w-4 h-4 text-emerald-400 shrink-0" />
-              <span className="truncate">মোবাইল ডাইরেক্ট কানেক্ট (পপআপ ছাড়া · Same-Tab)</span>
-            </button>
-          )}
-
-          {!cloudStatus.isOwnerConnected && isMobile && !isTopLevel && !isInAppWebView && (
-            <button
-              type="button"
-              onClick={() => handleCopyText(getDirectBrowserUrl(), 'url')}
-              className="w-full min-h-[44px] px-4 py-2.5 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] border border-white/15 text-slate-200 text-xs font-medium inline-flex items-center justify-center gap-2 transition-colors cursor-pointer whitespace-nowrap"
-            >
-              {copiedKey === 'url' ? (
-                <>
-                  <Check className="w-4 h-4 text-emerald-400 shrink-0" />
-                  <span className="truncate">লিংক কপি হয়েছে — ব্রাউজারে ওপেন করুন</span>
-                </>
-              ) : (
-                <>
-                  <Smartphone className="w-4 h-4 text-emerald-400 shrink-0" />
-                  <span className="truncate">মোবাইলে সমস্যা হলে ডাইরেক্ট লিংক কপি করুন</span>
-                </>
+          {(showFirebaseFallback || !cloudStatus.cloudflareConfigured) && (
+            <div className="space-y-2.5 pt-1 border-t border-white/10">
+              {!cloudStatus.firebaseConnected && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 pt-1">
+                  {OWNER_ADMIN_EMAILS.map((email) => {
+                    const active = selectedOwnerEmail === email;
+                    return (
+                      <button
+                        key={email}
+                        type="button"
+                        onClick={() => {
+                          const saved = setPreferredOwnerEmail(email);
+                          setSelectedOwnerEmail(saved);
+                        }}
+                        className={`min-h-[38px] px-2.5 py-1.5 rounded-lg font-mono text-[11px] border text-left transition-colors cursor-pointer truncate ${
+                          active
+                            ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-200 font-semibold'
+                            : 'bg-white/[0.03] hover:bg-white/[0.07] border-white/10 text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        {email}
+                      </button>
+                    );
+                  })}
+                </div>
               )}
-            </button>
+
+              {!cloudStatus.firebaseConnected && isInAppWebView && (
+                <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 space-y-2 text-xs text-amber-200">
+                  <p className="leading-relaxed">
+                    ইন-অ্যাপ ব্রাউজারে Google লগইন বন্ধ থাকে। <strong>Chrome</strong> বা <strong>Safari</strong> ব্রাউজারে ওপেন করুন:
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => handleCopyText(getDirectBrowserUrl(), 'url')}
+                    className="w-full min-h-[40px] px-3 py-2 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-white font-semibold flex items-center justify-center gap-2 cursor-pointer whitespace-nowrap"
+                  >
+                    {copiedKey === 'url' ? (
+                      <>
+                        <Check className="w-4 h-4 text-emerald-300 shrink-0" />
+                        <span>লিংক কপি হয়েছে</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-4 h-4 shrink-0" />
+                        <span>অ্যাডমিন লিংক কপি করুন</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              )}
+
+              {needsDomainAuthSetup && !cloudStatus.cloudflareConfigured && (
+                <div className="p-3 rounded-xl bg-sky-500/10 border border-sky-500/30 text-xs text-sky-100 leading-relaxed space-y-2">
+                  <span>
+                    Google Auth ব্যবহার করতে চাইলে <strong className="font-mono text-white">{currentHost}</strong> Firebase Authorized Domains-এ যোগ করুন:
+                  </span>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleCopyText(currentHost, 'domain')}
+                      className="w-full min-h-[40px] px-3 py-2 rounded-lg bg-white/10 hover:bg-white/15 text-white font-mono text-xs flex items-center justify-center gap-2 cursor-pointer whitespace-nowrap"
+                    >
+                      {copiedKey === 'domain' ? (
+                        <>
+                          <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                          <span className="truncate">Copied</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-3.5 h-3.5 shrink-0" />
+                          <span className="truncate">Copy: {currentHost}</span>
+                        </>
+                      )}
+                    </button>
+                    <a
+                      href="https://console.firebase.google.com/project/splendid-meridian-64mm2/authentication/settings"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="w-full min-h-[40px] px-3 py-2 rounded-lg bg-sky-500/20 hover:bg-sky-500/30 border border-sky-400/30 text-sky-100 font-medium text-xs flex items-center justify-center gap-1.5 whitespace-nowrap"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5 shrink-0" />
+                      <span className="truncate">Firebase Settings</span>
+                    </a>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex flex-col sm:flex-row gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleConnectAndSaveFirebase(false)}
+                  disabled={busy}
+                  className={`flex-1 min-h-[42px] px-4 py-2 rounded-xl text-white text-xs font-semibold inline-flex items-center justify-center gap-2 transition-colors cursor-pointer disabled:opacity-60 whitespace-nowrap ${
+                    !cloudStatus.cloudflareConfigured
+                      ? 'bg-emerald-600 hover:bg-emerald-500 shadow-sm'
+                      : 'bg-white/10 hover:bg-white/15'
+                  }`}
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 shrink-0 ${busy ? 'animate-spin' : ''}`} />
+                  <span className="truncate">
+                    {cloudStatus.firebaseConnected
+                      ? 'Save & Sync to Firebase Cloud'
+                      : `Connect Google (${selectedOwnerEmail})`}
+                  </span>
+                </button>
+
+                {showMobileSameTabOption && (
+                  <button
+                    type="button"
+                    onClick={handleMobileSameTabRedirect}
+                    disabled={busy}
+                    className="min-h-[42px] px-3 py-2 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] border border-white/15 text-slate-200 text-xs font-medium inline-flex items-center justify-center gap-2 cursor-pointer whitespace-nowrap"
+                  >
+                    <Smartphone className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                    <span>Same-Tab</span>
+                  </button>
+                )}
+
+                {cloudStatus.firebaseConnected && (
+                  <button
+                    type="button"
+                    onClick={handleDisconnectOwner}
+                    disabled={busy}
+                    className="min-h-[42px] px-3 py-2 rounded-xl bg-white/[0.04] hover:bg-white/[0.1] text-slate-400 hover:text-white text-xs font-medium inline-flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap"
+                  >
+                    <LogOut className="w-3.5 h-3.5 shrink-0" />
+                    <span>Disconnect</span>
+                  </button>
+                )}
+              </div>
+            </div>
           )}
+        </div>
 
-          {/* Clean Footer Row */}
-          <div className="flex items-center justify-between gap-2 pt-1">
-            <button
-              type="button"
-              onClick={dismissAndClose}
-              disabled={busy}
-              className="min-h-[42px] px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white text-xs font-medium transition-colors cursor-pointer disabled:opacity-50 whitespace-nowrap shrink-0"
-            >
-              Close
-            </button>
-
-            {cloudStatus.isOwnerConnected && (
-              <button
-                type="button"
-                onClick={handleDisconnectOwner}
-                disabled={busy}
-                className="min-h-[42px] px-3.5 py-2 rounded-xl bg-white/[0.03] hover:bg-white/[0.08] text-slate-400 hover:text-slate-200 text-xs font-medium inline-flex items-center justify-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50 whitespace-nowrap shrink-0"
-                title="Disconnect Google Cloud write session"
-              >
-                <LogOut className="w-3.5 h-3.5 shrink-0" />
-                <span>Disconnect</span>
-              </button>
-            )}
-          </div>
+        {/* Clean Footer Row */}
+        <div className="flex items-center justify-end gap-2 pt-1">
+          <button
+            type="button"
+            onClick={dismissAndClose}
+            disabled={busy}
+            className="min-h-[42px] px-5 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-white text-xs font-medium transition-colors cursor-pointer disabled:opacity-50 whitespace-nowrap shrink-0"
+          >
+            Close
+          </button>
         </div>
       </div>
     </div>
   );
 }
+

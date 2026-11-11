@@ -1,5 +1,8 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import crypto from 'crypto';
+import {
+  issueSignedAdminToken,
+  verifyServerPasscode,
+} from '../_lib/adminToken';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === 'GET') {
@@ -17,20 +20,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(400).json({ success: false, error: 'Passcode is required.' });
     }
 
-    const expectedPasscode = (process.env.ADMIN_PASSCODE || 'sabbir@sqa2026').trim();
-    const inputPasscode = passcode.trim();
-
-    // Timing-safe comparison to prevent timing attacks
-    const isMatch = (expected: string, input: string) => {
-      const b1 = Buffer.from(expected);
-      const b2 = Buffer.from(input);
-      return b1.length === b2.length && crypto.timingSafeEqual(b1, b2);
-    };
-
-    const isValid = isMatch(expectedPasscode, inputPasscode) || isMatch('sabbir@sqa2026', inputPasscode) || isMatch('sabbir2026', inputPasscode);
-
-    if (isValid) {
-      const token = `sabbir_sqa_admin_${crypto.randomBytes(16).toString('hex')}`;
+    if (verifyServerPasscode(passcode)) {
+      const token = issueSignedAdminToken();
       return res.status(200).json({
         success: true,
         message: 'Admin session authorized.',

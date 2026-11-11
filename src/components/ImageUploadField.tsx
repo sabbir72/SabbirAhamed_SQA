@@ -10,8 +10,10 @@ import {
 } from 'lucide-react';
 import {
   readFileAsDataUrl,
+  uploadDataUrlToCloudflare,
   uploadPortfolioImageFile,
 } from '../utils/imageUpload';
+import { getAdminToken } from '../utils/adminAuth';
 import ImageCropModal from './ImageCropModal';
 
 interface ImageUploadFieldProps {
@@ -100,8 +102,9 @@ export default function ImageUploadField({
           quality: defaultQuality,
           maxDataUrlLength: defaultMaxDataUrlLen,
         });
-        setLastDimensionLabel('');
-        onChange(uploadedUrl);
+        const cfUpload = await uploadDataUrlToCloudflare(uploadedUrl, file.name, getAdminToken());
+        setLastDimensionLabel(cfUpload.storedInCloudflare ? 'Cloudflare CDN' : '');
+        onChange(cfUpload.url);
       } catch (err) {
         setErrorMsg(err instanceof Error ? err.message : 'ছবি আপলোড করতে সমস্যা হয়েছে।');
       } finally {
@@ -140,8 +143,13 @@ export default function ImageUploadField({
         quality: defaultQuality,
         maxDataUrlLength: defaultMaxDataUrlLen,
       });
-      setLastDimensionLabel('');
-      onChange(uploadedUrl);
+      const cfUpload = await uploadDataUrlToCloudflare(
+        uploadedUrl,
+        pendingRawFile.name,
+        getAdminToken()
+      );
+      setLastDimensionLabel(cfUpload.storedInCloudflare ? 'Cloudflare CDN' : '');
+      onChange(cfUpload.url);
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : 'ছবি সেভ করতে সমস্যা হয়েছে।');
     } finally {
@@ -383,12 +391,27 @@ export default function ImageUploadField({
           onQuickSaveOriginal={
             pendingRawFile ? handleQuickSaveWithoutCrop : undefined
           }
-          onApply={(result) => {
+          onApply={async (result) => {
             const kb = Math.max(1, Math.round(result.byteSize / 1024));
-            setLastDimensionLabel(`${result.width}×${result.height}px · ${kb}KB`);
-            onChange(result.dataUrl);
+            const rawName = pendingRawFile?.name || label || 'cropped-image';
             setCropSourceUrl(null);
             setPendingRawFile(null);
+            setIsUploading(true);
+            try {
+              const cfUpload = await uploadDataUrlToCloudflare(
+                result.dataUrl,
+                rawName,
+                getAdminToken()
+              );
+              setLastDimensionLabel(
+                cfUpload.storedInCloudflare
+                  ? `${result.width}×${result.height}px · ${kb}KB · Cloudflare Hosted`
+                  : `${result.width}×${result.height}px · ${kb}KB`
+              );
+              onChange(cfUpload.url);
+            } finally {
+              setIsUploading(false);
+            }
           }}
         />
       )}

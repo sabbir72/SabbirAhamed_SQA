@@ -40,7 +40,6 @@ import type {
 } from './visitingCardStore';
 import {
   CloudPortfolioSnapshotPayload,
-  canAdminWriteToCloud,
   deleteExperienceFromCloud,
   deleteProjectFromCloud,
   isCurrentlyApplyingCloudSnapshot,
@@ -1321,7 +1320,7 @@ export async function updateStoredProfileAndSync(
 
   window.dispatchEvent(new CustomEvent(PORTFOLIO_UPDATED_EVENT, { detail: nextData }));
 
-  if (!canAdminWriteToCloud()) {
+  if (!isAdminAuthenticated()) {
     return { profile: updatedProfile, syncedToCloud: false };
   }
 

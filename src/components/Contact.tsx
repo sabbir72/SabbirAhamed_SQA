@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { PERSONAL_INFO } from '../data';
 import { getStoredProfile, PORTFOLIO_UPDATED_EVENT } from '../utils/portfolioStore';
+import { submitContactMessageToDb } from '../utils/userSubmissions';
 
 interface ContactProps {
   onOpenResumeBuilder?: () => void;
@@ -17,6 +18,8 @@ export default function Contact({ onOpenResumeBuilder, onOpenVisitingCard }: Con
   const [status, setStatus] = useState<'idle' | 'sending' | 'success'>('idle');
   const [errors, setErrors] = useState<{ name?: string; email?: string; subject?: string; message?: string }>({});
   const [serverError, setServerError] = useState<string | null>(null);
+  const [savedToDbId, setSavedToDbId] = useState<string | null>(null);
+  const [emailDelivered, setEmailDelivered] = useState<boolean>(false);
   const [copiedEmail, setCopiedEmail] = useState(false);
 
   useEffect(() => {
@@ -68,6 +71,22 @@ export default function Contact({ onOpenResumeBuilder, onOpenVisitingCard }: Con
 
     setStatus('sending');
     setServerError(null);
+    setSavedToDbId(null);
+    setEmailDelivered(false);
+
+    let dbRecordId: string | null = null;
+    let dbError: Error | null = null;
+
+    try {
+      const saved = await submitContactMessageToDb(formData);
+      dbRecordId = saved.id;
+      setSavedToDbId(saved.id);
+    } catch (err) {
+      dbError = err instanceof Error ? err : new Error(String(err));
+    }
+
+    let mailOk = false;
+    let mailErrorMsg: string | null = null;
 
     try {
       const response = await fetch('/api/contact', {
@@ -79,17 +98,26 @@ export default function Contact({ onOpenResumeBuilder, onOpenVisitingCard }: Con
       });
 
       const data = await response.json();
-
       if (!response.ok) {
-        throw new Error(data.error || 'Failed to send message. Please check server configuration.');
+        mailErrorMsg = data?.error || 'Email service unavailable.';
+      } else {
+        mailOk = true;
       }
-
-      setStatus('success');
     } catch (err: any) {
-      console.error('Contact submit error:', err);
-      setServerError(err.message || 'Failed to send message. Please try again later.');
-      setStatus('idle');
+      mailErrorMsg = err?.message || 'Network error while dispatching email.';
     }
+
+    setEmailDelivered(mailOk);
+
+    if (dbRecordId || mailOk) {
+      setStatus('success');
+      return;
+    }
+
+    setServerError(
+      mailErrorMsg || dbError?.message || 'Failed to store or send message. Please try again later.'
+    );
+    setStatus('idle');
   };
 
   return (
@@ -398,15 +426,22 @@ export default function Contact({ onOpenResumeBuilder, onOpenVisitingCard }: Con
                 </div>
                 <div className="space-y-2 max-w-md">
                   <h4 className="font-display font-extrabold text-2xl text-white">
-                    Message Sent Successfully!
+                    {emailDelivered ? 'Message Sent & Saved!' : 'Message Saved to Database!'}
                   </h4>
                   <p className="text-sm text-[#D1D5DB] font-light leading-relaxed">
-                    Thank you for reaching out, <span className="font-semibold text-white">{formData.name}</span>! Your message has been delivered. I will review it and reply as soon as possible.
+                    Thank you for reaching out, <span className="font-semibold text-white">{formData.name}</span>! Your message has been securely stored in the portfolio database{emailDelivered ? ' and delivered via email' : ''}. I will review it in my inbox and reply as soon as possible.
                   </p>
+                  {savedToDbId && (
+                    <p className="text-[11px] font-mono text-emerald-400/90 pt-1">
+                      Reference ID: {savedToDbId}
+                    </p>
+                  )}
                 </div>
                 <button
                   onClick={() => {
                     setFormData({ name: '', email: '', subject: '', message: '' });
+                    setSavedToDbId(null);
+                    setEmailDelivered(false);
                     setStatus('idle');
                   }}
                   className="mt-4 px-6 py-2.5 bg-white/10 hover:bg-white/15 text-white rounded-full text-xs font-mono font-semibold transition-all cursor-pointer"

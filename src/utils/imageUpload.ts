@@ -320,3 +320,67 @@ export async function uploadPortfolioImageFile(
 
   return optimizeImageDataUrl(file, options);
 }
+
+/**
+ * Uploads an optimized/cropped image Data URL to Cloudflare Free Store (/api/cloud/upload)
+ * whenever authenticated as Admin and Cloudflare is configured; falls back cleanly otherwise.
+ */
+export async function uploadDataUrlToCloudflare(
+  dataUrl: string,
+  fileName?: string,
+  adminToken?: string | null
+): Promise<{
+  url: string;
+  storedInCloudflare: boolean;
+  configured: boolean;
+  error?: string;
+}> {
+  if (!dataUrl || !dataUrl.startsWith('data:image/') || !adminToken) {
+    return { url: dataUrl, storedInCloudflare: false, configured: false };
+  }
+
+  try {
+    const response = await fetch('/api/cloud/upload', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-admin-token': adminToken,
+      },
+      body: JSON.stringify({
+        dataUrl,
+        fileName: fileName || 'portfolio-image',
+      }),
+    });
+
+    const data = (await response.json().catch(() => ({}))) as {
+      success?: boolean;
+      configured?: boolean;
+      storedInCloudflare?: boolean;
+      url?: string | null;
+      error?: string;
+    };
+
+    if (response.ok && data.storedInCloudflare && data.url) {
+      return {
+        url: data.url,
+        storedInCloudflare: true,
+        configured: true,
+      };
+    }
+
+    return {
+      url: dataUrl,
+      storedInCloudflare: false,
+      configured: Boolean(data.configured),
+      error: data.error,
+    };
+  } catch (err) {
+    return {
+      url: dataUrl,
+      storedInCloudflare: false,
+      configured: false,
+      error: err instanceof Error ? err.message : undefined,
+    };
+  }
+}
+

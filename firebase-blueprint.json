@@ -468,6 +468,178 @@
         "createdAt",
         "updatedAt"
       ]
+    },
+    "ContactMessage": {
+      "title": "ContactMessage",
+      "description": "Contact inquiry submitted by a user from the website frontend.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique message identifier.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "name": {
+          "type": "string",
+          "description": "Sender full name.",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "email": {
+          "type": "string",
+          "description": "Sender email address.",
+          "minLength": 3,
+          "maxLength": 240
+        },
+        "subject": {
+          "type": "string",
+          "description": "Inquiry subject line.",
+          "minLength": 1,
+          "maxLength": 300
+        },
+        "message": {
+          "type": "string",
+          "description": "Inquiry message body.",
+          "minLength": 1,
+          "maxLength": 5000
+        },
+        "status": {
+          "type": "string",
+          "description": "Triage status for admin inbox.",
+          "enum": ["new", "read", "resolved"],
+          "minLength": 3,
+          "maxLength": 20
+        },
+        "createdAtIso": {
+          "type": "string",
+          "description": "Client submission ISO timestamp.",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Firestore server creation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Firestore server update timestamp."
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "email",
+        "subject",
+        "message",
+        "status",
+        "createdAtIso",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "BugReportDocument": {
+      "title": "BugReportDocument",
+      "description": "User-submitted defect ticket from the interactive SQA Bug Tracker frontend.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique defect ticket identifier.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "visibility": {
+          "type": "string",
+          "description": "Public visibility state.",
+          "enum": ["public"],
+          "minLength": 6,
+          "maxLength": 16
+        },
+        "title": {
+          "type": "string",
+          "description": "Defect summary title.",
+          "minLength": 1,
+          "maxLength": 300
+        },
+        "project": {
+          "type": "string",
+          "description": "Target project or module.",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "severity": {
+          "type": "string",
+          "description": "Defect severity level.",
+          "enum": ["Critical", "Major", "Minor"],
+          "minLength": 5,
+          "maxLength": 16
+        },
+        "description": {
+          "type": "string",
+          "description": "Detailed defect context.",
+          "minLength": 1,
+          "maxLength": 5000
+        },
+        "stepsToReproduce": {
+          "type": "array",
+          "description": "Ordered reproduction steps."
+        },
+        "expectedResult": {
+          "type": "string",
+          "description": "Expected application behavior.",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "actualResult": {
+          "type": "string",
+          "description": "Observed application behavior.",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "status": {
+          "type": "string",
+          "description": "Defect resolution status.",
+          "enum": ["Open", "Resolved"],
+          "minLength": 4,
+          "maxLength": 16
+        },
+        "createdAtIso": {
+          "type": "string",
+          "description": "Submission ISO-8601 timestamp.",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Firestore server creation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Firestore server update timestamp."
+        }
+      },
+      "required": [
+        "id",
+        "visibility",
+        "title",
+        "project",
+        "severity",
+        "description",
+        "stepsToReproduce",
+        "expectedResult",
+        "actualResult",
+        "status",
+        "createdAtIso",
+        "createdAt",
+        "updatedAt"
+      ]
     }
   },
   "firestore": {
@@ -490,6 +662,14 @@
     "/blogs/{blogId}": {
       "schema": "BlogDocument",
       "description": "SQA technical blog articles and CMS drafts."
+    },
+    "/contact_messages/{messageId}": {
+      "schema": "ContactMessage",
+      "description": "Recruiter and visitor contact inquiries submitted from the website frontend."
+    },
+    "/bug_reports/{bugId}": {
+      "schema": "BugReportDocument",
+      "description": "Defect reports logged by users from the interactive Bug Tracker frontend."
     }
   }
 }

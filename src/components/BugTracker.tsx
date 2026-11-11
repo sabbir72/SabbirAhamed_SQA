@@ -9,10 +9,17 @@
  * -----------------------------------------
  */
 
-import React, { useState, FormEvent } from 'react';
+import React, { useState, useEffect, FormEvent } from 'react';
 import { AlertCircle, ArrowRight, ShieldAlert, CheckCircle2, Copy, Check, X, Plus, RefreshCw } from 'lucide-react';
 import { BUG_REPORTS } from '../data';
 import { BugReport } from '../types';
+import {
+  getMergedLocalBugReports,
+  StoredBugReport,
+  submitBugReportToDb,
+  subscribeBugReportsFromDb,
+  USER_SUBMISSIONS_UPDATED_EVENT,
+} from '../utils/userSubmissions';
 
 /**
  * BugTracker component displaying defect reports, bug details, and retest execution states.
@@ -20,13 +27,28 @@ import { BugReport } from '../types';
  * @returns {React.ReactNode} The rendered defect tracking UI component
  */
 export default function BugTracker(): React.ReactNode {
-  const [bugs, setBugs] = useState<BugReport[]>(BUG_REPORTS);
+  const [bugs, setBugs] = useState<StoredBugReport[]>(() => getMergedLocalBugReports());
   const [selectedBugId, setSelectedBugId] = useState<string>(BUG_REPORTS[0].id);
   const [retestingBugId, setRetestingBugId] = useState<string | null>(null);
   const [retestResult, setRetestResult] = useState<string | null>(null);
   const [filterSeverity, setFilterSeverity] = useState<string>('All');
   const [copiedJira, setCopiedJira] = useState<boolean>(false);
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [submitNotice, setSubmitNotice] = useState<string | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const unsubscribe = subscribeBugReportsFromDb((synced) => {
+      setBugs(synced);
+    });
+    const onLocalSync = () => setBugs(getMergedLocalBugReports());
+    window.addEventListener(USER_SUBMISSIONS_UPDATED_EVENT, onLocalSync);
+    return () => {
+      unsubscribe();
+      window.removeEventListener(USER_SUBMISSIONS_UPDATED_EVENT, onLocalSync);
+    };
+  }, []);
 
   // Form state for creating custom defect reports
   const [newBug, setNewBug] = useState({
@@ -95,42 +117,55 @@ h3. Expected vs Actual
   };
 
   /**
-   * Handles creation and submission of new custom bug reports
+   * Handles creation and persistent database submission of new custom bug reports
    *
    * @param {FormEvent} e React form event
    */
-  const handleCreateBug = (e: FormEvent) => {
+  const handleCreateBug = async (e: FormEvent) => {
     e.preventDefault();
-    if (!newBug.title.trim() || !newBug.description.trim()) return;
+    if (!newBug.title.trim() || !newBug.description.trim() || isSubmitting) return;
 
     const stepsArray = newBug.stepsToReproduce
       ? newBug.stepsToReproduce.split('\n').filter((s) => s.trim().length > 0)
       : ['Navigate to application URL', 'Trigger standard workflow', 'Observe anomalous outcome'];
 
-    const newTicket: BugReport = {
-      id: `BUG-2026-${100 + bugs.length + 1}`,
-      title: newBug.title.trim(),
-      project: newBug.project.trim() || 'SaaS E-Commerce Platform',
-      severity: newBug.severity,
-      description: newBug.description.trim(),
-      stepsToReproduce: stepsArray,
-      expectedResult: newBug.expectedResult.trim() || 'System executes operation smoothly without errors.',
-      actualResult: newBug.actualResult.trim() || 'System encounters error or unexpected UI degradation.',
-      status: 'Open'
-    };
+    setIsSubmitting(true);
+    setSubmitError(null);
 
-    setBugs([newTicket, ...bugs]);
-    setSelectedBugId(newTicket.id);
-    setIsModalOpen(false);
-    setNewBug({
-      title: '',
-      project: 'SaaS E-Commerce Platform',
-      severity: 'Major',
-      description: '',
-      stepsToReproduce: '',
-      expectedResult: '',
-      actualResult: ''
-    });
+    try {
+      const savedTicket = await submitBugReportToDb({
+        title: newBug.title.trim(),
+        project: newBug.project.trim() || 'SaaS E-Commerce Platform',
+        severity: newBug.severity,
+        description: newBug.description.trim(),
+        stepsToReproduce: stepsArray,
+        expectedResult:
+          newBug.expectedResult.trim() || 'System executes operation smoothly without errors.',
+        actualResult:
+          newBug.actualResult.trim() || 'System encounters error or unexpected UI degradation.',
+      });
+
+      setBugs((prev) => [savedTicket, ...prev.filter((b) => b.id !== savedTicket.id)]);
+      setSelectedBugId(savedTicket.id);
+      setIsModalOpen(false);
+      setSubmitNotice(`Ticket ${savedTicket.id} stored in database successfully.`);
+      window.setTimeout(() => setSubmitNotice(null), 5000);
+      setNewBug({
+        title: '',
+        project: 'SaaS E-Commerce Platform',
+        severity: 'Major',
+        description: '',
+        stepsToReproduce: '',
+        expectedResult: '',
+        actualResult: '',
+      });
+    } catch (err) {
+      setSubmitError(
+        err instanceof Error ? err.message : 'Failed to store defect ticket in database.'
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -175,13 +210,31 @@ h3. Expected vs Actual
           )}
         </div>
 
+        {submitNotice && (
+          <div className="max-w-2xl mx-auto px-4 py-3 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs font-mono flex items-center justify-between gap-3">
+            <span className="flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 shrink-0" />
+              <span>{submitNotice}</span>
+            </span>
+            <button
+              onClick={() => setSubmitNotice(null)}
+              className="text-emerald-300/70 hover:text-white"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
           {/* Left panel: Bug Tickets Queue */}
           <div className="lg:col-span-4 space-y-3">
             <div className="text-[#9CA3AF] font-mono text-[10px] uppercase tracking-wider px-2 flex items-center justify-between">
               <span>Queue ({filteredBugs.length} tickets)</span>
               <button
-                onClick={() => setIsModalOpen(true)}
+                onClick={() => {
+                  setSubmitError(null);
+                  setIsModalOpen(true);
+                }}
                 className="flex items-center space-x-1 px-3 py-1.5 rounded-full bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-white text-[10px] font-mono font-bold transition-all shadow-md shadow-[var(--color-accent)]/20"
               >
                 <Plus className="w-3 h-3" />
@@ -443,6 +496,12 @@ h3. Expected vs Actual
                 </div>
               </div>
 
+              {submitError && (
+                <div className="p-3 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs font-mono">
+                  {submitError}
+                </div>
+              )}
+
               <div className="flex items-center justify-end space-x-3 pt-4 border-t border-white/10">
                 <button
                   type="button"
@@ -453,9 +512,10 @@ h3. Expected vs Actual
                 </button>
                 <button
                   type="submit"
-                  className="px-6 py-2.5 rounded-full bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-white text-xs font-bold transition-all shadow-md shadow-[var(--color-accent)]/20"
+                  disabled={isSubmitting}
+                  className="px-6 py-2.5 rounded-full bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-white text-xs font-bold transition-all shadow-md shadow-[var(--color-accent)]/20 disabled:opacity-50"
                 >
-                  Create Ticket
+                  {isSubmitting ? 'Saving to DB...' : 'Create Ticket'}
                 </button>
               </div>
             </form>

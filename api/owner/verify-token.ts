@@ -1,4 +1,8 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import {
+  extractAdminTokenFromHeaders,
+  verifySignedAdminToken,
+} from '../_lib/adminToken';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
@@ -6,9 +10,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    const token = (req.headers['x-admin-token'] as string) || req.body?.token;
+    const token = extractAdminTokenFromHeaders(
+      req.headers as Record<string, string | string[] | undefined>,
+      req.body
+    );
 
-    if (token && typeof token === 'string' && token.startsWith('sabbir_sqa_admin_')) {
+    if (verifySignedAdminToken(token)) {
       return res.status(200).json({
         success: true,
         isOwner: true,

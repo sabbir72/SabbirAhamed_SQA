@@ -1,6 +1,10 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import fs from 'fs';
 import path from 'path';
+import {
+  extractAdminTokenFromHeaders,
+  verifySignedAdminToken,
+} from '../_lib/adminToken';
 
 const SEED_PORTFOLIO_FILE = path.join(process.cwd(), 'portfolio_custom_data.json');
 
@@ -22,12 +26,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   if (req.method === 'POST') {
-    const token = (req.headers['x-admin-token'] as string) || req.body?.token;
-    const isAuthorized = Boolean(
-      token && typeof token === 'string' && token.startsWith('sabbir_sqa_admin_')
+    const token = extractAdminTokenFromHeaders(
+      req.headers as Record<string, string | string[] | undefined>,
+      req.body
     );
 
-    if (!isAuthorized) {
+    if (!verifySignedAdminToken(token)) {
       return res.status(403).json({
         success: false,
         error: 'Unauthorized: Admin token required.',

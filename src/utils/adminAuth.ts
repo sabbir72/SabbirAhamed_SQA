@@ -211,14 +211,13 @@ export async function verifyAdminPasscode(inputCode: string): Promise<boolean> {
   const trimmed = (inputCode || '').trim();
   if (!trimmed) return false;
 
-  // Check if user explicitly saved a custom password hash on this browser/device first
+  let matchedLocalHash = false;
   try {
     const savedHash = localStorage.getItem(ADMIN_LOCAL_PASS_HASH_KEY);
     if (savedHash) {
       const candidateHash = await sha256Hex(trimmed);
       if (candidateHash === savedHash) {
-        storeAdminToken(`sabbir_sqa_admin_${Date.now()}`);
-        return true;
+        matchedLocalHash = true;
       }
     }
   } catch {
@@ -242,6 +241,11 @@ export async function verifyAdminPasscode(inputCode: string): Promise<boolean> {
       }
     }
 
+    if (matchedLocalHash) {
+      storeAdminToken(`sabbir_sqa_admin_${Date.now()}`);
+      return true;
+    }
+
     // Strictly reject invalid passcode responses from backend without falling back to default
     if (response.status === 401 || response.status === 400 || response.status === 403) {
       return false;
@@ -250,7 +254,7 @@ export async function verifyAdminPasscode(inputCode: string): Promise<boolean> {
     console.error('Network error verifying admin passcode, checking offline fallback:', err);
   }
 
-  if (trimmed === 'sabbir@sqa2026') {
+  if (matchedLocalHash || trimmed === 'sabbir@sqa2026') {
     storeAdminToken(`sabbir_sqa_admin_${Date.now()}`);
     return true;
   }

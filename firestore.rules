@@ -279,6 +279,52 @@ service cloud.firestore {
         data.updatedAt is timestamp;
     }
 
+    function isValidContactMessage(data) {
+      return data.keys().hasAll([
+          'id', 'name', 'email', 'subject', 'message',
+          'status', 'createdAtIso', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'id', 'name', 'email', 'subject', 'message',
+          'status', 'createdAtIso', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.id) &&
+        data.name is string && data.name.size() >= 1 && data.name.size() <= 160 &&
+        data.email is string && data.email.size() >= 3 && data.email.size() <= 240 &&
+        data.subject is string && data.subject.size() >= 1 && data.subject.size() <= 300 &&
+        data.message is string && data.message.size() >= 1 && data.message.size() <= 5000 &&
+        data.status is string && data.status in ['new', 'read', 'resolved'] &&
+        data.createdAtIso is string && data.createdAtIso.size() >= 1 && data.createdAtIso.size() <= 120 &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidBugReport(data) {
+      return data.keys().hasAll([
+          'id', 'visibility', 'title', 'project', 'severity',
+          'description', 'stepsToReproduce', 'expectedResult', 'actualResult',
+          'status', 'createdAtIso', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'id', 'visibility', 'title', 'project', 'severity',
+          'description', 'stepsToReproduce', 'expectedResult', 'actualResult',
+          'status', 'createdAtIso', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.id) &&
+        data.visibility == 'public' &&
+        data.title is string && data.title.size() >= 1 && data.title.size() <= 300 &&
+        data.project is string && data.project.size() >= 1 && data.project.size() <= 200 &&
+        data.severity is string && data.severity in ['Critical', 'Major', 'Minor'] &&
+        data.description is string && data.description.size() >= 1 && data.description.size() <= 5000 &&
+        isBoundedStringList(data.stepsToReproduce, 25, 1000) &&
+        data.expectedResult is string && data.expectedResult.size() >= 1 && data.expectedResult.size() <= 2000 &&
+        data.actualResult is string && data.actualResult.size() >= 1 && data.actualResult.size() <= 2000 &&
+        data.status is string && data.status in ['Open', 'Resolved'] &&
+        data.createdAtIso is string && data.createdAtIso.size() >= 1 && data.createdAtIso.size() <= 120 &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
     // ------------------------------------------------------------------------
     // Collection Match Rules
     // ------------------------------------------------------------------------
@@ -421,6 +467,73 @@ service cloud.firestore {
         isAdmin();
 
       allow delete: if isSignedIn() && isValidId(blogId) && isAdmin();
+    }
+
+    match /contact_messages/{messageId} {
+      // PII-strict: only verified portfolio admin can read contact inquiries
+      allow get: if isSignedIn() && isValidId(messageId) && isAdmin();
+      allow list: if isBootstrappedOwner();
+
+      // Any frontend visitor can submit a contact inquiry with strict field & status bounds
+      allow create: if isValidId(messageId) &&
+        incoming().id == messageId &&
+        isValidContactMessage(incoming()) &&
+        incoming().status == 'new' &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+
+      // Admin can triage status while keeping submitted message content immutable
+      allow update: if isValidContactMessage(incoming()) &&
+        isSignedIn() &&
+        isValidId(messageId) &&
+        hasImmutableIdOnUpdate(messageId) &&
+        hasImmutableCreatedAtOnUpdate() &&
+        incoming().name == existing().name &&
+        incoming().email == existing().email &&
+        incoming().subject == existing().subject &&
+        incoming().message == existing().message &&
+        incoming().createdAtIso == existing().createdAtIso &&
+        incoming().updatedAt == request.time &&
+        (
+          isAdmin() ||
+          incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])
+        ) &&
+        isAdmin();
+
+      allow delete: if isSignedIn() && isValidId(messageId) && isAdmin();
+    }
+
+    match /bug_reports/{bugId} {
+      // Publicly viewable defect queue; moderation & deletion restricted to admin
+      allow get: if isValidId(bugId) && (resource == null || existing().visibility == 'public' || isAdmin());
+      allow list: if existing().visibility == 'public' || isBootstrappedOwner();
+
+      // Frontend visitors can log new defect tickets directly to the database
+      allow create: if isValidId(bugId) &&
+        incoming().id == bugId &&
+        isValidBugReport(incoming()) &&
+        incoming().visibility == 'public' &&
+        incoming().status == 'Open' &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+
+      allow update: if isValidBugReport(incoming()) &&
+        isSignedIn() &&
+        isValidId(bugId) &&
+        hasImmutableIdOnUpdate(bugId) &&
+        hasImmutableCreatedAtOnUpdate() &&
+        incoming().updatedAt == request.time &&
+        (
+          isAdmin() ||
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'visibility', 'title', 'project', 'severity', 'description',
+            'stepsToReproduce', 'expectedResult', 'actualResult', 'status',
+            'updatedAt'
+          ])
+        ) &&
+        isAdmin();
+
+      allow delete: if isSignedIn() && isValidId(bugId) && isAdmin();
     }
   }
 }

@@ -136,12 +136,12 @@ function createMobileReadyAuth(): Auth {
 export const auth = createMobileReadyAuth();
 export { browserPopupRedirectResolver };
 
-export const PRIMARY_OWNER_EMAIL = 'sabbircse72@gmail.com';
-export const SECONDARY_OWNER_EMAIL = 'sabbir.altersense@gmail.com';
+export const PRIMARY_OWNER_EMAIL = 'sabbir.altersense@gmail.com';
+export const SECONDARY_OWNER_EMAIL = 'sabbircse72@gmail.com';
 
 export const OWNER_ADMIN_EMAILS: readonly string[] = [
-  'sabbircse72@gmail.com',
   'sabbir.altersense@gmail.com',
+  'sabbircse72@gmail.com',
 ];
 
 const PREFERRED_OWNER_EMAIL_KEY = 'sabbir_preferred_owner_email';
