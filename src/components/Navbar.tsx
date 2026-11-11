@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Github, Linkedin, Mail, Menu, X, Nfc } from 'lucide-react';
 import { PERSONAL_INFO } from '../data';
 import { navigateTo, navigateToHomeSection } from '../utils/router';
+import { getStoredProfile, PORTFOLIO_UPDATED_EVENT } from '../utils/portfolioStore';
 import { QaLogo } from './QaLogo';
 
 interface NavbarProps {
@@ -20,6 +21,13 @@ export default function Navbar({
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const [readingProgress, setReadingProgress] = useState(0);
+  const [profile, setProfile] = useState(() => getStoredProfile());
+
+  useEffect(() => {
+    const syncProfile = () => setProfile(getStoredProfile());
+    window.addEventListener(PORTFOLIO_UPDATED_EVENT, syncProfile);
+    return () => window.removeEventListener(PORTFOLIO_UPDATED_EVENT, syncProfile);
+  }, []);
 
   useEffect(() => {
     const handleScroll = () => {
@@ -111,7 +119,7 @@ export default function Navbar({
           {/* Right Action Icons & Direct CTAs */}
           <div className="flex items-center space-x-2.5 shrink-0">
             <a
-              href={PERSONAL_INFO.github}
+              href={profile.github || PERSONAL_INFO.github}
               target="_blank"
               rel="noopener noreferrer"
               className="w-9 h-9 flex items-center justify-center text-[#D1D5DB] hover:text-white bg-white/[0.05] hover:bg-white/10 rounded-full border border-white/10 hover:border-[var(--color-accent)] transition-colors"
@@ -120,7 +128,11 @@ export default function Navbar({
               <Github className="w-4 h-4" />
             </a>
             <a
-              href={PERSONAL_INFO.linkedin}
+              href={
+                (profile.linkedin || PERSONAL_INFO.linkedin).startsWith('http')
+                  ? profile.linkedin || PERSONAL_INFO.linkedin
+                  : `https://${profile.linkedin || PERSONAL_INFO.linkedin}`
+              }
               target="_blank"
               rel="noopener noreferrer"
               className="w-9 h-9 flex items-center justify-center text-[#D1D5DB] hover:text-white bg-white/[0.05] hover:bg-white/10 rounded-full border border-white/10 hover:border-[var(--color-accent)] transition-colors"

@@ -10,7 +10,7 @@
  * ----------------------------------------------------------------------------------
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Github, 
   Linkedin, 
@@ -24,6 +24,7 @@ import {
   X 
 } from 'lucide-react';
 import { PERSONAL_INFO } from '../data';
+import { getStoredProfile, PORTFOLIO_UPDATED_EVENT } from '../utils/portfolioStore';
 import { QaLogo } from './QaLogo';
 import VisitorCounter from './VisitorCounter';
 import { navigateTo, navigateToHomeSection } from '../utils/router';
@@ -37,9 +38,22 @@ interface FooterProps {
 type ContactTab = 'email' | 'phone' | 'location' | 'github' | 'linkedin';
 
 export default function Footer(_props: FooterProps) {
+  const [profile, setProfile] = useState(() => getStoredProfile());
   const [hoveredTab, setHoveredTab] = useState<ContactTab | null>(null);
   const [selectedTab, setSelectedTab] = useState<ContactTab | null>(null);
   const [copiedEmail, setCopiedEmail] = useState(false);
+
+  useEffect(() => {
+    const syncProfile = () => setProfile(getStoredProfile());
+    window.addEventListener(PORTFOLIO_UPDATED_EVENT, syncProfile);
+    return () => window.removeEventListener(PORTFOLIO_UPDATED_EVENT, syncProfile);
+  }, []);
+
+  const liveEmail = profile.email || PERSONAL_INFO.email;
+  const livePhone = profile.phone || PERSONAL_INFO.phone;
+  const liveLocation = profile.location || PERSONAL_INFO.location;
+  const liveGithub = profile.github || PERSONAL_INFO.github;
+  const liveLinkedinRaw = profile.linkedin || PERSONAL_INFO.linkedin;
 
   const currentTab = hoveredTab || selectedTab;
 
@@ -49,7 +63,7 @@ export default function Footer(_props: FooterProps) {
 
   const handleCopyEmail = (e: React.MouseEvent) => {
     e.preventDefault();
-    navigator.clipboard.writeText(PERSONAL_INFO.email);
+    navigator.clipboard.writeText(liveEmail);
     setCopiedEmail(true);
     setTimeout(() => setCopiedEmail(false), 2000);
   };
@@ -78,9 +92,9 @@ export default function Footer(_props: FooterProps) {
     }
   };
 
-  const linkedinUrl = PERSONAL_INFO.linkedin.startsWith('http')
-    ? PERSONAL_INFO.linkedin
-    : `https://${PERSONAL_INFO.linkedin}`;
+  const linkedinUrl = liveLinkedinRaw.startsWith('http')
+    ? liveLinkedinRaw
+    : `https://${liveLinkedinRaw}`;
 
   return (
     <footer className="relative z-10 bg-black/60 backdrop-blur-md border-t border-white/10 text-[#F3F4F6] transition-colors duration-300">
@@ -153,7 +167,7 @@ export default function Footer(_props: FooterProps) {
                   {/* Floating Tooltip */}
                   <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover/tip:flex flex-col items-center pointer-events-none z-30">
                     <span className="px-2.5 py-1 text-[11px] font-mono whitespace-nowrap rounded-lg bg-black/95 text-white border border-white/20 shadow-2xl backdrop-blur-md">
-                      {PERSONAL_INFO.email}
+                      {liveEmail}
                     </span>
                     <span className="w-2 h-2 bg-black/95 border-r border-b border-white/20 rotate-45 -mt-1" />
                   </div>
@@ -181,7 +195,7 @@ export default function Footer(_props: FooterProps) {
                   </button>
                   <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover/tip:flex flex-col items-center pointer-events-none z-30">
                     <span className="px-2.5 py-1 text-[11px] font-mono whitespace-nowrap rounded-lg bg-black/95 text-white border border-white/20 shadow-2xl backdrop-blur-md">
-                      {PERSONAL_INFO.phone}
+                      {livePhone}
                     </span>
                     <span className="w-2 h-2 bg-black/95 border-r border-b border-white/20 rotate-45 -mt-1" />
                   </div>
@@ -209,7 +223,7 @@ export default function Footer(_props: FooterProps) {
                   </button>
                   <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover/tip:flex flex-col items-center pointer-events-none z-30">
                     <span className="px-2.5 py-1 text-[11px] font-mono whitespace-nowrap rounded-lg bg-black/95 text-white border border-white/20 shadow-2xl backdrop-blur-md">
-                      Dhaka, Bangladesh
+                      {liveLocation}
                     </span>
                     <span className="w-2 h-2 bg-black/95 border-r border-b border-white/20 rotate-45 -mt-1" />
                   </div>
@@ -279,7 +293,7 @@ export default function Footer(_props: FooterProps) {
                     <div className="w-full flex items-center justify-between">
                       <div className="flex items-center space-x-2 truncate">
                         <Mail className="w-4 h-4 text-[var(--color-accent)] shrink-0" />
-                        <span className="text-white font-medium truncate">{PERSONAL_INFO.email}</span>
+                        <span className="text-white font-medium truncate">{liveEmail}</span>
                       </div>
                       <button
                         onClick={handleCopyEmail}
@@ -295,10 +309,10 @@ export default function Footer(_props: FooterProps) {
                     <div className="w-full flex items-center justify-between">
                       <div className="flex items-center space-x-2">
                         <Phone className="w-4 h-4 text-[var(--color-accent)] shrink-0" />
-                        <span className="text-white font-medium">{PERSONAL_INFO.phone}</span>
+                        <span className="text-white font-medium">{livePhone}</span>
                       </div>
                       <a
-                        href={`tel:${PERSONAL_INFO.phone}`}
+                        href={`tel:${livePhone}`}
                         className="ml-2 px-2.5 py-1 rounded-md bg-[var(--color-accent)]/15 hover:bg-[var(--color-accent)]/25 text-[var(--color-accent)] text-[11px] transition-colors shrink-0"
                       >
                         Call Now
@@ -309,7 +323,7 @@ export default function Footer(_props: FooterProps) {
                   {currentTab === 'location' && (
                     <div className="w-full flex items-center space-x-2 text-slate-300">
                       <MapPin className="w-4 h-4 text-[var(--color-accent)] shrink-0" />
-                      <span className="text-white font-medium">{PERSONAL_INFO.location}</span>
+                      <span className="text-white font-medium">{liveLocation}</span>
                     </div>
                   )}
 
@@ -317,10 +331,10 @@ export default function Footer(_props: FooterProps) {
                     <div className="w-full flex items-center justify-between">
                       <div className="flex items-center space-x-2 truncate">
                         <Github className="w-4 h-4 text-[var(--color-accent)] shrink-0" />
-                        <span className="text-white font-medium truncate">github.com/{PERSONAL_INFO.githubUser || 'sabbir72'}</span>
+                        <span className="text-white font-medium truncate">{liveGithub.replace(/^https?:\/\//, '')}</span>
                       </div>
                       <a
-                        href={PERSONAL_INFO.github}
+                        href={liveGithub}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="ml-2 px-2.5 py-1 rounded-md bg-[var(--color-accent)]/15 hover:bg-[var(--color-accent)]/25 text-[var(--color-accent)] text-[11px] transition-colors shrink-0 flex items-center space-x-1"
@@ -335,7 +349,7 @@ export default function Footer(_props: FooterProps) {
                     <div className="w-full flex items-center justify-between">
                       <div className="flex items-center space-x-2 truncate">
                         <Linkedin className="w-4 h-4 text-[var(--color-accent)] shrink-0" />
-                        <span className="text-white font-medium truncate">linkedin.com/in/sabbir-ahamed72</span>
+                        <span className="text-white font-medium truncate">{linkedinUrl.replace(/^https?:\/\//, '')}</span>
                       </div>
                       <a
                         href={linkedinUrl}

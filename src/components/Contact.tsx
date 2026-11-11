@@ -1,9 +1,10 @@
-import { useState, FormEvent } from 'react';
+import { useState, useEffect, FormEvent } from 'react';
 import { 
   Send, CheckCircle2, Mail, Phone, MapPin, Linkedin, Github, 
   FileText, ArrowRight, Copy, Check, ExternalLink, Sparkles, Nfc
 } from 'lucide-react';
 import { PERSONAL_INFO } from '../data';
+import { getStoredProfile, PORTFOLIO_UPDATED_EVENT } from '../utils/portfolioStore';
 
 interface ContactProps {
   onOpenResumeBuilder?: () => void;
@@ -11,14 +12,28 @@ interface ContactProps {
 }
 
 export default function Contact({ onOpenResumeBuilder, onOpenVisitingCard }: ContactProps) {
+  const [profile, setProfile] = useState(() => getStoredProfile());
   const [formData, setFormData] = useState({ name: '', email: '', subject: '', message: '' });
   const [status, setStatus] = useState<'idle' | 'sending' | 'success'>('idle');
   const [errors, setErrors] = useState<{ name?: string; email?: string; subject?: string; message?: string }>({});
   const [serverError, setServerError] = useState<string | null>(null);
   const [copiedEmail, setCopiedEmail] = useState(false);
 
+  useEffect(() => {
+    const syncProfile = () => setProfile(getStoredProfile());
+    window.addEventListener(PORTFOLIO_UPDATED_EVENT, syncProfile);
+    return () => window.removeEventListener(PORTFOLIO_UPDATED_EVENT, syncProfile);
+  }, []);
+
+  const liveEmail = profile.email || PERSONAL_INFO.email;
+  const livePhone = profile.phone || PERSONAL_INFO.phone;
+  const liveLocation = profile.location || PERSONAL_INFO.location;
+  const liveLinkedinRaw = profile.linkedin || PERSONAL_INFO.linkedin;
+  const liveLinkedinUrl = liveLinkedinRaw.startsWith('http') ? liveLinkedinRaw : `https://${liveLinkedinRaw}`;
+  const liveGithub = profile.github || PERSONAL_INFO.github;
+
   const handleCopyEmail = () => {
-    navigator.clipboard.writeText(PERSONAL_INFO.email);
+    navigator.clipboard.writeText(liveEmail);
     setCopiedEmail(true);
     setTimeout(() => setCopiedEmail(false), 2000);
   };
@@ -119,10 +134,10 @@ export default function Contact({ onOpenResumeBuilder, onOpenVisitingCard }: Con
 
               <div>
                 <h3 className="font-display font-extrabold text-2xl text-white tracking-tight">
-                  {PERSONAL_INFO.name}
+                  {profile.name || PERSONAL_INFO.name}
                 </h3>
                 <p className="text-xs font-mono font-semibold text-[var(--color-accent)] uppercase tracking-wider mt-1">
-                  {PERSONAL_INFO.title}
+                  {profile.title || PERSONAL_INFO.title}
                 </p>
                 <p className="mt-3 text-xs sm:text-sm text-[#9CA3AF] font-light leading-relaxed">
                   2+ years of hands-on experience ensuring software quality through Manual Testing, REST API Validation, and Playwright UI Automation. Dedicated to helping engineering teams ship bug-free products.
@@ -140,8 +155,8 @@ export default function Contact({ onOpenResumeBuilder, onOpenVisitingCard }: Con
                     </div>
                     <div className="truncate">
                       <span className="block text-[10px] text-[#9CA3AF] uppercase font-sans">Email Address</span>
-                      <a href={`mailto:${PERSONAL_INFO.email}`} className="text-white hover:text-[var(--color-accent)] transition-colors truncate font-mono text-xs font-medium">
-                        {PERSONAL_INFO.email}
+                      <a href={`mailto:${liveEmail}`} className="text-white hover:text-[var(--color-accent)] transition-colors truncate font-mono text-xs font-medium">
+                        {liveEmail}
                       </a>
                     </div>
                   </div>
@@ -161,8 +176,8 @@ export default function Contact({ onOpenResumeBuilder, onOpenVisitingCard }: Con
                   </div>
                   <div>
                     <span className="block text-[10px] text-[#9CA3AF] uppercase font-sans">Phone Number</span>
-                    <a href={`tel:${PERSONAL_INFO.phone}`} className="text-white hover:text-[var(--color-accent)] transition-colors font-mono text-xs font-medium">
-                      {PERSONAL_INFO.phone}
+                    <a href={`tel:${livePhone}`} className="text-white hover:text-[var(--color-accent)] transition-colors font-mono text-xs font-medium">
+                      {livePhone}
                     </a>
                   </div>
                 </div>
@@ -175,7 +190,7 @@ export default function Contact({ onOpenResumeBuilder, onOpenVisitingCard }: Con
                   <div>
                     <span className="block text-[10px] text-[#9CA3AF] uppercase font-sans">Current Location</span>
                     <span className="text-white font-sans text-xs font-medium">
-                      {PERSONAL_INFO.location}
+                      {liveLocation}
                     </span>
                   </div>
                 </div>
@@ -209,7 +224,7 @@ export default function Contact({ onOpenResumeBuilder, onOpenVisitingCard }: Con
             <div className="pt-6 border-t border-white/10 space-y-4">
               <div className="flex items-center space-x-3">
                 <a
-                  href={`https://${PERSONAL_INFO.linkedin}`}
+                  href={liveLinkedinUrl}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="flex-1 inline-flex items-center justify-center space-x-2 py-2.5 px-4 rounded-xl bg-white/[0.04] hover:bg-blue-600/20 text-[#D1D5DB] hover:text-white border border-white/10 hover:border-blue-500/50 text-xs font-mono font-medium transition-all"
@@ -220,7 +235,7 @@ export default function Contact({ onOpenResumeBuilder, onOpenVisitingCard }: Con
                 </a>
 
                 <a
-                  href={PERSONAL_INFO.github}
+                  href={liveGithub}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="flex-1 inline-flex items-center justify-center space-x-2 py-2.5 px-4 rounded-xl bg-white/[0.04] hover:bg-white/10 text-[#D1D5DB] hover:text-white border border-white/10 text-xs font-mono font-medium transition-all"
@@ -363,7 +378,7 @@ export default function Contact({ onOpenResumeBuilder, onOpenVisitingCard }: Con
                     </button>
 
                     <a
-                      href={`mailto:${PERSONAL_INFO.email}?subject=${encodeURIComponent(formData.subject || 'Portfolio Inquiry')}&body=${encodeURIComponent(`Hi Sabbir,\n\n${formData.message || ''}\n\nFrom: ${formData.name || ''} (${formData.email || ''})`)}`}
+                      href={`mailto:${liveEmail}?subject=${encodeURIComponent(formData.subject || 'Portfolio Inquiry')}&body=${encodeURIComponent(`Hi ${profile.name || 'Sabbir'},\n\n${formData.message || ''}\n\nFrom: ${formData.name || ''} (${formData.email || ''})`)}`}
                       className="w-full py-3 bg-white/[0.05] hover:bg-white/[0.10] text-[#D1D5DB] hover:text-white border border-white/10 font-mono text-xs rounded-2xl flex items-center justify-center space-x-2 transition-all cursor-pointer"
                     >
                       <Mail className="w-3.5 h-3.5 text-[var(--color-accent)]" />

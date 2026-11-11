@@ -20,7 +20,7 @@ import {
   BookOpen, User,
   Globe, Mail, Phone, MapPin, Linkedin, Github, Sliders,
   CheckSquare, Building2, Send, Award, Target, EyeOff, Palette, Nfc,
-  LayoutGrid, Menu, TrendingUp, Settings, Save, Cloud
+  LayoutGrid, Menu, TrendingUp, Settings, Save, Cloud, AlertTriangle, Smartphone
 } from 'lucide-react';
 import ThemeSelectorModal from './ThemeSelectorModal';
 import { VisitingCardModal } from './VisitingCardModal';
@@ -34,7 +34,7 @@ import {
   getStoredExperiences, addStoredExperience, updateStoredExperience, deleteStoredExperience, reorderStoredExperiences,
   getStoredSkills, addStoredSkillCategory, updateStoredSkillCategory, deleteStoredSkillCategory,
   addSkillItemToCategory, removeSkillItemFromCategory,
-  getStoredProfile, updateStoredProfile, ProfileData,
+  getStoredProfile, updateStoredProfileAndSync, ProfileData,
   getStoredReferences, addStoredReference, updateStoredReference, deleteStoredReference,
   getStoredCareerRoadmap, addStoredCareerRoadmapItem, updateStoredCareerRoadmapItem, deleteStoredCareerRoadmapItem,
   resetPortfolioToDefault, exportPortfolioDataJson, importPortfolioDataJson,
@@ -54,9 +54,13 @@ import {
   ADMIN_SESSION_EXPIRED_EVENT
 } from '../utils/adminAuth';
 import {
+  AUTHORIZED_DOMAINS_UPDATED_EVENT,
+  areAuthorizedDomainsLoaded,
   CLOUD_SYNC_STATUS_EVENT,
   CloudSyncStatus,
   getCloudSyncStatus,
+  isCurrentHostFirebaseAuthorized,
+  refreshKnownAuthorizedDomains,
   signInOwnerWithGoogle,
   signOutOwnerFromGoogle,
   syncAllLocalDataToCloud,
@@ -120,6 +124,10 @@ export default function AdminPortal({
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
   const [visitorStats, setVisitorStats] = useState<VisitorMetrics>(() => getCurrentVisitorMetrics());
   const [cloudStatus, setCloudStatus] = useState<CloudSyncStatus>(() => getCloudSyncStatus());
+  const [domainsLoaded, setDomainsLoaded] = useState<boolean>(() => areAuthorizedDomainsLoaded());
+  const [isHostAuthorized, setIsHostAuthorized] = useState<boolean>(() => isCurrentHostFirebaseAuthorized());
+  const [copiedBannerDomain, setCopiedBannerDomain] = useState<boolean>(false);
+  const [isSavingProfile, setIsSavingProfile] = useState<boolean>(false);
 
   // Active Tab (synced when route query ?tab=... updates)
   const [activeTab, setActiveTab] = useState<AdminTab>(initialTab);
@@ -226,11 +234,25 @@ export default function AdminPortal({
 
   // Toast Notification
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [toastTone, setToastTone] = useState<'success' | 'warning' | 'error'>('success');
+  const toastTimerRef = useRef<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const showToast = (msg: string) => {
+  const showToast = (msg: string, tone: 'success' | 'warning' | 'error' = 'success') => {
     setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 3500);
+    setToastTone(tone);
+    if (toastTimerRef.current !== null) {
+      window.clearTimeout(toastTimerRef.current);
+    }
+    toastTimerRef.current = window.setTimeout(() => setToastMessage(null), tone === 'success' ? 4000 : 6000);
+  };
+
+  const showMutationToast = (baseMsg: string) => {
+    if (getCloudSyncStatus().isOwnerConnected) {
+      showToast(`${baseMsg} (Synced to Cloud & Phone)`, 'success');
+    } else {
+      showToast(`${baseMsg} — শুধু এই ব্রাউজারে সেভ হয়েছে। ফোনে দেখাতে Cloud Connect করুন।`, 'warning');
+    }
   };
 
   // Sync state on external or internal update events
@@ -262,10 +284,20 @@ export default function AdminPortal({
       setCloudStatus(custom.detail || getCloudSyncStatus());
     };
 
+    const handleDomainsUpdated = () => {
+      setDomainsLoaded(areAuthorizedDomainsLoaded());
+      setIsHostAuthorized(isCurrentHostFirebaseAuthorized());
+    };
+
+    void refreshKnownAuthorizedDomains(false).then(() => {
+      handleDomainsUpdated();
+    });
+
     window.addEventListener(PORTFOLIO_UPDATED_EVENT, handlePortfolioUpdated);
     window.addEventListener(BLOGS_UPDATED_EVENT, handleBlogsUpdated);
     window.addEventListener('admin_auth_changed', handleAuthUpdated);
     window.addEventListener(CLOUD_SYNC_STATUS_EVENT, handleCloudStatus);
+    window.addEventListener(AUTHORIZED_DOMAINS_UPDATED_EVENT, handleDomainsUpdated);
 
     return () => {
       unsubscribeVisitors();
@@ -273,6 +305,7 @@ export default function AdminPortal({
       window.removeEventListener(BLOGS_UPDATED_EVENT, handleBlogsUpdated);
       window.removeEventListener('admin_auth_changed', handleAuthUpdated);
       window.removeEventListener(CLOUD_SYNC_STATUS_EVENT, handleCloudStatus);
+      window.removeEventListener(AUTHORIZED_DOMAINS_UPDATED_EVENT, handleDomainsUpdated);
     };
   }, []);
 
@@ -378,10 +411,10 @@ export default function AdminPortal({
   const handleSaveProject = (projectData: Omit<Project, 'id'>) => {
     if (editingProject) {
       updateStoredProject(editingProject.id, projectData);
-      showToast(`Project "${projectData.title}" updated.`);
+      showMutationToast(`Project "${projectData.title}" updated.`);
     } else {
       addStoredProject(projectData);
-      showToast(`New project "${projectData.title}" created.`);
+      showMutationToast(`New project "${projectData.title}" created.`);
     }
     setIsProjectModalOpen(false);
     setEditingProject(null);
@@ -419,10 +452,10 @@ export default function AdminPortal({
   const handleSaveExperience = (expData: Omit<Experience, 'id'>) => {
     if (editingExperience) {
       updateStoredExperience(editingExperience.id, expData);
-      showToast(`Experience at "${expData.company}" updated.`);
+      showMutationToast(`Experience at "${expData.company}" updated.`);
     } else {
       addStoredExperience(expData);
-      showToast(`Experience at "${expData.company}" created.`);
+      showMutationToast(`Experience at "${expData.company}" created.`);
     }
     setIsExperienceModalOpen(false);
     setEditingExperience(null);
@@ -448,10 +481,10 @@ export default function AdminPortal({
     };
     if (editingReference) {
       updateStoredReference(editingReference.id, referenceData);
-      showToast(`Reference for "${referenceData.name}" updated.`);
+      showMutationToast(`Reference for "${referenceData.name}" updated.`);
     } else {
       addStoredReference(referenceData);
-      showToast(`Reference for "${referenceData.name}" added.`);
+      showMutationToast(`Reference for "${referenceData.name}" added.`);
     }
     setReferenceFormOpen(false);
     setEditingReference(null);
@@ -479,10 +512,10 @@ export default function AdminPortal({
     };
     if (editingRoadmapItem) {
       updateStoredCareerRoadmapItem(editingRoadmapItem.id, itemData);
-      showToast(`Roadmap step "${itemData.title}" updated.`);
+      showMutationToast(`Roadmap step "${itemData.title}" updated.`);
     } else {
       addStoredCareerRoadmapItem(itemData);
-      showToast(`Roadmap step "${itemData.title}" added.`);
+      showMutationToast(`Roadmap step "${itemData.title}" added.`);
     }
     setRoadmapFormOpen(false);
     setEditingRoadmapItem(null);
@@ -524,10 +557,10 @@ export default function AdminPortal({
 
     if (editingCategoryIndex !== null) {
       updateStoredSkillCategory(editingCategoryIndex, { category: name, items });
-      showToast(`Skill category "${name}" updated.`);
+      showMutationToast(`Skill category "${name}" updated.`);
     } else {
       addStoredSkillCategory(name, items);
-      showToast(`Skill category "${name}" added.`);
+      showMutationToast(`Skill category "${name}" added.`);
     }
 
     setIsCategoryModalOpen(false);
@@ -538,12 +571,12 @@ export default function AdminPortal({
     if (!val) return;
     addSkillItemToCategory(categoryIndex, val);
     setQuickSkillInput(prev => ({ ...prev, [categoryIndex]: '' }));
-    showToast(`Added "${val}" to skills.`);
+    showMutationToast(`Added "${val}" to skills.`);
   };
 
   const handleRemoveSkillItem = (categoryIndex: number, itemIndex: number, itemName: string) => {
     removeSkillItemFromCategory(categoryIndex, itemIndex);
-    showToast(`Removed "${itemName}".`);
+    showMutationToast(`Removed "${itemName}".`);
   };
 
   // --------------------------------------------------------------------------
@@ -562,7 +595,7 @@ export default function AdminPortal({
   const handleSaveBlog = (blogData: Partial<BlogPost> & { title?: string; content?: string }) => {
     upsertBlogPost(blogData);
     setBlogCategories(getStoredBlogCategories());
-    showToast(`Article "${blogData.title || 'Untitled'}" saved.`);
+    showMutationToast(`Article "${blogData.title || 'Untitled'}" saved.`);
     setIsBlogModalOpen(false);
     setEditingBlog(null);
   };
@@ -701,10 +734,26 @@ Sincerely,
 ${profile.name || PERSONAL_INFO.name}
 ${profile.title || PERSONAL_INFO.title}`;
   };
-  const handleSaveProfile = (e: React.FormEvent) => {
+  const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
-    updateStoredProfile(profile);
-    showToast('Personal Profile & Portfolio Metrics updated successfully!');
+    if (isSavingProfile) return;
+    setIsSavingProfile(true);
+    try {
+      const res = await updateStoredProfileAndSync(profile);
+      setProfile(res.profile);
+      if (res.syncedToCloud) {
+        showToast('প্রোফাইল ও ছবি ক্লাউডে সেভ হয়েছে — ফোনে ও লাইভ সাইটে আপডেট দেখা যাবে!', 'success');
+      } else if (res.error) {
+        showToast(`Cloud Sync Error: ${res.error}`, 'error');
+      } else {
+        showToast(
+          'শুধুমাত্র এই ব্রাউজারে সেভ হয়েছে। ফোনে দেখাতে উপরে "Connect Cloud / Phone" থেকে Google কানেক্ট করুন।',
+          'warning'
+        );
+      }
+    } finally {
+      setIsSavingProfile(false);
+    }
   };
 
   // --------------------------------------------------------------------------
@@ -841,10 +890,10 @@ ${profile.title || PERSONAL_INFO.title}`;
     };
     if (editingCard) {
       updateTeamMember(editingCard.id, payload);
-      showToast(`Visiting card for "${cardForm.name}" updated.`);
+      showMutationToast(`Visiting card for "${cardForm.name}" updated.`);
     } else {
       addTeamMember(payload);
-      showToast(`New visiting card for "${cardForm.name}" created.`);
+      showMutationToast(`New visiting card for "${cardForm.name}" created.`);
     }
     setTeamCards(loadTeamMembers());
     setIsCardModalOpen(false);
@@ -853,13 +902,13 @@ ${profile.title || PERSONAL_INFO.title}`;
 
   const handleDeleteCard = (card: TeamMemberCard) => {
     if (teamCards.length <= 1) {
-      showToast('At least one visiting card profile must be maintained.');
+      showToast('At least one visiting card profile must be maintained.', 'warning');
       return;
     }
     if (window.confirm(`Are you sure you want to delete the visiting card profile for "${card.name}"?`)) {
       deleteTeamMember(card.id);
       setTeamCards(loadTeamMembers());
-      showToast(`Visiting card for "${card.name}" deleted.`);
+      showMutationToast(`Visiting card for "${card.name}" deleted.`);
     }
   };
 
@@ -867,7 +916,7 @@ ${profile.title || PERSONAL_INFO.title}`;
     const clone = duplicateTeamMember(card.id);
     if (clone) {
       setTeamCards(loadTeamMembers());
-      showToast(`Duplicated card for "${clone.name}".`);
+      showMutationToast(`Duplicated card for "${clone.name}".`);
     }
   };
 
@@ -875,7 +924,7 @@ ${profile.title || PERSONAL_INFO.title}`;
     if (window.confirm('Reset all visiting card profiles to default official cards?')) {
       resetTeamMembers();
       setTeamCards(loadTeamMembers());
-      showToast('Visiting cards reset to defaults.');
+      showMutationToast('Visiting cards reset to defaults.');
     }
   };
 
@@ -883,14 +932,14 @@ ${profile.title || PERSONAL_INFO.title}`;
     e.preventDefault();
     const updated = saveVisitingCardConfig(vcardConfig);
     setVcardConfig(updated);
-    showToast('Visiting card global brand identity & settings saved.');
+    showMutationToast('Visiting card global brand identity & settings saved.');
   };
 
   const handleTogglePrivacySetting = (key: keyof PrivacySettings) => {
     const updated = { ...vcardPrivacy, [key]: !vcardPrivacy[key] };
     setVcardPrivacy(updated);
     savePrivacySettings(updated);
-    showToast(`Privacy rule "${key}" updated.`);
+    showMutationToast(`Privacy rule "${key}" updated.`);
   };
 
   const filteredTeamCards = useMemo(() => {
@@ -1093,8 +1142,22 @@ ${profile.title || PERSONAL_INFO.title}`;
     <div className="min-h-screen bg-[#080B12] text-[#F3F4F6] flex font-sans selection:bg-indigo-500 selection:text-white">
       {/* Toast Notification Banner */}
       {toastMessage && (
-        <div className="fixed bottom-6 right-6 z-50 bg-[#111726] border border-indigo-500/40 text-white px-4 py-3 rounded-xl shadow-2xl flex items-center gap-2.5 text-xs animate-fadeIn">
-          <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+        <div
+          className={`fixed bottom-6 right-6 z-50 max-w-md bg-[#111726] text-white px-4 py-3 rounded-xl shadow-2xl flex items-center gap-2.5 text-xs animate-fadeIn border ${
+            toastTone === 'error'
+              ? 'border-red-500/50'
+              : toastTone === 'warning'
+              ? 'border-amber-500/50'
+              : 'border-emerald-500/45'
+          }`}
+        >
+          {toastTone === 'error' || toastTone === 'warning' ? (
+            <AlertTriangle
+              className={`w-4 h-4 shrink-0 ${toastTone === 'error' ? 'text-red-400' : 'text-amber-400'}`}
+            />
+          ) : (
+            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+          )}
           <span>{toastMessage}</span>
         </div>
       )}
@@ -1352,11 +1415,23 @@ ${profile.title || PERSONAL_INFO.title}`;
                   <button
                     type="button"
                     onClick={onOpenCloudScan}
-                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow-sm transition-colors cursor-pointer whitespace-nowrap shrink-0"
-                    title="Cloud Auto-Save Database"
+                    className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-white text-xs font-semibold shadow-sm transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+                      cloudStatus.isOwnerConnected && !cloudStatus.hasUnsyncedChanges
+                        ? 'bg-emerald-600 hover:bg-emerald-500'
+                        : 'bg-amber-600 hover:bg-amber-500'
+                    }`}
+                    title="Cloud Auto-Save Database (Sync to Phone & All Devices)"
                   >
                     <Cloud className="w-3.5 h-3.5 shrink-0" />
-                    <span>{cloudStatus.isOwnerConnected ? 'Cloud Auto-Save: ON' : 'Cloud Auto-Save'}</span>
+                    <span>
+                      {cloudStatus.isSyncing
+                        ? 'Syncing...'
+                        : cloudStatus.isOwnerConnected
+                        ? cloudStatus.hasUnsyncedChanges
+                          ? 'Push Updates to Cloud'
+                          : 'Cloud Live Sync: ON'
+                        : 'Cloud OFF · Connect'}
+                    </span>
                   </button>
                 )}
 
@@ -1426,6 +1501,113 @@ ${profile.title || PERSONAL_INFO.title}`;
               </div>
             </div>
           </header>
+
+          {/* Persistent Cross-Device (Desktop -> Phone) Cloud Sync Alert Banner */}
+          {(!cloudStatus.isOwnerConnected || cloudStatus.hasUnsyncedChanges || cloudStatus.error) && (
+            <div
+              className={`rounded-2xl p-4 border flex flex-col lg:flex-row lg:items-center justify-between gap-3.5 ${
+                cloudStatus.error
+                  ? 'bg-red-500/10 border-red-500/35 text-red-100'
+                  : 'bg-amber-500/10 border-amber-500/35 text-amber-100'
+              }`}
+            >
+              <div className="flex items-start gap-3 min-w-0">
+                <AlertTriangle
+                  className={`w-5 h-5 shrink-0 mt-0.5 ${
+                    cloudStatus.error ? 'text-red-400' : 'text-amber-400'
+                  }`}
+                />
+                <div className="space-y-1 text-xs leading-relaxed min-w-0">
+                  <div className="font-semibold text-white flex flex-wrap items-center gap-2">
+                    <Smartphone className="w-3.5 h-3.5 text-amber-300 shrink-0" />
+                    <span>
+                      {cloudStatus.isOwnerConnected
+                        ? cloudStatus.error
+                          ? 'Cloud Sync Attention Required'
+                          : 'Unsynced Local Edits Pending'
+                        : 'ফোনে ও অন্য ডিভাইসে আপডেট দেখাতে Cloud Sync চালু নেই'}
+                    </span>
+                  </div>
+                  <p className="text-slate-200">
+                    {cloudStatus.error
+                      ? cloudStatus.error
+                      : !cloudStatus.isOwnerConnected
+                      ? domainsLoaded && !isHostAuthorized && typeof window !== 'undefined' && window.location.hostname !== 'localhost'
+                        ? `এই ডোমেইনটি (${window.location.hostname}) এখনো Firebase Authorized Domains-এ যোগ করা হয়নি। তাই এখান থেকে করা পরিবর্তন শুধু এই ব্রাউজারে থাকছে—ফোনে যাচ্ছে না।`
+                        : 'Google ক্লাউড সেশন কানেক্ট না করলে আপনার ছবি বা প্রোফাইল আপডেট শুধু এই কম্পিউটারে থাকবে, ফোনে দেখাবে না। একবার Connect করলেই সাথে সাথে ফোনে আপডেট চলে যাবে।'
+                      : 'কিছু পরিবর্তন এখনো ক্লাউডে পাঠানো বাকি আছে—ফোনে দেখাতে নিচের বাটনে ক্লিক করুন।'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
+                {!cloudStatus.isOwnerConnected &&
+                  domainsLoaded &&
+                  !isHostAuthorized &&
+                  typeof window !== 'undefined' &&
+                  window.location.hostname !== 'localhost' && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void navigator.clipboard.writeText(window.location.hostname).then(() => {
+                            setCopiedBannerDomain(true);
+                            window.setTimeout(() => setCopiedBannerDomain(false), 2000);
+                          });
+                        }}
+                        className="min-h-[40px] px-3 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-white font-mono text-xs inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+                      >
+                        {copiedBannerDomain ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                        <span>{copiedBannerDomain ? 'Copied Domain' : `Copy: ${window.location.hostname}`}</span>
+                      </button>
+                      <a
+                        href="https://console.firebase.google.com/project/splendid-meridian-64mm2/authentication/settings"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="min-h-[40px] px-3 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-medium text-xs inline-flex items-center gap-1.5 whitespace-nowrap"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                        <span>Firebase Settings</span>
+                      </a>
+                    </>
+                  )}
+
+                {cloudStatus.isOwnerConnected ? (
+                  <button
+                    type="button"
+                    disabled={cloudStatus.isSyncing}
+                    onClick={async () => {
+                      const res = await syncAllLocalDataToCloud();
+                      if (res.success) {
+                        showToast('সব আপডেট ক্লাউডে সেভ হয়েছে — ফোনেও এখন দেখা যাবে!', 'success');
+                      } else if (res.error) {
+                        showToast(res.error, 'error');
+                      }
+                    }}
+                    className="min-h-[40px] px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap disabled:opacity-50"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${cloudStatus.isSyncing ? 'animate-spin' : ''}`} />
+                    <span>{cloudStatus.isSyncing ? 'Syncing...' : 'Push Updates to Cloud & Phone'}</span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (onOpenCloudScan) {
+                        onOpenCloudScan();
+                      } else {
+                        void signInOwnerWithGoogle(getPreferredOwnerEmail(), false);
+                      }
+                    }}
+                    className="min-h-[40px] px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap shadow-sm"
+                  >
+                    <Cloud className="w-3.5 h-3.5" />
+                    <span>Connect Google & Sync to Phone</span>
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* ==================================================================== */}
           {/* TAB 0: EXECUTIVE DASHBOARD OVERVIEW */}
@@ -3622,11 +3804,11 @@ ${profile.title || PERSONAL_INFO.title}`;
                   <ImageUploadField
                     label="Profile Photo (Direct File Upload)"
                     value={profile.avatar}
-                    onChange={(uploadedUrl) => {
+                    onChange={async (uploadedUrl) => {
                       const prevAvatar = profile.avatar;
                       const nextProfile = { ...profile, avatar: uploadedUrl };
                       setProfile(nextProfile);
-                      updateStoredProfile(nextProfile);
+                      const res = await updateStoredProfileAndSync(nextProfile);
                       // Keep team cards that inherited the previous profile photo linked to the new one
                       let updatedAnyCard = false;
                       loadTeamMembers().forEach((card) => {
@@ -3638,7 +3820,13 @@ ${profile.title || PERSONAL_INFO.title}`;
                       if (updatedAnyCard) {
                         setTeamCards(loadTeamMembers());
                       }
-                      showToast('Profile photo updated across portfolio!');
+                      if (res.syncedToCloud) {
+                        showToast('প্রোফাইল ছবি আপলোড ও ক্লাউডে সেভ হয়েছে — ফোনেও আপডেট দেখা যাবে!', 'success');
+                      } else if (res.error) {
+                        showToast(`ছবি এই ডিভাইসে সেভ হয়েছে, তবে ক্লাউড এরর: ${res.error}`, 'error');
+                      } else {
+                        showToast('ছবি শুধু এই ব্রাউজারে আপডেট হয়েছে। ফোনে দেখাতে উপরে Cloud Connect করুন।', 'warning');
+                      }
                     }}
                     shape="square"
                     accentColor="cyan"
@@ -3787,15 +3975,52 @@ ${profile.title || PERSONAL_INFO.title}`;
                 </div>
               </div>
 
-              {/* Submit Button */}
-              <div className="flex items-center justify-end pt-4 border-t border-white/10">
-                <button
-                  type="submit"
-                  className="shimmer inline-flex items-center space-x-2 px-6 py-3 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-mono text-xs font-bold shadow-lg shadow-cyan-600/25 cursor-pointer"
-                >
-                  <Save className="w-4 h-4" />
-                  <span>Save Profile & Headline Metrics</span>
-                </button>
+              {/* Cross-Device Cloud Sync Status & Submit Button */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-4 border-t border-white/10">
+                <div className="flex items-center gap-2.5 text-xs">
+                  {cloudStatus.isOwnerConnected ? (
+                    <span className="inline-flex items-center gap-2 text-emerald-400 font-medium">
+                      <CheckCircle2 className="w-4 h-4 shrink-0" />
+                      <span>
+                        Cloud Sync Connected ({cloudStatus.ownerEmail}) — সেভ করলেই ফোনে ও লাইভে আপডেট হবে।
+                      </span>
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-2 text-amber-300 font-medium">
+                      <AlertTriangle className="w-4 h-4 shrink-0 text-amber-400" />
+                      <span>
+                        Cloud Sync Disconnected — ফোনে দেখাতে আগে Google কানেক্ট করুন।
+                      </span>
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex flex-wrap items-center justify-end gap-2.5 shrink-0">
+                  {!cloudStatus.isOwnerConnected && onOpenCloudScan && (
+                    <button
+                      type="button"
+                      onClick={onOpenCloudScan}
+                      className="min-h-[44px] inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-mono text-xs font-bold cursor-pointer whitespace-nowrap"
+                    >
+                      <Cloud className="w-4 h-4" />
+                      <span>Connect Cloud</span>
+                    </button>
+                  )}
+                  <button
+                    type="submit"
+                    disabled={isSavingProfile}
+                    className="shimmer min-h-[44px] inline-flex items-center space-x-2 px-6 py-3 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-mono text-xs font-bold shadow-lg shadow-cyan-600/25 cursor-pointer disabled:opacity-60 whitespace-nowrap"
+                  >
+                    <Save className="w-4 h-4" />
+                    <span>
+                      {isSavingProfile
+                        ? 'Saving...'
+                        : cloudStatus.isOwnerConnected
+                        ? 'Save & Sync to Cloud / Phone'
+                        : 'Save Profile (Local Device)'}
+                    </span>
+                  </button>
+                </div>
               </div>
             </form>
           </div>
@@ -3950,7 +4175,7 @@ ${profile.title || PERSONAL_INFO.title}`;
                     onChange={(newLogoUrl) => {
                       const next = saveVisitingCardConfig({ ...vcardConfig, companyLogo: newLogoUrl });
                       setVcardConfig(next);
-                      showToast(
+                      showMutationToast(
                         newLogoUrl
                           ? 'কোম্পানির লোগো ইমেইল সিগনেচারে সেট করা হয়েছে।'
                           : 'কোম্পানির লোগো সরানো হয়েছে।'
@@ -4202,7 +4427,7 @@ ${profile.title || PERSONAL_INFO.title}`;
                       onClick={() => {
                         setCurrentThemeId(theme.id);
                         setAndApplyTheme(theme.id);
-                        showToast(`Theme updated to ${theme.name}!`);
+                        showMutationToast(`Theme updated to ${theme.name}!`);
                       }}
                       className={`group p-4 rounded-2xl text-left border transition-all cursor-pointer flex flex-col justify-between ${
                         isSelected 

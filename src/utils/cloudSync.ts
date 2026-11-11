@@ -18,6 +18,7 @@ import {
   getDoc,
   getDocFromServer,
   getDocs,
+  getDocsFromServer,
   onSnapshot,
   query,
   serverTimestamp,
@@ -129,7 +130,7 @@ export function isCurrentHostFirebaseAuthorized(): boolean {
   return knownAuthorizedDomains.has(window.location.hostname.toLowerCase());
 }
 
-function canAdminWriteToCloud(): boolean {
+export function canAdminWriteToCloud(): boolean {
   return (
     isAdminAuthenticated() &&
     isVerifiedFirebaseOwner(auth.currentUser) &&
@@ -277,12 +278,14 @@ function markGranularWriteSyncedIfIdle(): void {
   if (pathWriteQueues.size === 0 && !activeFullSyncPromise) {
     clearLocalUnsyncedEdits();
     emitStatus({
+      isSyncing: false,
       hasUnsyncedChanges: false,
       lastSyncedAt: nowIso,
       error: null,
     });
   } else {
     emitStatus({
+      isSyncing: false,
       lastSyncedAt: nowIso,
       error: null,
     });
@@ -855,8 +858,14 @@ async function deleteProtectedDocument(collectionName: string, docId: string): P
 export async function pushPortfolioMetaToCloud(
   data: PortfolioData,
   blogCategories?: string[]
-): Promise<void> {
-  if (isApplyingSnapshot || !canAdminWriteToCloud()) return;
+): Promise<boolean> {
+  if (isApplyingSnapshot) return false;
+  if (!canAdminWriteToCloud()) {
+    emitStatus({ hasUnsyncedChanges: hasLocalUnsyncedEdits() });
+    return false;
+  }
+
+  emitStatus({ isSyncing: true, error: null });
 
   const resolvedCats =
     blogCategories ?? data.blogCategories ?? (bridge ? bridge.getBlogCategories() : []);
@@ -892,8 +901,22 @@ export async function pushPortfolioMetaToCloud(
     lastModifiedIso: safeNonEmptyStr(data.lastModified, 64, new Date().toISOString()),
   };
 
-  await upsertProtectedDocument('portfolio_meta', 'main', mutableMeta);
-  markGranularWriteSyncedIfIdle();
+  try {
+    const approxBytes = JSON.stringify(mutableMeta).length;
+    if (approxBytes > 950000) {
+      throw new Error(
+        'Uploaded photo or portfolio metadata exceeds Cloud Firestore size limit (~950KB). Please use a smaller cropped photo.'
+      );
+    }
+    await upsertProtectedDocument('portfolio_meta', 'main', mutableMeta);
+    markGranularWriteSyncedIfIdle();
+    return true;
+  } catch (err) {
+    const msg =
+      err instanceof Error ? err.message : 'Cloud sync failed while saving profile/metadata.';
+    emitStatus({ isSyncing: false, error: msg });
+    throw err;
+  }
 }
 
 export async function pushProjectToCloud(project: Project, orderIndex = 0): Promise<void> {
@@ -1333,70 +1356,121 @@ function notifyBridgeSnapshot(): void {
   }
 }
 
+let lastServerPullTimestamp = 0;
+let activeServerPullPromise: Promise<void> | null = null;
+
 async function pullCloudSnapshotOnce(): Promise<void> {
-  // 1. portfolio_meta/main (read via unauthenticated publicDb so reads never block on Auth tokens)
-  try {
-    const metaSnap = await getDoc(doc(publicDb, 'portfolio_meta', 'main'));
-    if (metaSnap.exists()) {
-      latestCloudMeta = parseCloudMetaDoc(metaSnap.data() as Record<string, unknown>);
-    }
-  } catch (error) {
-    handleFirestoreError(error, OperationType.GET, 'portfolio_meta/main');
+  if (activeServerPullPromise) {
+    return activeServerPullPromise;
   }
 
-  // 2. projects
-  try {
-    const projQuery = query(collection(publicDb, 'projects'), where('visibility', '==', 'public'));
-    const projSnap = await getDocs(projQuery);
-    const parsedProjects = projSnap.docs
-      .map((docItem) => docToProject(docItem.data() as Record<string, unknown>))
-      .sort((a, b) => a._orderIndex - b._orderIndex)
-      .map(({ _orderIndex: _, ...rest }) => rest);
-    if (parsedProjects.length > 0) {
-      latestCloudProjects = parsedProjects;
-    }
-  } catch (error) {
-    handleFirestoreError(error, OperationType.LIST, 'projects');
-  }
+  activeServerPullPromise = (async () => {
+    lastServerPullTimestamp = Date.now();
+    let anyUpdated = false;
 
-  // 3. experiences
-  try {
-    const expQuery = query(collection(publicDb, 'experiences'), where('visibility', '==', 'public'));
-    const expSnap = await getDocs(expQuery);
-    const parsedExp = expSnap.docs
-      .map((docItem) => docToExperience(docItem.data() as Record<string, unknown>))
-      .sort((a, b) => a._orderIndex - b._orderIndex)
-      .map(({ _orderIndex: _, ...rest }) => rest);
-    if (parsedExp.length > 0) {
-      latestCloudExperiences = parsedExp;
+    // 1. portfolio_meta/main (read via unauthenticated publicDb from server first so mobile browsers never get stuck on stale cache)
+    try {
+      const metaRef = doc(publicDb, 'portfolio_meta', 'main');
+      let metaSnap;
+      try {
+        metaSnap = await getDocFromServer(metaRef);
+      } catch {
+        metaSnap = await getDoc(metaRef);
+      }
+      if (metaSnap.exists()) {
+        latestCloudMeta = parseCloudMetaDoc(metaSnap.data() as Record<string, unknown>);
+        anyUpdated = true;
+      }
+    } catch (error) {
+      console.warn('Cloud meta server pull warning:', error);
     }
-  } catch (error) {
-    handleFirestoreError(error, OperationType.LIST, 'experiences');
-  }
 
-  // 4. blogs
-  try {
-    const ownerSignedIn = canAdminWriteToCloud();
-    const blogQuery = ownerSignedIn
-      ? collection(db, 'blogs')
-      : query(collection(publicDb, 'blogs'), where('status', '==', 'Published'));
-    const blogSnap = await getDocs(blogQuery);
-    const parsedBlogs = blogSnap.docs
-      .map((docItem) => docToBlog(docItem.data() as Record<string, unknown>))
-      .sort((a, b) => a._orderIndex - b._orderIndex)
-      .map(({ _orderIndex: _, ...rest }) => rest);
-    if (parsedBlogs.length > 0) {
-      latestCloudBlogs = parsedBlogs;
+    // 2. projects
+    try {
+      const projQuery = query(collection(publicDb, 'projects'), where('visibility', '==', 'public'));
+      let projSnap;
+      try {
+        projSnap = await getDocsFromServer(projQuery);
+      } catch {
+        projSnap = await getDocs(projQuery);
+      }
+      const parsedProjects = projSnap.docs
+        .map((docItem) => docToProject(docItem.data() as Record<string, unknown>))
+        .sort((a, b) => a._orderIndex - b._orderIndex)
+        .map(({ _orderIndex: _, ...rest }) => rest);
+      emitStatus({ cloudProjectsCount: parsedProjects.length });
+      if (parsedProjects.length > 0) {
+        latestCloudProjects = parsedProjects;
+        anyUpdated = true;
+      }
+    } catch (error) {
+      console.warn('Cloud projects server pull warning:', error);
     }
-  } catch (error) {
-    if (isTokenServiceDisabledError(error)) {
-      await purgeExpiredRuntimeAuthSession();
-    } else {
-      handleFirestoreError(error, OperationType.LIST, 'blogs');
-    }
-  }
 
-  notifyBridgeSnapshot();
+    // 3. experiences
+    try {
+      const expQuery = query(collection(publicDb, 'experiences'), where('visibility', '==', 'public'));
+      let expSnap;
+      try {
+        expSnap = await getDocsFromServer(expQuery);
+      } catch {
+        expSnap = await getDocs(expQuery);
+      }
+      const parsedExp = expSnap.docs
+        .map((docItem) => docToExperience(docItem.data() as Record<string, unknown>))
+        .sort((a, b) => a._orderIndex - b._orderIndex)
+        .map(({ _orderIndex: _, ...rest }) => rest);
+      if (parsedExp.length > 0) {
+        latestCloudExperiences = parsedExp;
+        anyUpdated = true;
+      }
+    } catch (error) {
+      console.warn('Cloud experiences server pull warning:', error);
+    }
+
+    // 4. blogs
+    try {
+      const ownerSignedIn = canAdminWriteToCloud();
+      const blogQuery = ownerSignedIn
+        ? collection(db, 'blogs')
+        : query(collection(publicDb, 'blogs'), where('status', '==', 'Published'));
+      let blogSnap;
+      try {
+        blogSnap = await getDocsFromServer(blogQuery);
+      } catch {
+        blogSnap = await getDocs(blogQuery);
+      }
+      const parsedBlogs = blogSnap.docs
+        .map((docItem) => docToBlog(docItem.data() as Record<string, unknown>))
+        .sort((a, b) => a._orderIndex - b._orderIndex)
+        .map(({ _orderIndex: _, ...rest }) => rest);
+      emitStatus({ cloudBlogsCount: parsedBlogs.length });
+      if (parsedBlogs.length > 0) {
+        latestCloudBlogs = parsedBlogs;
+        anyUpdated = true;
+      }
+    } catch (error) {
+      if (isTokenServiceDisabledError(error)) {
+        await purgeExpiredRuntimeAuthSession();
+      } else {
+        console.warn('Cloud blogs server pull warning:', error);
+      }
+    }
+
+    if (anyUpdated) {
+      notifyBridgeSnapshot();
+    }
+  })().finally(() => {
+    activeServerPullPromise = null;
+  });
+
+  return activeServerPullPromise;
+}
+
+export async function forcePullLatestFromCloud(minIntervalMs = 4000): Promise<void> {
+  if (typeof window === 'undefined') return;
+  if (Date.now() - lastServerPullTimestamp < minIntervalMs) return;
+  await pullCloudSnapshotOnce();
 }
 
 let tokenExpiryTimerId: number | null = null;
@@ -1416,17 +1490,31 @@ export function initializeCloudRealtimeSync(callbacks: CloudBridgeCallbacks): vo
   syncInitialized = true;
 
   void refreshKnownAuthorizedDomains();
+  // Immediately pull fresh server state so mobile browsers bypass any stale cached snapshot
+  void pullCloudSnapshotOnce();
 
   // Keep status synchronized with local unsynced queue changes
   window.addEventListener(UNSYNCED_EDITS_CHANGED_EVENT, () => {
     emitStatus({ hasUnsyncedChanges: hasLocalUnsyncedEdits() });
   });
 
-  // Automatically flush any queued local edits when internet reconnects
+  // Automatically flush any queued local edits and pull latest cloud state when internet reconnects
   window.addEventListener('online', () => {
+    void forcePullLatestFromCloud(2000);
     if (canAdminWriteToCloud() && hasLocalUnsyncedEdits()) {
       void syncAllLocalDataToCloud();
     }
+  });
+
+  // Mobile OS browsers suspend background WebSockets — immediately pull fresh server state when tab resumes
+  const handleResumeRefresh = () => {
+    if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+      void forcePullLatestFromCloud(4000);
+    }
+  };
+  document.addEventListener('visibilitychange', handleResumeRefresh);
+  window.addEventListener('focus', () => {
+    void forcePullLatestFromCloud(4000);
   });
 
   let unsubBlogs: Unsubscribe | null = null;

@@ -40,6 +40,7 @@ import type {
 } from './visitingCardStore';
 import {
   CloudPortfolioSnapshotPayload,
+  canAdminWriteToCloud,
   deleteExperienceFromCloud,
   deleteProjectFromCloud,
   isCurrentlyApplyingCloudSnapshot,
@@ -50,6 +51,7 @@ import {
   pushPortfolioMetaToCloud,
   pushProjectToCloud,
 } from './cloudSync';
+import { isAdminAuthenticated } from './adminAuth';
 
 const STORAGE_KEY_PORTFOLIO = 'sabbir_portfolio_data_v2';
 const LOCAL_UNSYNCED_EDITS_KEY = 'sabbir_portfolio_has_unsynced_edits';
@@ -445,13 +447,13 @@ export function savePortfolioData(data: PortfolioData): void {
     console.error('Error saving portfolio data to localStorage:', err);
   }
 
-  if (!isCurrentlyApplyingCloudSnapshot()) {
+  if (!isCurrentlyApplyingCloudSnapshot() && isAdminAuthenticated()) {
     markLocalUnsyncedEdits();
   }
 
   window.dispatchEvent(new CustomEvent(PORTFOLIO_UPDATED_EVENT, { detail: updatedData }));
 
-  if (!isCurrentlyApplyingCloudSnapshot()) {
+  if (!isCurrentlyApplyingCloudSnapshot() && isAdminAuthenticated()) {
     void pushPortfolioMetaToCloud(updatedData).catch((err) => {
       console.error('Cloud meta sync error:', err);
     });
@@ -487,7 +489,7 @@ export function syncBlogStateToPortfolioServer(
     // ignore
   }
 
-  if (!isCurrentlyApplyingCloudSnapshot()) {
+  if (!isCurrentlyApplyingCloudSnapshot() && isAdminAuthenticated()) {
     markLocalUnsyncedEdits();
     void pushPortfolioMetaToCloud(updatedData, blogCategories).catch((err) => {
       console.error('Cloud blog meta sync error:', err);
@@ -1278,4 +1280,59 @@ export function updateStoredProfile(updatedFields: Partial<ProfileData>): Profil
   });
 
   return updatedProfile;
+}
+
+export async function updateStoredProfileAndSync(
+  updatedFields: Partial<ProfileData>
+): Promise<{ profile: ProfileData; syncedToCloud: boolean; error?: string }> {
+  const current = getStoredPortfolioData();
+  const currentProfile = current.profile || { ...DEFAULT_PROFILE };
+  const updatedProfile: ProfileData = {
+    ...currentProfile,
+    ...updatedFields,
+    updatedAt: new Date().toISOString(),
+  };
+
+  const nextData: PortfolioData = {
+    ...current,
+    profile: updatedProfile,
+    deletedProjectIds: uniqueStrings(current.deletedProjectIds),
+    deletedExperienceIds: uniqueStrings(current.deletedExperienceIds),
+    deletedBlogIds: uniqueStrings(current.deletedBlogIds),
+    deletedReferenceIds: uniqueStrings(current.deletedReferenceIds),
+    deletedRoadmapIds: uniqueStrings(current.deletedRoadmapIds),
+    themeId: current.themeId ?? getSavedThemeId(),
+    vcardConfig: current.vcardConfig ?? loadVisitingCardConfig(),
+    vcardPrivacy: current.vcardPrivacy ?? loadPrivacySettings(),
+    vcardTeam: current.vcardTeam ?? loadTeamMembers(),
+    lastModified: new Date().toISOString(),
+  };
+
+  try {
+    localStorage.setItem(STORAGE_KEY_PORTFOLIO, JSON.stringify(nextData));
+    localStorage.setItem('sabbir_portfolio_data', JSON.stringify(nextData));
+  } catch (err) {
+    console.error('Error saving portfolio data to localStorage:', err);
+  }
+
+  if (isAdminAuthenticated()) {
+    markLocalUnsyncedEdits();
+  }
+
+  window.dispatchEvent(new CustomEvent(PORTFOLIO_UPDATED_EVENT, { detail: nextData }));
+
+  if (!canAdminWriteToCloud()) {
+    return { profile: updatedProfile, syncedToCloud: false };
+  }
+
+  try {
+    const pushed = await pushPortfolioMetaToCloud(nextData);
+    return { profile: updatedProfile, syncedToCloud: pushed };
+  } catch (err) {
+    return {
+      profile: updatedProfile,
+      syncedToCloud: false,
+      error: err instanceof Error ? err.message : 'Cloud sync failed.',
+    };
+  }
 }
