@@ -1,13 +1,10 @@
 /**
  * -----------------------------------------
  * Project     : Sabbir Ahamed SQA Portfolio
- * Module      : Firebase Cloud Firestore & Google Auth Client
- * Description : Initializes isolated Public Reader Firestore (`publicDb`) and
- *               Owner Writer Firestore (`db`) + Mobile-Ready Google Auth (`auth`)
- *               with proactive token-expiry sanitization so stale refresh tokens
- *               never trigger `securetoken.googleapis.com` errors or block reads.
+ * Module      : Firebase Google Authentication Client
+ * Description : Initializes Firebase Auth exclusively for verified owner Google Sign-In
+ *               (sabbircse72@gmail.com) to authorize PostgreSQL database writes.
  * Author      : Sabbir Ahamed
- * Last Updated: 2026-10-25
  * -----------------------------------------
  */
 
@@ -24,11 +21,12 @@ import {
   signOut,
   User,
 } from 'firebase/auth';
-import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
 
-// 6-minute buffer ensures we stay strictly ahead of @firebase/auth's 5-minute internal refresh offset
 export const TOKEN_SAFETY_BUFFER_MS = 6 * 60 * 1000;
+
+export const PRIMARY_OWNER_EMAIL = 'sabbircse72@gmail.com';
+export const OWNER_ADMIN_EMAILS: readonly string[] = ['sabbircse72@gmail.com'];
 
 interface InternalStsUser {
   stsTokenManager?: {
@@ -71,59 +69,39 @@ function cleanStorageBucket(storage: Storage, now: number, forceClearAll: boolea
   }
 }
 
-/**
- * Purges any stale/expired Firebase Auth entries from Web Storage & IndexedDB BEFORE
- * `initializeAuth` boots so old sessions never call `securetoken.googleapis.com` and block Firestore,
- * while keeping fresh (<54 min) sessions alive across reloads and tabs.
- */
 export function purgeStaleFirebaseAuthStorage(forceClearAll = false): void {
   if (typeof window === 'undefined') return;
   const now = Date.now();
-
   try {
     cleanStorageBucket(window.localStorage, now, forceClearAll);
   } catch {
-    // Ignore localStorage restrictions
+    // ignore
   }
-
   try {
     cleanStorageBucket(window.sessionStorage, now, forceClearAll);
   } catch {
-    // Ignore sessionStorage restrictions
+    // ignore
   }
-
   if (forceClearAll) {
     try {
       if (typeof window.indexedDB !== 'undefined') {
         window.indexedDB.deleteDatabase('firebaseLocalStorageDb');
       }
     } catch {
-      // Ignore IndexedDB restrictions
+      // ignore
     }
   }
 }
 
-// Sanitize storage synchronously BEFORE creating Firebase apps or Auth!
 purgeStaleFirebaseAuthStorage(false);
 
-// Primary App: Used for authenticated Owner Google Sign-In & Firestore writes
 const app = initializeApp(firebaseConfig);
-
-// Isolated Public Reader App (NO Auth attached): Guarantees public portfolio & real-time
-// Firestore reads NEVER depend on Auth tokens or fail if a token expires.
-const publicReaderApp = initializeApp(firebaseConfig, 'portfolio-public-reader');
-
-// CRITICAL: Connect both instances to the provisioned named Firestore database
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
-export const publicDb = getFirestore(publicReaderApp, firebaseConfig.firestoreDatabaseId);
 
 function createMobileReadyAuth(): Auth {
   if (typeof window === 'undefined') {
     return getAuth(app);
   }
   try {
-    // Synchronous browserLocalPersistence + browserSessionPersistence resolves in 0ms
-    // (preserving mobile Safari/Chrome tap gestures AND keeping fresh sessions alive across tabs).
     return initializeAuth(app, {
       persistence: [browserLocalPersistence, browserSessionPersistence, inMemoryPersistence],
       popupRedirectResolver: browserPopupRedirectResolver,
@@ -136,56 +114,20 @@ function createMobileReadyAuth(): Auth {
 export const auth = createMobileReadyAuth();
 export { browserPopupRedirectResolver };
 
-export const PRIMARY_OWNER_EMAIL = 'sabbir.altersense@gmail.com';
-export const SECONDARY_OWNER_EMAIL = 'sabbircse72@gmail.com';
-
-export const OWNER_ADMIN_EMAILS: readonly string[] = [
-  'sabbir.altersense@gmail.com',
-  'sabbircse72@gmail.com',
-];
-
-const PREFERRED_OWNER_EMAIL_KEY = 'sabbir_preferred_owner_email';
-
 export function getPreferredOwnerEmail(): string {
-  if (typeof window === 'undefined') return PRIMARY_OWNER_EMAIL;
-  try {
-    const saved = (localStorage.getItem(PREFERRED_OWNER_EMAIL_KEY) || '').trim().toLowerCase();
-    if (saved && OWNER_ADMIN_EMAILS.includes(saved)) {
-      return saved;
-    }
-  } catch {
-    // ignore
-  }
   return PRIMARY_OWNER_EMAIL;
 }
 
-export function setPreferredOwnerEmail(email: string): string {
-  const normalized = (email || '').trim().toLowerCase();
-  const valid = OWNER_ADMIN_EMAILS.includes(normalized) ? normalized : PRIMARY_OWNER_EMAIL;
-  if (typeof window !== 'undefined') {
-    try {
-      localStorage.setItem(PREFERRED_OWNER_EMAIL_KEY, valid);
-    } catch {
-      // ignore
-    }
-  }
-  return valid;
+export function setPreferredOwnerEmail(): string {
+  return PRIMARY_OWNER_EMAIL;
 }
 
-export function createOwnerGoogleProvider(
-  loginHintEmail: string = getPreferredOwnerEmail(),
-  forceAccountSelect = false
-): GoogleAuthProvider {
+export function createOwnerGoogleProvider(forceAccountSelect = false): GoogleAuthProvider {
   const provider = new GoogleAuthProvider();
-  const params: Record<string, string> = {};
-  if (forceAccountSelect) {
-    params.prompt = 'select_account';
-  } else {
-    const cleanHint = (loginHintEmail || '').trim().toLowerCase();
-    params.login_hint = OWNER_ADMIN_EMAILS.includes(cleanHint) ? cleanHint : getPreferredOwnerEmail();
-    params.prompt = 'select_account';
-  }
-  provider.setCustomParameters(params);
+  provider.setCustomParameters({
+    login_hint: PRIMARY_OWNER_EMAIL,
+    ...(forceAccountSelect ? { prompt: 'select_account' } : { prompt: 'select_account' }),
+  });
   return provider;
 }
 
@@ -208,7 +150,19 @@ export function hasFreshOwnerAuthToken(user: User | null | undefined): boolean {
 
 export function isVerifiedFirebaseOwner(user: User | null | undefined): boolean {
   if (!user || !user.email || !user.emailVerified) return false;
-  return OWNER_ADMIN_EMAILS.includes(user.email.toLowerCase());
+  return user.email.trim().toLowerCase() === PRIMARY_OWNER_EMAIL;
+}
+
+export async function getOwnerIdToken(): Promise<string | null> {
+  const user = auth.currentUser;
+  if (!user || !isVerifiedFirebaseOwner(user)) {
+    return null;
+  }
+  try {
+    return await user.getIdToken();
+  } catch {
+    return null;
+  }
 }
 
 export function isTokenServiceDisabledError(err: unknown): boolean {
@@ -230,75 +184,6 @@ export async function purgeExpiredRuntimeAuthSession(): Promise<void> {
   try {
     await signOut(auth);
   } catch {
-    // Ignore signOut errors
+    // ignore
   }
 }
-
-export enum OperationType {
-  CREATE = 'create',
-  UPDATE = 'update',
-  DELETE = 'delete',
-  LIST = 'list',
-  GET = 'get',
-  WRITE = 'write',
-}
-
-export interface FirestoreErrorInfo {
-  error: string;
-  operationType: OperationType;
-  path: string | null;
-  authInfo: {
-    userId?: string | null;
-    email?: string | null;
-    emailVerified?: boolean | null;
-    isAnonymous?: boolean | null;
-    tenantId?: string | null;
-    providerInfo?: {
-      providerId?: string | null;
-      email?: string | null;
-    }[];
-  };
-}
-
-export function handleFirestoreError(
-  error: unknown,
-  operationType: OperationType,
-  path: string | null
-): never {
-  const errInfo: FirestoreErrorInfo = {
-    error: error instanceof Error ? error.message : String(error),
-    authInfo: {
-      userId: auth.currentUser?.uid,
-      email: auth.currentUser?.email,
-      emailVerified: auth.currentUser?.emailVerified,
-      isAnonymous: auth.currentUser?.isAnonymous,
-      tenantId: auth.currentUser?.tenantId,
-      providerInfo:
-        auth.currentUser?.providerData?.map((provider) => ({
-          providerId: provider.providerId,
-          email: provider.email,
-        })) || [],
-    },
-    operationType,
-    path,
-  };
-  console.error('Firestore Error: ', JSON.stringify(errInfo));
-  throw new Error(JSON.stringify(errInfo));
-}
-
-let connectionTested = false;
-
-export async function testFirestoreConnection(): Promise<void> {
-  if (connectionTested || typeof window === 'undefined') return;
-  connectionTested = true;
-  try {
-    // Validate connectivity against the isolated unauthenticated publicDb instance
-    await getDocFromServer(doc(publicDb, 'portfolio_meta', 'main'));
-  } catch (error) {
-    if (error instanceof Error && error.message.includes('the client is offline')) {
-      console.error('Please check your Firebase configuration.');
-    }
-  }
-}
-
-testFirestoreConnection();

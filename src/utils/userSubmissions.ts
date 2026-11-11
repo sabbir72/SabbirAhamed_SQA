@@ -3,31 +3,13 @@
  * Project     : Sabbir Ahamed SQA Portfolio
  * Module      : Frontend User Submissions & Defect Database Store
  * Description : Persists visitor/user frontend inputs (Contact Form inquiries and
- *               Bug Tracker defect tickets) directly to Google Cloud Firestore with
- *               real-time subscriptions, structured error reporting, and Admin triage.
+ *               Bug Tracker defect tickets) directly to PostgreSQL backend endpoints
+ *               with local cache fallback and Admin triage support.
  * Author      : Sabbir Ahamed
  * -----------------------------------------
  */
 
-import {
-  collection,
-  deleteDoc,
-  doc,
-  getDoc,
-  onSnapshot,
-  query,
-  serverTimestamp,
-  setDoc,
-  updateDoc,
-  where,
-  Unsubscribe,
-} from 'firebase/firestore';
-import {
-  db,
-  handleFirestoreError,
-  OperationType,
-  publicDb,
-} from '../firebase';
+import { getOwnerIdToken } from '../firebase';
 import { BUG_REPORTS } from '../data';
 import type { BugReport } from '../types';
 import { canFirebaseOwnerWrite } from './cloudSync';
@@ -79,7 +61,7 @@ function writeLocalArray<T>(key: string, items: T[]): void {
     localStorage.setItem(key, JSON.stringify(items));
     window.dispatchEvent(new CustomEvent(USER_SUBMISSIONS_UPDATED_EVENT));
   } catch {
-    // Ignore storage quota errors
+    // Ignore storage errors
   }
 }
 
@@ -118,11 +100,6 @@ export interface SubmitContactInput {
   message: string;
 }
 
-/**
- * Stores a frontend visitor Contact Form submission directly into Firestore
- * (`/contact_messages/{messageId}`) using the unauthenticated publicDb client,
- * with local cache mirroring so the submission is never silently lost.
- */
 export async function submitContactMessageToDb(
   input: SubmitContactInput
 ): Promise<StoredContactMessage> {
@@ -140,30 +117,24 @@ export async function submitContactMessageToDb(
     source: 'cloud',
   };
 
-  // Mirror locally first
   const existingLocal = getLocalContactMessages();
   writeLocalArray(LOCAL_CONTACT_MESSAGES_KEY, [
     { ...record, source: 'local' },
     ...existingLocal.filter((m) => m.id !== id),
   ]);
 
-  const path = `contact_messages/${id}`;
-  try {
-    await setDoc(doc(publicDb, 'contact_messages', id), {
-      id: record.id,
-      name: record.name,
-      email: record.email,
-      subject: record.subject,
-      message: record.message,
-      status: 'new',
-      createdAtIso: record.createdAtIso,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    });
-    return record;
-  } catch (err) {
-    handleFirestoreError(err, OperationType.CREATE, path);
+  const res = await fetch('/api/submissions/messages', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(record),
+  });
+
+  if (!res.ok) {
+    const errJson = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(errJson.error || 'Failed to save message.');
   }
+
+  return record;
 }
 
 export interface SubmitBugReportInput {
@@ -176,10 +147,6 @@ export interface SubmitBugReportInput {
   actualResult: string;
 }
 
-/**
- * Stores a frontend user-logged Defect Ticket directly into Firestore
- * (`/bug_reports/{bugId}`) so tickets persist across sessions and devices.
- */
 export async function submitBugReportToDb(
   input: SubmitBugReportInput
 ): Promise<StoredBugReport> {
@@ -218,60 +185,49 @@ export async function submitBugReportToDb(
     source: 'cloud',
   };
 
-  // Mirror locally
   const localBugs = readLocalArray<StoredBugReport>(LOCAL_BUG_REPORTS_KEY);
   writeLocalArray(LOCAL_BUG_REPORTS_KEY, [
     { ...record, source: 'local' },
     ...localBugs.filter((b) => b.id !== id),
   ]);
 
-  const path = `bug_reports/${id}`;
-  try {
-    await setDoc(doc(publicDb, 'bug_reports', id), {
-      id: record.id,
-      visibility: 'public',
-      title: record.title,
-      project: record.project,
-      severity: record.severity,
-      description: record.description,
-      stepsToReproduce: record.stepsToReproduce,
-      expectedResult: record.expectedResult,
-      actualResult: record.actualResult,
-      status: 'Open',
-      createdAtIso: record.createdAtIso,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    });
-    return record;
-  } catch (err) {
-    handleFirestoreError(err, OperationType.CREATE, path);
+  const res = await fetch('/api/submissions/bugs', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(record),
+  });
+
+  if (!res.ok) {
+    const errJson = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(errJson.error || 'Failed to submit bug report.');
   }
+
+  return record;
 }
 
-/**
- * Real-time public subscription to `/bug_reports` merged with baseline defaults.
- */
 export function subscribeBugReportsFromDb(
   onChange: (bugs: StoredBugReport[]) => void
-): Unsubscribe {
+): () => void {
   onChange(getMergedLocalBugReports());
 
-  const q = query(
-    collection(publicDb, 'bug_reports'),
-    where('visibility', '==', 'public')
-  );
+  let disposed = false;
 
-  return onSnapshot(
-    q,
-    (snapshot) => {
-      const cloudBugs: StoredBugReport[] = [];
-      snapshot.forEach((docSnap) => {
-        const d = docSnap.data();
-        if (!d || typeof d.title !== 'string') return;
-        cloudBugs.push({
-          id: typeof d.id === 'string' ? d.id : docSnap.id,
+  const fetchBugs = async () => {
+    try {
+      const res = await fetch('/api/submissions/bugs', { cache: 'no-store' });
+      if (!res.ok || disposed) return;
+      const json = (await res.json()) as {
+        success?: boolean;
+        data?: Array<Record<string, unknown>>;
+      };
+      if (!json.success || !Array.isArray(json.data) || disposed) return;
+
+      const cloudBugs: StoredBugReport[] = json.data
+        .filter((d) => d && typeof d.title === 'string')
+        .map((d) => ({
+          id: String(d.id || ''),
           visibility: 'public',
-          title: d.title,
+          title: String(d.title),
           project: typeof d.project === 'string' ? d.project : 'SaaS E-Commerce Platform',
           severity:
             d.severity === 'Critical' || d.severity === 'Major' || d.severity === 'Minor'
@@ -287,8 +243,7 @@ export function subscribeBugReportsFromDb(
           createdAtIso:
             typeof d.createdAtIso === 'string' ? d.createdAtIso : new Date().toISOString(),
           source: 'cloud',
-        });
-      });
+        }));
 
       const localBugs = readLocalArray<StoredBugReport>(LOCAL_BUG_REPORTS_KEY);
       const mergedMap = new Map<string, StoredBugReport>();
@@ -310,48 +265,68 @@ export function subscribeBugReportsFromDb(
         mergedMap.set(item.id, item);
       }
 
-      // Sync cloud records back into local backup
       const nonDefault = Array.from(mergedMap.values()).filter((b) => b.source !== 'default');
       writeLocalArray(LOCAL_BUG_REPORTS_KEY, nonDefault);
 
       const sorted = Array.from(mergedMap.values()).sort((a, b) =>
         (b.createdAtIso || '').localeCompare(a.createdAtIso || '')
       );
-      onChange(sorted);
-    },
-    (err) => {
-      try {
-        handleFirestoreError(err, OperationType.LIST, 'bug_reports');
-      } catch {
-        // Structured telemetry logged by handleFirestoreError; keep local view active
+      if (!disposed) {
+        onChange(sorted);
       }
+    } catch {
+      // Keep local fallback intact
     }
-  );
+  };
+
+  void fetchBugs();
+
+  const handleFocus = () => void fetchBugs();
+  if (typeof window !== 'undefined') {
+    window.addEventListener('focus', handleFocus);
+  }
+
+  return () => {
+    disposed = true;
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('focus', handleFocus);
+    }
+  };
 }
 
-/**
- * Real-time Admin-only subscription to private `/contact_messages` inbox.
- * Only attaches Firestore listener when verified Firebase owner is signed in.
- */
 export function subscribeContactMessagesForAdmin(
   onChange: (messages: StoredContactMessage[]) => void
-): Unsubscribe {
+): () => void {
   onChange(getLocalContactMessages());
 
   if (!canFirebaseOwnerWrite()) {
     return () => {};
   }
 
-  return onSnapshot(
-    collection(db, 'contact_messages'),
-    (snapshot) => {
-      const cloudMessages: StoredContactMessage[] = [];
-      snapshot.forEach((docSnap) => {
-        const d = docSnap.data();
-        if (!d || typeof d.name !== 'string') return;
-        cloudMessages.push({
-          id: typeof d.id === 'string' ? d.id : docSnap.id,
-          name: d.name,
+  let disposed = false;
+
+  const fetchMessages = async () => {
+    try {
+      const idToken = await getOwnerIdToken();
+      if (!idToken || disposed) return;
+
+      const res = await fetch('/api/submissions/messages', {
+        cache: 'no-store',
+        headers: { Authorization: `Bearer ${idToken}` },
+      });
+      if (!res.ok || disposed) return;
+
+      const json = (await res.json()) as {
+        success?: boolean;
+        data?: Array<Record<string, unknown>>;
+      };
+      if (!json.success || !Array.isArray(json.data) || disposed) return;
+
+      const cloudMessages: StoredContactMessage[] = json.data
+        .filter((d) => d && typeof d.name === 'string')
+        .map((d) => ({
+          id: String(d.id || ''),
+          name: String(d.name),
           email: typeof d.email === 'string' ? d.email : '',
           subject: typeof d.subject === 'string' ? d.subject : '',
           message: typeof d.message === 'string' ? d.message : '',
@@ -360,8 +335,7 @@ export function subscribeContactMessagesForAdmin(
           createdAtIso:
             typeof d.createdAtIso === 'string' ? d.createdAtIso : new Date().toISOString(),
           source: 'cloud',
-        });
-      });
+        }));
 
       const localMessages = getLocalContactMessages();
       const mergedMap = new Map<string, StoredContactMessage>();
@@ -372,16 +346,19 @@ export function subscribeContactMessagesForAdmin(
         (b.createdAtIso || '').localeCompare(a.createdAtIso || '')
       );
       writeLocalArray(LOCAL_CONTACT_MESSAGES_KEY, sorted);
-      onChange(sorted);
-    },
-    (err) => {
-      try {
-        handleFirestoreError(err, OperationType.LIST, 'contact_messages');
-      } catch {
-        // Structured telemetry logged by handleFirestoreError
+      if (!disposed) {
+        onChange(sorted);
       }
+    } catch {
+      // Keep cached messages intact
     }
-  );
+  };
+
+  void fetchMessages();
+
+  return () => {
+    disposed = true;
+  };
 }
 
 export async function updateContactMessageStatusInDb(
@@ -394,15 +371,21 @@ export async function updateContactMessageStatusInDb(
   writeLocalArray(LOCAL_CONTACT_MESSAGES_KEY, local);
 
   if (!canFirebaseOwnerWrite()) return;
+  const idToken = await getOwnerIdToken();
+  if (!idToken) return;
 
-  const path = `contact_messages/${messageId}`;
-  try {
-    await updateDoc(doc(db, 'contact_messages', messageId), {
-      status,
-      updatedAt: serverTimestamp(),
-    });
-  } catch (err) {
-    handleFirestoreError(err, OperationType.UPDATE, path);
+  const res = await fetch(`/api/submissions/messages/${encodeURIComponent(messageId)}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${idToken}`,
+    },
+    body: JSON.stringify({ status }),
+  });
+
+  if (!res.ok) {
+    const errJson = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(errJson.error || 'Failed to update message status.');
   }
 }
 
@@ -411,12 +394,17 @@ export async function deleteContactMessageFromDb(messageId: string): Promise<voi
   writeLocalArray(LOCAL_CONTACT_MESSAGES_KEY, local);
 
   if (!canFirebaseOwnerWrite()) return;
+  const idToken = await getOwnerIdToken();
+  if (!idToken) return;
 
-  const path = `contact_messages/${messageId}`;
-  try {
-    await deleteDoc(doc(db, 'contact_messages', messageId));
-  } catch (err) {
-    handleFirestoreError(err, OperationType.DELETE, path);
+  const res = await fetch(`/api/submissions/messages/${encodeURIComponent(messageId)}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${idToken}` },
+  });
+
+  if (!res.ok) {
+    const errJson = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(errJson.error || 'Failed to delete message.');
   }
 }
 
@@ -432,20 +420,18 @@ export async function updateBugReportStatusInDb(
   writeLocalArray(LOCAL_BUG_REPORTS_KEY, updatedList);
 
   if (!canFirebaseOwnerWrite()) return;
+  const idToken = await getOwnerIdToken();
+  if (!idToken) return;
 
-  const path = `bug_reports/${bug.id}`;
-  const docRef = doc(db, 'bug_reports', bug.id);
-  try {
-    const snap = await getDoc(docRef);
-    if (snap.exists()) {
-      await updateDoc(docRef, {
-        status,
-        updatedAt: serverTimestamp(),
-      });
-    } else {
-      await setDoc(docRef, {
-        id: bug.id,
-        visibility: 'public',
+  const res = await fetch(`/api/submissions/bugs/${encodeURIComponent(bug.id)}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${idToken}`,
+    },
+    body: JSON.stringify({
+      status,
+      fallbackBug: {
         title: bug.title.slice(0, 300),
         project: bug.project.slice(0, 200),
         severity: bug.severity,
@@ -453,14 +439,14 @@ export async function updateBugReportStatusInDb(
         stepsToReproduce: bug.stepsToReproduce.slice(0, 25).map((s) => s.slice(0, 1000)),
         expectedResult: bug.expectedResult.slice(0, 2000),
         actualResult: bug.actualResult.slice(0, 2000),
-        status,
         createdAtIso: bug.createdAtIso || new Date().toISOString(),
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      });
-    }
-  } catch (err) {
-    handleFirestoreError(err, OperationType.UPDATE, path);
+      },
+    }),
+  });
+
+  if (!res.ok) {
+    const errJson = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(errJson.error || 'Failed to update ticket status.');
   }
 }
 
@@ -471,11 +457,16 @@ export async function deleteBugReportFromDb(bugId: string): Promise<void> {
   writeLocalArray(LOCAL_BUG_REPORTS_KEY, local);
 
   if (!canFirebaseOwnerWrite()) return;
+  const idToken = await getOwnerIdToken();
+  if (!idToken) return;
 
-  const path = `bug_reports/${bugId}`;
-  try {
-    await deleteDoc(doc(db, 'bug_reports', bugId));
-  } catch (err) {
-    handleFirestoreError(err, OperationType.DELETE, path);
+  const res = await fetch(`/api/submissions/bugs/${encodeURIComponent(bugId)}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${idToken}` },
+  });
+
+  if (!res.ok) {
+    const errJson = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(errJson.error || 'Failed to delete defect ticket.');
   }
 }

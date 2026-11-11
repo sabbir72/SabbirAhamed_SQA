@@ -41,7 +41,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(200).json({
       success: true,
       cloudOnly: true,
-      message: 'Portfolio updates are persisted exclusively to Google Cloud Firestore.',
+      message: 'Portfolio updates are persisted to the PostgreSQL backend.',
     });
   }
 

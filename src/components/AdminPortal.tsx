@@ -58,12 +58,11 @@ import {
   CLOUD_SYNC_STATUS_EVENT,
   CloudSyncStatus,
   getCloudSyncStatus,
-  refreshCloudflareStatus,
   signInOwnerWithGoogle,
   signOutOwnerFromGoogle,
   syncAllLocalDataToCloud,
 } from '../utils/cloudSync';
-import { getPreferredOwnerEmail } from '../firebase';
+import { PRIMARY_OWNER_EMAIL } from '../firebase';
 import { PERSONAL_INFO } from '../data';
 import { 
   DEFAULT_CAREER_OBJECTIVE, 
@@ -257,10 +256,9 @@ export default function AdminPortal({
   const showMutationToast = (baseMsg: string) => {
     const status = getCloudSyncStatus();
     if (status.isOwnerConnected) {
-      const targetLabel = status.cloudflareConfigured ? 'Cloudflare & Phone' : 'Cloud & Phone';
-      showToast(`${baseMsg} (Synced to ${targetLabel})`, 'success');
+      showToast(`${baseMsg} (Synced across devices)`, 'success');
     } else {
-      showToast(`${baseMsg} — শুধু এই ব্রাউজারে সেভ হয়েছে। ফোনে দেখাতে Cloud Sync চালু করুন।`, 'warning');
+      showToast(`${baseMsg} — শুধু এই ব্রাউজারে সেভ হয়েছে। ফোনে দেখাতে Sync চালু করুন।`, 'warning');
     }
   };
 
@@ -301,8 +299,6 @@ export default function AdminPortal({
       const custom = e as CustomEvent<CloudSyncStatus>;
       setCloudStatus(custom.detail || getCloudSyncStatus());
     };
-
-    void refreshCloudflareStatus();
 
     window.addEventListener(PORTFOLIO_UPDATED_EVENT, handlePortfolioUpdated);
     window.addEventListener(BLOGS_UPDATED_EVENT, handleBlogsUpdated);
@@ -762,13 +758,12 @@ ${profile.title || PERSONAL_INFO.title}`;
       const res = await updateStoredProfileAndSync(profile);
       setProfile(res.profile);
       if (res.syncedToCloud) {
-        const provider = getCloudSyncStatus().cloudflareConfigured ? 'Cloudflare সার্ভারে' : 'ক্লাউডে';
-        showToast(`প্রোফাইল ও ছবি ${provider} সেভ হয়েছে — ফোনে ও লাইভ সাইটে আপডেট দেখা যাবে!`, 'success');
+        showToast('প্রোফাইল ও ছবি সফলভাবে সেভ ও সিঙ্ক হয়েছে — ফোনে ও লাইভ সাইটে আপডেট দেখা যাবে!', 'success');
       } else if (res.error) {
-        showToast(`Cloud Sync Error: ${res.error}`, 'error');
+        showToast(`Sync Error: ${res.error}`, 'error');
       } else {
         showToast(
-          'শুধুমাত্র এই ব্রাউজারে সেভ হয়েছে। ফোনে দেখাতে উপরে "Setup Cloud / Phone Sync" থেকে Cloudflare বা Google কানেক্ট করুন।',
+          'শুধুমাত্র এই ব্রাউজারে সেভ হয়েছে। ফোনে দেখাতে উপরে "Account Sync" থেকে সাইন-ইন করুন।',
           'warning'
         );
       }
@@ -1457,21 +1452,17 @@ ${profile.title || PERSONAL_INFO.title}`;
                         ? 'bg-emerald-600 hover:bg-emerald-500'
                         : 'bg-amber-600 hover:bg-amber-500'
                     }`}
-                    title="Cloudflare & Cloud Auto-Save Database (Sync to Phone & All Devices)"
+                    title="Sync updates to phone and all devices"
                   >
                     <Cloud className="w-3.5 h-3.5 shrink-0" />
                     <span>
                       {cloudStatus.isSyncing
                         ? 'Syncing...'
-                        : cloudStatus.cloudflareConfigured
-                        ? cloudStatus.hasUnsyncedChanges
-                          ? 'Push Updates to Cloudflare'
-                          : 'Cloudflare Sync: ON'
                         : cloudStatus.firebaseConnected
                         ? cloudStatus.hasUnsyncedChanges
-                          ? 'Push Updates to Cloud'
-                          : 'Cloud Live Sync: ON'
-                        : 'Setup Cloud / Phone Sync'}
+                          ? 'Push Updates to Phone'
+                          : 'Account Sync: ON'
+                        : 'Enable Cross-Device Sync'}
                     </span>
                   </button>
                 )}
@@ -1543,7 +1534,7 @@ ${profile.title || PERSONAL_INFO.title}`;
             </div>
           </header>
 
-          {/* Persistent Cross-Device (Desktop -> Phone) Cloud Sync Alert Banner */}
+          {/* Cross-Device Sync Prompt Banner */}
           {(!cloudStatus.isOwnerConnected || cloudStatus.hasUnsyncedChanges || cloudStatus.error) && (
             <div
               className={`rounded-2xl p-4 border flex flex-col lg:flex-row lg:items-center justify-between gap-3.5 ${
@@ -1564,17 +1555,17 @@ ${profile.title || PERSONAL_INFO.title}`;
                     <span>
                       {cloudStatus.isOwnerConnected
                         ? cloudStatus.error
-                          ? 'Cloud Sync Attention Required'
+                          ? 'Sync Attention Required'
                           : 'Unsynced Local Edits Pending'
-                        : 'ফোনে ও লাইভ সার্ভারে অটো-সেভ চালু করতে Free Cloudflare Store সেটআপ করুন'}
+                        : 'ফোনে ও সব ডিভাইসে আপডেট দেখাতে Google অ্যাকাউন্ট দিয়ে কানেক্ট করুন'}
                     </span>
                   </div>
                   <p className="text-slate-200">
                     {cloudStatus.error
                       ? cloudStatus.error
                       : !cloudStatus.isOwnerConnected
-                      ? 'Cloudflare Free KV (1 GB ফ্রি, ক্রেডিট কার্ড ও Google পপআপ ছাড়াই) অথবা Google কানেক্ট করলে এখান থেকে আপলোড করা ছবি ও ডাটা সাথে সাথে ফোনে দেখা যাবে।'
-                      : 'কিছু পরিবর্তন এখনো সার্ভারে পাঠানো বাকি আছে—ফোনে দেখাতে নিচের বাটনে ক্লিক করুন।'}
+                      ? `অনুমোদিত ইমেইল (${PRIMARY_OWNER_EMAIL}) দিয়ে সাইন-ইন করলে এখান থেকে করা সব আপডেট সাথে সাথে ফোনে ও লাইভ সাইটে দেখা যাবে।`
+                      : 'কিছু পরিবর্তন এখনো সিঙ্ক করা বাকি আছে—ফোনে দেখাতে নিচের বাটনে ক্লিক করুন।'}
                   </p>
                 </div>
               </div>
@@ -1587,7 +1578,7 @@ ${profile.title || PERSONAL_INFO.title}`;
                     onClick={async () => {
                       const res = await syncAllLocalDataToCloud();
                       if (res.success) {
-                        showToast('সব আপডেট সার্ভারে সেভ হয়েছে — ফোনেও এখন দেখা যাবে!', 'success');
+                        showToast('সব আপডেট সফলভাবে সেভ হয়েছে — ফোনেও এখন দেখা যাবে!', 'success');
                       } else if (res.error) {
                         showToast(res.error, 'error');
                       }
@@ -1596,11 +1587,7 @@ ${profile.title || PERSONAL_INFO.title}`;
                   >
                     <RefreshCw className={`w-3.5 h-3.5 ${cloudStatus.isSyncing ? 'animate-spin' : ''}`} />
                     <span>
-                      {cloudStatus.isSyncing
-                        ? 'Syncing...'
-                        : cloudStatus.cloudflareConfigured
-                        ? 'Push Updates to Cloudflare & Phone'
-                        : 'Push Updates to Cloud & Phone'}
+                      {cloudStatus.isSyncing ? 'Syncing...' : 'Push Updates to Phone'}
                     </span>
                   </button>
                 ) : (
@@ -1610,13 +1597,13 @@ ${profile.title || PERSONAL_INFO.title}`;
                       if (onOpenCloudScan) {
                         onOpenCloudScan();
                       } else {
-                        void signInOwnerWithGoogle(getPreferredOwnerEmail(), false);
+                        void signInOwnerWithGoogle(PRIMARY_OWNER_EMAIL, false);
                       }
                     }}
                     className="min-h-[40px] px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap shadow-sm"
                   >
                     <Cloud className="w-3.5 h-3.5" />
-                    <span>Setup Free Cloudflare Sync</span>
+                    <span>Connect {PRIMARY_OWNER_EMAIL}</span>
                   </button>
                 )}
               </div>
@@ -1628,7 +1615,7 @@ ${profile.title || PERSONAL_INFO.title}`;
           {/* ==================================================================== */}
           {activeTab === 'overview' && (
             <div className="space-y-6 animate-fadeIn">
-              {/* Cloud Auto-Save Database Status Card */}
+              {/* Cross-Device Owner Sync Overview Card */}
               <div className="bg-[#0E1320] border border-emerald-500/25 rounded-2xl p-4 sm:p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                 <div className="flex items-start gap-3.5 min-w-0">
                   <div className="w-10 h-10 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0">
@@ -1637,15 +1624,13 @@ ${profile.title || PERSONAL_INFO.title}`;
                   <div className="space-y-1 min-w-0">
                     <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
                       <span className="font-semibold text-white text-sm">
-                        {cloudStatus.cloudflareConfigured ? 'Cloudflare Free Server Store' : 'Cloud Auto-Save Database'}
+                        Cross-Device Portfolio Sync
                       </span>
                       <span aria-hidden="true">·</span>
                       <span className={cloudStatus.isOwnerConnected ? 'text-emerald-400' : 'text-sky-300'}>
-                        {cloudStatus.cloudflareConfigured
-                          ? `Active (${cloudStatus.cloudflareProviderLabel}${cloudStatus.firebaseConnected ? ' + Firebase' : ''})`
-                          : cloudStatus.firebaseConnected
-                          ? `Firebase Active (${cloudStatus.ownerEmail || getPreferredOwnerEmail()})`
-                          : 'Saved on Device · Setup Free Cloudflare Store'}
+                        {cloudStatus.firebaseConnected
+                          ? `Signed in (${cloudStatus.ownerEmail || PRIMARY_OWNER_EMAIL})`
+                          : `Sign in required (${PRIMARY_OWNER_EMAIL})`}
                       </span>
                       {cloudStatus.lastSyncedAt && (
                         <>
@@ -1657,7 +1642,7 @@ ${profile.title || PERSONAL_INFO.title}`;
                       )}
                     </div>
                     <p className="text-xs text-slate-300 leading-relaxed">
-                      আপনার নতুন প্রজেক্ট, ব্লগ, স্টোরি (অভিজ্ঞতা), রোডম্যাপ, রেফারেন্স, স্কিল, ভিজিটিং কার্ড, ছবি ও প্রোফাইল স্বয়ংক্রিয়ভাবে সার্ভারে সুরক্ষিত থাকে এবং সব ডিভাইসে সাথে সাথে আপডেট হয়।
+                      আপনার নতুন প্রজেক্ট, ব্লগ, স্টোরি (অভিজ্ঞতা), রোডম্যাপ, রেফারেন্স, স্কিল, ভিজিটিং কার্ড, ছবি ও প্রোফাইল সব ডিভাইসে সাথে সাথে আপডেট হয়।
                     </p>
                   </div>
                 </div>
@@ -1671,7 +1656,7 @@ ${profile.title || PERSONAL_INFO.title}`;
                     >
                       <Cloud className="w-3.5 h-3.5 shrink-0" />
                       <span>
-                        {cloudStatus.isOwnerConnected ? 'Database Status & Sync' : 'Setup Cloudflare Free Store'}
+                        {cloudStatus.isOwnerConnected ? 'Manage Account Sync' : 'Sign in & Sync'}
                       </span>
                     </button>
                   ) : null}
@@ -4037,23 +4022,21 @@ ${profile.title || PERSONAL_INFO.title}`;
                 </div>
               </div>
 
-              {/* Cross-Device Cloud Sync Status & Submit Button */}
+              {/* Cross-Device Sync Status & Submit Button */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-4 border-t border-white/10">
                 <div className="flex items-center gap-2.5 text-xs">
                   {cloudStatus.isOwnerConnected ? (
                     <span className="inline-flex items-center gap-2 text-emerald-400 font-medium">
                       <CheckCircle2 className="w-4 h-4 shrink-0" />
                       <span>
-                        {cloudStatus.cloudflareConfigured
-                          ? `Cloudflare Server Active (${cloudStatus.cloudflareProviderLabel}) — সেভ করলেই ফোনে ও লাইভে আপডেট হবে।`
-                          : `Cloud Sync Connected (${cloudStatus.ownerEmail}) — সেভ করলেই ফোনে ও লাইভে আপডেট হবে।`}
+                        Signed in ({cloudStatus.ownerEmail || PRIMARY_OWNER_EMAIL}) — সেভ করলেই ফোনে ও লাইভে আপডেট হবে।
                       </span>
                     </span>
                   ) : (
                     <span className="inline-flex items-center gap-2 text-amber-300 font-medium">
                       <AlertTriangle className="w-4 h-4 shrink-0 text-amber-400" />
                       <span>
-                        Server Cloud Sync চালু নেই — ফোনে দেখাতে Cloudflare Free Store বা Google সেটআপ করুন।
+                        Account Sync চালু নেই — ফোনে দেখাতে {PRIMARY_OWNER_EMAIL} দিয়ে সাইন-ইন করুন।
                       </span>
                     </span>
                   )}
@@ -4067,7 +4050,7 @@ ${profile.title || PERSONAL_INFO.title}`;
                       className="min-h-[44px] inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-mono text-xs font-bold cursor-pointer whitespace-nowrap"
                     >
                       <Cloud className="w-4 h-4" />
-                      <span>Setup Cloud Sync</span>
+                      <span>Sign in &amp; Sync</span>
                     </button>
                   )}
                   <button
@@ -4079,10 +4062,8 @@ ${profile.title || PERSONAL_INFO.title}`;
                     <span>
                       {isSavingProfile
                         ? 'Saving...'
-                        : cloudStatus.cloudflareConfigured
-                        ? 'Save & Sync to Cloudflare / Phone'
                         : cloudStatus.firebaseConnected
-                        ? 'Save & Sync to Cloud / Phone'
+                        ? 'Save & Sync Profile'
                         : 'Save Profile (Local Device)'}
                     </span>
                   </button>
@@ -4534,7 +4515,7 @@ ${profile.title || PERSONAL_INFO.title}`;
               </div>
             </div>
 
-            {/* Permanent Cloudflare Free Store & Cloud Sync */}
+            {/* Owner Account Sync Card */}
             <div className="bg-[#12151C] border border-white/10 rounded-3xl p-6 sm:p-8 space-y-5 shadow-xl">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-white/10">
                 <div className="flex items-start space-x-3.5">
@@ -4544,28 +4525,20 @@ ${profile.title || PERSONAL_INFO.title}`;
                   <div className="space-y-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <h3 className="font-display font-bold text-xl text-white">
-                        {cloudStatus.cloudflareConfigured
-                          ? 'Cloudflare Free Server Store'
-                          : 'Cloud Auto-Save Database'}
+                        Owner Account Sync
                       </h3>
                       <span
                         className={`text-xs font-mono ${
                           cloudStatus.isOwnerConnected ? 'text-emerald-400' : 'text-amber-300'
                         }`}
                       >
-                        {cloudStatus.cloudflareConfigured
-                          ? `· ${cloudStatus.cloudflareProviderLabel} Active`
-                          : cloudStatus.firebaseConnected
-                          ? '· Firebase Auto-Save Active'
-                          : '· Setup Needed'}
+                        {cloudStatus.firebaseConnected ? '· Active' : '· Sign-In Needed'}
                       </span>
                     </div>
                     <p className="text-xs font-mono text-[#9CA3AF] max-w-2xl leading-relaxed">
-                      {cloudStatus.cloudflareConfigured
-                        ? 'Cloudflare Free KV/Worker কানেক্ট করা আছে! Google পপআপ ছাড়াই আপনার সব প্রজেক্ট, ব্লগ, ছবি, প্রোফাইল ও ভিজিটিং কার্ড সরাসরি সার্ভারে সেভ হয় এবং ফোনে সাথে সাথে দেখা যায়।'
-                        : cloudStatus.firebaseConnected
-                        ? `Connected as ${cloudStatus.ownerEmail || getPreferredOwnerEmail()}. Every Project, Blog, Story/Experience, Roadmap, Reference, Skill, Visiting Card, Theme, and Image is automatically saved in Google Cloud Firestore.`
-                        : 'সব ছবি ও ডাটা ফোনে ও লাইভ সাইটে অটো-সেভ রাখতে Vercel-এ ফ্রি Cloudflare KV সেটআপ করুন (ক্রেডিট কার্ড ও Google পপআপ ছাড়াই), অথবা Google Firebase কানেক্ট করুন।'}
+                      {cloudStatus.firebaseConnected
+                        ? `Connected as ${cloudStatus.ownerEmail || PRIMARY_OWNER_EMAIL}. Every Project, Blog, Story/Experience, Roadmap, Reference, Skill, Visiting Card, Theme, and Image automatically syncs across devices.`
+                        : `সব ছবি ও ডাটা ফোনে ও লাইভ সাইটে সেভ রাখতে অনুমোদিত Google অ্যাকাউন্ট (${PRIMARY_OWNER_EMAIL}) দিয়ে সাইন-ইন করুন।`}
                     </p>
                     {cloudStatus.error && (
                       <p className="text-xs font-mono text-red-300 bg-red-500/10 border border-red-500/25 rounded-lg px-3 py-2">
@@ -4574,7 +4547,7 @@ ${profile.title || PERSONAL_INFO.title}`;
                     )}
                     {cloudStatus.lastSyncedAt && (
                       <p className="text-[11px] font-mono tabular-nums text-emerald-400/90">
-                        Last Cloud Save: {new Date(cloudStatus.lastSyncedAt).toLocaleString()}
+                        Last Sync: {new Date(cloudStatus.lastSyncedAt).toLocaleString()}
                       </p>
                     )}
                   </div>
@@ -4589,9 +4562,7 @@ ${profile.title || PERSONAL_INFO.title}`;
                         onClick={async () => {
                           const res = await syncAllLocalDataToCloud();
                           if (res.success) {
-                            showToast(
-                              'সব প্রজেক্ট, ব্লগ, স্টোরি, ছবি ও প্রোফাইল ক্লাউড সার্ভারে সেভ হয়েছে!'
-                            );
+                            showToast('সব প্রজেক্ট, ব্লগ, স্টোরি, ছবি ও প্রোফাইল সফলভাবে সেভ হয়েছে!');
                           } else if (res.error) {
                             showToast(res.error, 'error');
                           }
@@ -4602,7 +4573,7 @@ ${profile.title || PERSONAL_INFO.title}`;
                           className={`w-3.5 h-3.5 shrink-0 ${cloudStatus.isSyncing ? 'animate-spin' : ''}`}
                         />
                         <span>
-                          {cloudStatus.isSyncing ? 'Saving to Server...' : 'Save & Sync All Data'}
+                          {cloudStatus.isSyncing ? 'Saving...' : 'Save & Sync All Data'}
                         </span>
                       </button>
                       {cloudStatus.firebaseConnected && (
@@ -4610,11 +4581,11 @@ ${profile.title || PERSONAL_INFO.title}`;
                           type="button"
                           onClick={async () => {
                             await signOutOwnerFromGoogle();
-                            showToast('Disconnected Google Cloud write session.');
+                            showToast('Signed out from Google sync session.');
                           }}
                           className="min-h-[44px] px-3.5 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 font-mono text-xs cursor-pointer transition-colors whitespace-nowrap"
                         >
-                          Disconnect Google
+                          Sign Out
                         </button>
                       )}
                     </>
@@ -4625,10 +4596,9 @@ ${profile.title || PERSONAL_INFO.title}`;
                         if (onOpenCloudScan) {
                           onOpenCloudScan();
                         } else {
-                          const target = getPreferredOwnerEmail();
-                          void signInOwnerWithGoogle(target, false).then((res) => {
+                          void signInOwnerWithGoogle(PRIMARY_OWNER_EMAIL, false).then((res) => {
                             if (res.success) {
-                              showToast(`Connected Auto-Save as ${res.email || target}!`);
+                              showToast(`Connected Auto-Save as ${res.email || PRIMARY_OWNER_EMAIL}!`);
                             } else if (res.error) {
                               showToast(res.error);
                             }
@@ -4638,7 +4608,7 @@ ${profile.title || PERSONAL_INFO.title}`;
                       className="min-h-[46px] px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-mono text-xs font-bold flex items-center justify-center gap-2 cursor-pointer transition-colors shadow-lg shadow-emerald-600/20 whitespace-nowrap"
                     >
                       <Cloud className="w-4 h-4 shrink-0" />
-                      <span>Setup Cloudflare / Cloud Sync</span>
+                      <span>Sign in &amp; Sync</span>
                     </button>
                   )}
                 </div>
@@ -4728,18 +4698,18 @@ ${profile.title || PERSONAL_INFO.title}`;
                 <div className="space-y-1">
                   <div className="text-xs font-mono font-bold text-amber-300 flex items-center gap-2">
                     <AlertTriangle className="w-4 h-4 shrink-0" />
-                    <span>প্রাইভেট Contact মেসেজ ক্লাউড থেকে লোড করতে Google Sign-In প্রয়োজন</span>
+                    <span>প্রাইভেট Contact মেসেজ লোড করতে Google Sign-In প্রয়োজন</span>
                   </div>
                   <p className="text-[11px] text-amber-100/80 font-mono">
-                    নিরাপত্তার কারণে ভিজিটরদের পাঠানো মেসেজ শুধুমাত্র অ্যাডমিন ({getPreferredOwnerEmail()}) সাইন-ইন করলে Firestore থেকে দেখানো হয়।
+                    নিরাপত্তার কারণে ভিজিটরদের পাঠানো মেসেজ শুধুমাত্র অ্যাডমিন ({PRIMARY_OWNER_EMAIL}) সাইন-ইন করলে দেখানো হয়।
                   </p>
                 </div>
                 <button
                   type="button"
-                  onClick={() => void signInOwnerWithGoogle(getPreferredOwnerEmail())}
+                  onClick={() => void signInOwnerWithGoogle(PRIMARY_OWNER_EMAIL)}
                   className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-mono text-xs font-bold shrink-0 cursor-pointer transition-colors"
                 >
-                  Connect Google ({getPreferredOwnerEmail()})
+                  Connect Google ({PRIMARY_OWNER_EMAIL})
                 </button>
               </div>
             )}
@@ -4753,7 +4723,7 @@ ${profile.title || PERSONAL_INFO.title}`;
                     <span>Contact Form Inbox ({contactMessages.length})</span>
                   </h3>
                   <p className="text-xs font-mono text-[#9CA3AF] mt-0.5">
-                    ওয়েবসাইটের Contact সেকশন থেকে ইউজারদের পাঠানো সব মেসেজ সরাসরি Firestore ডাটাবেজে সংরক্ষিত হয়।
+                    ওয়েবসাইটের Contact সেকশন থেকে ইউজারদের পাঠানো সব মেসেজ এখানে সংরক্ষিত থাকে।
                   </p>
                 </div>
                 {unreadInboxCount > 0 && (
@@ -4812,7 +4782,7 @@ ${profile.title || PERSONAL_INFO.title}`;
                                   msg.id,
                                   e.target.value as ContactMessageStatus
                                 );
-                                showToast('Message status updated in Firestore.');
+                                showToast('Message status updated.');
                               } catch (err) {
                                 showToast(
                                   err instanceof Error ? err.message : 'Failed to update status',
@@ -4832,7 +4802,7 @@ ${profile.title || PERSONAL_INFO.title}`;
                             onClick={async () => {
                               try {
                                 await deleteContactMessageFromDb(msg.id);
-                                showToast('Message deleted from database.');
+                                showToast('Message deleted.');
                               } catch (err) {
                                 showToast(
                                   err instanceof Error ? err.message : 'Failed to delete message',
@@ -4898,11 +4868,6 @@ ${profile.title || PERSONAL_INFO.title}`;
                           >
                             {bug.status}
                           </span>
-                          {bug.source === 'cloud' && (
-                            <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">
-                              Cloud DB
-                            </span>
-                          )}
                         </div>
                         <h4 className="text-sm font-bold text-white">{bug.title}</h4>
                         <p className="text-[11px] font-mono text-[#9CA3AF]">Project: {bug.project}</p>

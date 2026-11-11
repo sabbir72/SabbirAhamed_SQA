@@ -2,10 +2,10 @@
  * -----------------------------------------
  * Project     : Sabbir Ahamed SQA Portfolio
  * Module      : Backend Server Entry Point
- * Description : Express server handling Brevo transactional email routing,
- *               health monitoring endpoints, and Vite dev/prod asset delivery.
+ * Description : Express server handling PostgreSQL (Drizzle ORM) persistence,
+ *               Firebase Auth (sabbircse72@gmail.com) verification, Brevo email routing,
+ *               visitor analytics, and Vite dev/prod asset delivery.
  * Author      : Sabbir Ahamed
- * Last Updated: 2026-07-29
  * -----------------------------------------
  */
 
@@ -21,23 +21,26 @@ import {
   issueSignedAdminToken,
   verifyServerPasscode,
   verifySignedAdminToken,
-} from './api/_lib/adminToken';
+} from './api/_lib/adminToken.ts';
 import {
-  getCloudflareStatus,
-  readCloudflareMedia,
-  readCloudflareSnapshot,
-  uploadCloudflareMedia,
-  writeCloudflareSnapshot,
-} from './api/_lib/cloudflareStore';
+  createBugReportInDb,
+  createContactMessageInDb,
+  deleteBugReportFromDbServer,
+  deleteContactMessageFromDbServer,
+  getPortfolioSnapshotFromDb,
+  getVisitorStatsFromDb,
+  listBugReportsFromDb,
+  listContactMessagesFromDb,
+  recordVisitorHitInDb,
+  savePortfolioSnapshotToDb,
+  updateBugReportStatusInDbServer,
+  updateContactMessageStatusInDbServer,
+  type DbPortfolioSnapshotPayload,
+} from './src/db/repository.ts';
+import { requireOwnerAuth, type AuthenticatedRequest } from './src/middleware/auth.ts';
 
-/**
- * Runtime Storage Isolation (Strictly outside Git repository workspace in os.tmpdir())
- * Ensures scanning, CMS edits, image uploads, and visitor hits NEVER modify Git repo files.
- */
 const RUNTIME_STORAGE_DIR = path.join(os.tmpdir(), 'sabbir-sqa-portfolio-runtime');
-const SEED_STATS_FILE = path.join(process.cwd(), 'visitor_stats.json');
 const SEED_PORTFOLIO_FILE = path.join(process.cwd(), 'portfolio_custom_data.json');
-const STATS_FILE = path.join(RUNTIME_STORAGE_DIR, 'visitor_stats.json');
 const ADMIN_AUTH_FILE = path.join(RUNTIME_STORAGE_DIR, 'admin_security.json');
 const UPLOADS_DIR = path.join(RUNTIME_STORAGE_DIR, 'uploads');
 
@@ -94,116 +97,38 @@ function verifyPasscodeOnServer(inputRaw: string): boolean {
   return verifyServerPasscode(inputPasscode);
 }
 
-interface VisitorStats {
-  totalVisitors: number;
-  totalPageViews: number;
-  todayDate: string;
-  todayVisitors: number;
-  sessions: string[];
-  uniqueVisitors?: string[];
-  todayVisitorsList?: string[];
-}
-
-function loadVisitorStats(): VisitorStats {
-  const today = new Date().toISOString().split('T')[0];
-  try {
-    const sourceStatsFile = fs.existsSync(STATS_FILE)
-      ? STATS_FILE
-      : fs.existsSync(SEED_STATS_FILE)
-      ? SEED_STATS_FILE
-      : null;
-    if (sourceStatsFile) {
-      const raw = fs.readFileSync(sourceStatsFile, 'utf-8');
-      const data = JSON.parse(raw);
-      if (data.todayDate !== today) {
-        data.todayDate = today;
-        data.todayVisitors = 0;
-        data.sessions = [];
-        data.todayVisitorsList = [];
-      }
-      if (!Array.isArray(data.uniqueVisitors)) {
-        data.uniqueVisitors = Array.isArray(data.sessions) ? [...data.sessions] : [];
-      }
-      if (!Array.isArray(data.todayVisitorsList)) {
-        data.todayVisitorsList = [];
-      }
-      return data;
-    }
-  } catch (err) {
-    console.error('Error loading visitor stats:', err);
-  }
-  return {
-    totalVisitors: 0,
-    totalPageViews: 0,
-    todayDate: today,
-    todayVisitors: 0,
-    sessions: [],
-    uniqueVisitors: [],
-    todayVisitorsList: [],
-  };
-}
-
-function saveVisitorStats(stats: VisitorStats): void {
-  try {
-    fs.writeFileSync(STATS_FILE, JSON.stringify(stats, null, 2), 'utf-8');
-  } catch (err) {
-    console.error('Error saving visitor stats:', err);
-  }
-}
-
-// In-memory set of active verified owner/admin session tokens
 const validOwnerTokens = new Set<string>();
 
-/**
- * Initializes and starts the Express HTTP server on port 3000 (or environment PORT).
- * Sets up API endpoints for contact email sending via Brevo and mounts Vite middleware or static dist files.
- *
- * @returns {Promise<void>} Resolves when the server successfully listens on specified port.
- */
 async function startServer(): Promise<void> {
   const app = express();
-
-  // Parse server port from environment or fallback to container port 3000
   const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
-  // Middleware for parsing JSON request bodies (expanded limit for local image uploads)
   app.use(express.json({ limit: '25mb' }));
   app.use('/uploads', express.static(UPLOADS_DIR));
 
-  /**
-   * API Route: /api/contact
-   * Dispatches transactional contact inquiry emails via Brevo (Sendinblue) REST API v3.
-   *
-   * @route POST /api/contact
-   * @param {Request} req Express request object containing name, email, subject, message
-   * @param {Response} res Express response object
-   */
+  // ------------------------------------------------------------------------
+  // Transactional Contact Email Route (Brevo REST API v3)
+  // ------------------------------------------------------------------------
   app.post('/api/contact', async (req: Request, res: Response) => {
     try {
       const { name, email, subject, message } = req.body;
 
-      // Validate required contact form payload parameters
       if (!name || !email || !subject || !message) {
-        return res.status(400).json({ 
-          error: 'Missing required fields (name, email, subject, message).' 
+        return res.status(400).json({
+          error: 'Missing required fields (name, email, subject, message).',
         });
       }
 
-      // Retrieve Brevo API Key strictly from environment configuration
       const brevoApiKey = process.env.BREVO_API_KEY;
       const isKeyConfigured = Boolean(brevoApiKey && brevoApiKey !== 'YOUR_BREVO_API_KEY_HERE');
 
-      // Configure default sender and recipient email addresses
       const senderEmail = process.env.BREVO_SENDER_EMAIL || 'sabbircse72@gmail.com';
       const recipientEmail = process.env.BREVO_RECIPIENT_EMAIL || 'sabbircse72@gmail.com';
 
-      // HTML escape sanitization for user input to prevent injection in email client
       const sanitizeInput = (str: string): string =>
         str.replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
       if (!isKeyConfigured) {
-        console.warn(`[CONTACT API] BREVO_API_KEY is not set or using placeholder. Logging message locally.`);
-        console.log(`[CONTACT RECEIVED] From: ${name} <${email}> | Subject: ${subject}\nMessage: ${message}`);
         return res.status(200).json({
           success: true,
           message: 'Message received successfully!',
@@ -211,12 +136,11 @@ async function startServer(): Promise<void> {
         });
       }
 
-      // Send transactional email request payload to Brevo REST API v3
       const brevoResponse = await fetch('https://api.brevo.com/v3/smtp/email', {
         method: 'POST',
         headers: {
-          'accept': 'application/json',
-          'api-key': brevoApiKey,
+          accept: 'application/json',
+          'api-key': brevoApiKey!,
           'content-type': 'application/json',
         },
         body: JSON.stringify({
@@ -231,8 +155,8 @@ async function startServer(): Promise<void> {
             },
           ],
           replyTo: {
-            email: email,
-            name: name,
+            email,
+            name,
           },
           subject: `[Portfolio Contact] ${subject}`,
           htmlContent: `
@@ -242,79 +166,54 @@ async function startServer(): Promise<void> {
                 <p style="color: #64748b; font-size: 13px; margin-top: 4px;">Sent from your SQA Portfolio Contact Form</p>
               </div>
               <hr style="border: none; border-top: 1px solid #f1f5f9; margin: 20px 0;" />
-              
               <div style="margin-bottom: 16px;">
                 <p style="margin: 4px 0; font-size: 14px;"><strong>Sender Name:</strong> ${sanitizeInput(name)}</p>
                 <p style="margin: 4px 0; font-size: 14px;"><strong>Sender Email:</strong> <a href="mailto:${email}" style="color: #2563eb;">${email}</a></p>
                 <p style="margin: 4px 0; font-size: 14px;"><strong>Subject:</strong> ${sanitizeInput(subject)}</p>
               </div>
-
               <div style="background-color: #f8fafc; padding: 18px; border-left: 4px solid #FF6B35; border-radius: 6px; margin: 20px 0;">
                 <p style="margin: 0 0 6px 0; font-size: 12px; font-weight: bold; color: #64748b; text-transform: uppercase;">Message Content:</p>
                 <p style="margin: 0; font-size: 14px; line-height: 1.6; white-space: pre-wrap; color: #334155;">${sanitizeInput(message)}</p>
               </div>
-
-              <hr style="border: none; border-top: 1px solid #f1f5f9; margin: 20px 0;" />
-              <p style="font-size: 12px; color: #94a3b8; text-align: center; margin: 0;">
-                You can reply directly to this email to respond to ${name}.
-              </p>
             </div>
           `,
         }),
       });
 
-      // Handle non-2xx responses from Brevo API
       if (!brevoResponse.ok) {
         const errorData = await brevoResponse.json().catch(() => ({}));
-        console.error('[SERVER ERROR] Brevo API Error:', brevoResponse.status, errorData);
-
-        let errorMessage = errorData?.message || `Brevo API returned error status ${brevoResponse.status}`;
-
-        if (brevoResponse.status === 401) {
-          errorMessage = 'Brevo API Authentication Failed (401 Unauthorized). Please check that your BREVO_API_KEY in .env is a valid, active v3 key from https://app.brevo.com/settings/keys/api and that sender email (sabbircse72@gmail.com) is verified.';
-        } else if (errorData?.code === 'unauthorized_ip' || errorData?.message?.toLowerCase().includes('ip') || brevoResponse.status === 403) {
-          errorMessage = 'Brevo IP restriction detected. Please disable "Authorised IPs" restriction in your Brevo Account Security Settings (https://app.brevo.com/security/authorised_ips).';
-        }
-
         return res.status(brevoResponse.status || 400).json({
-          error: errorMessage,
+          error: errorData?.message || `Email API returned status ${brevoResponse.status}`,
           details: errorData,
-          status: brevoResponse.status
+          status: brevoResponse.status,
         });
       }
 
       const responseData = await brevoResponse.json().catch(() => ({}));
-      return res.status(200).json({ 
-        success: true, 
-        message: 'Message delivered successfully via Brevo!', 
-        messageId: responseData?.messageId 
+      return res.status(200).json({
+        success: true,
+        message: 'Message delivered successfully via Brevo!',
+        messageId: responseData?.messageId,
       });
-
-    } catch (err: unknown) {
+    } catch (err) {
       console.error('[SERVER ERROR] Contact endpoint exception:', err);
       return res.status(500).json({ error: 'Internal server error while dispatching email.' });
     }
   });
 
-  /**
-   * API Route: /api/admin/verify
-   * Secure backend authentication endpoint for the single Main Security Lock.
-   * Uses scrypt hash verification against persisted owner password.
-   */
+  // ------------------------------------------------------------------------
+  // Admin Passcode Lock Routes
+  // ------------------------------------------------------------------------
   app.post('/api/admin/verify', (req: Request, res: Response) => {
     try {
       const { passcode } = req.body;
-
       if (!passcode || typeof passcode !== 'string') {
         return res.status(400).json({ success: false, error: 'Password is required.' });
       }
 
-      const isValid = verifyPasscodeOnServer(passcode);
-
-      if (isValid) {
+      if (verifyPasscodeOnServer(passcode)) {
         const token = issueSignedAdminToken();
         validOwnerTokens.add(token);
-
         return res.status(200).json({
           success: true,
           message: 'Admin session authorized.',
@@ -333,25 +232,18 @@ async function startServer(): Promise<void> {
     }
   });
 
-  /**
-   * API Route: POST /api/admin/update-passcode
-   * Allows the owner to change the single Main Security System password.
-   */
   app.post('/api/admin/update-passcode', (req: Request, res: Response) => {
     try {
       const { currentPasscode, newPasscode } = req.body;
-
       if (!currentPasscode || typeof currentPasscode !== 'string') {
         return res.status(400).json({ success: false, error: 'Current password is required.' });
       }
-
       if (!newPasscode || typeof newPasscode !== 'string' || newPasscode.trim().length < 4) {
         return res.status(400).json({
           success: false,
           error: 'New password must be at least 4 characters long.',
         });
       }
-
       if (!verifyPasscodeOnServer(currentPasscode)) {
         return res.status(401).json({
           success: false,
@@ -361,7 +253,6 @@ async function startServer(): Promise<void> {
 
       saveAdminSecurity(newPasscode.trim());
       validOwnerTokens.clear();
-
       const token = issueSignedAdminToken();
       validOwnerTokens.add(token);
 
@@ -377,74 +268,6 @@ async function startServer(): Promise<void> {
     }
   });
 
-  /**
-   * API Route: POST /api/upload-image
-   * Persists local file uploads to /uploads and returns a clean static URL.
-   */
-  app.post('/api/upload-image', (req: Request, res: Response) => {
-    try {
-      const { dataUrl, fileName } = req.body || {};
-
-      if (!dataUrl || typeof dataUrl !== 'string') {
-        return res.status(400).json({ success: false, error: 'Image data is required.' });
-      }
-
-      const match = dataUrl.match(/^data:image\/([a-zA-Z0-9+.-]+);base64,(.+)$/);
-      if (!match) {
-        return res.status(400).json({ success: false, error: 'Invalid image data format.' });
-      }
-
-      const rawSubtype = match[1].toLowerCase();
-      const base64Payload = match[2];
-
-      const extMap: Record<string, string> = {
-        jpeg: 'jpg',
-        jpg: 'jpg',
-        png: 'png',
-        webp: 'webp',
-        gif: 'gif',
-        'svg+xml': 'svg',
-      };
-
-      const ext = extMap[rawSubtype];
-      if (!ext) {
-        return res.status(400).json({ success: false, error: 'Unsupported image type.' });
-      }
-
-      const buffer = Buffer.from(base64Payload, 'base64');
-      if (buffer.length > 20 * 1024 * 1024) {
-        return res.status(413).json({ success: false, error: 'Image exceeds 20MB limit.' });
-      }
-
-      if (!fs.existsSync(UPLOADS_DIR)) {
-        fs.mkdirSync(UPLOADS_DIR, { recursive: true });
-      }
-
-      const baseSlug = (typeof fileName === 'string' ? fileName : 'portfolio-image')
-        .replace(/\.[^/.]+$/, '')
-        .toLowerCase()
-        .replace(/[^a-z0-9_-]+/g, '-')
-        .replace(/^-+|-+$/g, '')
-        .slice(0, 40) || 'image';
-
-      const uniqueName = `${baseSlug}-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.${ext}`;
-      const targetPath = path.join(UPLOADS_DIR, uniqueName);
-      fs.writeFileSync(targetPath, buffer);
-
-      return res.status(200).json({
-        success: true,
-        url: `/uploads/${uniqueName}`,
-      });
-    } catch (err) {
-      console.error('[IMAGE UPLOAD API ERROR]', err);
-      return res.status(500).json({ success: false, error: 'Failed to store uploaded image.' });
-    }
-  });
-
-  /**
-   * API Route: POST /api/owner/verify-token
-   * Strict server-side authorization check to verify if the requesting user is the portfolio owner.
-   */
   app.post('/api/owner/verify-token', (req: Request, res: Response) => {
     try {
       const token = extractAdminTokenFromHeaders(
@@ -467,15 +290,13 @@ async function startServer(): Promise<void> {
         isOwner: false,
         error: 'Unauthorized: Owner access required.',
       });
-    } catch (err) {
-      return res.status(500).json({ success: false, isOwner: false, error: 'Server authorization check failed.' });
+    } catch {
+      return res
+        .status(500)
+        .json({ success: false, isOwner: false, error: 'Server authorization check failed.' });
     }
   });
 
-  /**
-   * API Route: POST /api/owner/suite-access
-   * Backend protection for AI SQA Application Suite features.
-   */
   app.post('/api/owner/suite-access', (req: Request, res: Response) => {
     try {
       const token = extractAdminTokenFromHeaders(
@@ -494,174 +315,120 @@ async function startServer(): Promise<void> {
         success: true,
         message: 'Owner access authorized for AI SQA Application Suite.',
       });
-    } catch (err) {
+    } catch {
       return res.status(500).json({ success: false, error: 'Authorization error.' });
     }
   });
 
-  /**
-   * Cloudflare Free Data & Media Store Endpoints (Parity with Vercel /api/cloud/*)
-   */
-  app.get('/api/cloud/status', (_req: Request, res: Response) => {
-    res.setHeader('Cache-Control', 'no-store, max-age=0');
-    return res.status(200).json({
-      success: true,
-      ...getCloudflareStatus(),
-    });
-  });
+  // ------------------------------------------------------------------------
+  // Local Uploaded Media Handler
+  // ------------------------------------------------------------------------
+  app.post('/api/upload-image', (req: Request, res: Response) => {
+    try {
+      const { dataUrl, fileName } = req.body || {};
+      if (!dataUrl || typeof dataUrl !== 'string') {
+        return res.status(400).json({ success: false, error: 'Image data is required.' });
+      }
 
-  app.get('/api/cloud/portfolio', async (_req: Request, res: Response) => {
-    res.setHeader('Cache-Control', 'no-store, max-age=0');
-    const result = await readCloudflareSnapshot();
-    const status = getCloudflareStatus();
-    return res.status(200).json({
-      success: !result.error,
-      configured: result.configured,
-      mode: result.mode,
-      providerLabel: status.providerLabel,
-      data: result.data,
-      error: result.error || null,
-    });
-  });
+      const match = dataUrl.match(/^data:image\/([a-zA-Z0-9+.-]+);base64,(.+)$/);
+      if (!match) {
+        return res.status(400).json({ success: false, error: 'Invalid image data format.' });
+      }
 
-  const handleCloudPortfolioWrite = async (req: Request, res: Response) => {
-    res.setHeader('Cache-Control', 'no-store, max-age=0');
-    const token = extractAdminTokenFromHeaders(
-      req.headers as Record<string, string | string[] | undefined>,
-      req.body
-    );
+      const extMap: Record<string, string> = {
+        jpeg: 'jpg',
+        jpg: 'jpg',
+        png: 'png',
+        webp: 'webp',
+        gif: 'gif',
+        'svg+xml': 'svg',
+      };
+      const ext = extMap[match[1].toLowerCase()];
+      if (!ext) {
+        return res.status(400).json({ success: false, error: 'Unsupported image type.' });
+      }
 
-    if (!verifySignedAdminToken(token, validOwnerTokens)) {
-      return res.status(403).json({
-        success: false,
-        error: 'Unauthorized: Valid Admin session required to update Cloudflare Store.',
-      });
-    }
+      const buffer = Buffer.from(match[2], 'base64');
+      if (buffer.length > 20 * 1024 * 1024) {
+        return res.status(413).json({ success: false, error: 'Image exceeds 20MB limit.' });
+      }
 
-    const body = (req.body || {}) as Record<string, unknown>;
-    const snapshotInput =
-      body.snapshot && typeof body.snapshot === 'object'
-        ? (body.snapshot as Record<string, unknown>)
-        : body;
+      if (!fs.existsSync(UPLOADS_DIR)) {
+        fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+      }
 
-    const writeRes = await writeCloudflareSnapshot({
-      version: 1,
-      lastModified:
-        typeof snapshotInput.lastModified === 'string' && snapshotInput.lastModified
-          ? snapshotInput.lastModified
-          : new Date().toISOString(),
-      updatedBy: 'sabbir-admin',
-      meta:
-        snapshotInput.meta && typeof snapshotInput.meta === 'object'
-          ? (snapshotInput.meta as Record<string, unknown>)
-          : {},
-      projects: Array.isArray(snapshotInput.projects) ? snapshotInput.projects : [],
-      experiences: Array.isArray(snapshotInput.experiences) ? snapshotInput.experiences : [],
-      blogs: Array.isArray(snapshotInput.blogs) ? snapshotInput.blogs : [],
-    });
+      const baseSlug =
+        (typeof fileName === 'string' ? fileName : 'portfolio-image')
+          .replace(/\.[^/.]+$/, '')
+          .toLowerCase()
+          .replace(/[^a-z0-9_-]+/g, '-')
+          .replace(/^-+|-+$/g, '')
+          .slice(0, 40) || 'image';
 
-    if (!writeRes.configured) {
-      return res.status(200).json({
-        success: false,
-        configured: false,
-        mode: 'none',
-        error: writeRes.error,
-      });
-    }
+      const uniqueName = `${baseSlug}-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.${ext}`;
+      fs.writeFileSync(path.join(UPLOADS_DIR, uniqueName), buffer);
 
-    if (!writeRes.success) {
-      return res.status(502).json({
-        success: false,
-        configured: true,
-        mode: writeRes.mode,
-        error: writeRes.error || 'Failed to save portfolio data to Cloudflare.',
-      });
-    }
-
-    return res.status(200).json({
-      success: true,
-      configured: true,
-      mode: writeRes.mode,
-      lastModified: writeRes.lastModified,
-      savedAt: new Date().toISOString(),
-    });
-  };
-
-  app.post('/api/cloud/portfolio', handleCloudPortfolioWrite);
-  app.put('/api/cloud/portfolio', handleCloudPortfolioWrite);
-
-  app.post('/api/cloud/upload', async (req: Request, res: Response) => {
-    const token = extractAdminTokenFromHeaders(
-      req.headers as Record<string, string | string[] | undefined>,
-      req.body
-    );
-
-    if (!verifySignedAdminToken(token, validOwnerTokens)) {
-      return res.status(403).json({
-        success: false,
-        error: 'Unauthorized: Valid Admin session required to upload media.',
-      });
-    }
-
-    const { dataUrl, fileName } = (req.body || {}) as {
-      dataUrl?: string;
-      fileName?: string;
-    };
-
-    if (!dataUrl || typeof dataUrl !== 'string') {
-      return res.status(400).json({ success: false, error: 'Image dataUrl is required.' });
-    }
-
-    const result = await uploadCloudflareMedia(dataUrl, fileName);
-    if (!result.configured) {
       return res.status(200).json({
         success: true,
-        configured: false,
-        storedInCloudflare: false,
-        url: null,
+        url: `/uploads/${uniqueName}`,
       });
+    } catch (err) {
+      console.error('[IMAGE UPLOAD API ERROR]', err);
+      return res.status(500).json({ success: false, error: 'Failed to store uploaded image.' });
     }
+  });
 
-    if (!result.success) {
-      return res.status(502).json({
+  // ------------------------------------------------------------------------
+  // PostgreSQL Portfolio Snapshot Endpoints
+  // ------------------------------------------------------------------------
+  app.get('/api/portfolio/snapshot', async (_req: Request, res: Response) => {
+    res.setHeader('Cache-Control', 'no-store, max-age=0');
+    try {
+      const data = await getPortfolioSnapshotFromDb();
+      return res.status(200).json({
+        success: true,
+        data,
+      });
+    } catch (err) {
+      console.error('[PORTFOLIO SNAPSHOT GET ERROR]', err);
+      return res.status(500).json({
         success: false,
-        configured: true,
-        storedInCloudflare: false,
-        error: result.error || 'Cloudflare image upload failed.',
+        error: 'Failed to load portfolio data from database.',
       });
     }
-
-    return res.status(200).json({
-      success: true,
-      configured: true,
-      storedInCloudflare: true,
-      mode: result.mode,
-      key: result.key,
-      url: result.url,
-    });
   });
 
-  app.get('/api/cloud/media', async (req: Request, res: Response) => {
-    const keyParam = req.query?.key;
-    const rawKey = Array.isArray(keyParam) ? keyParam[0] : keyParam;
-    if (!rawKey || typeof rawKey !== 'string') {
-      return res.status(400).json({ error: 'Missing media key.' });
+  const handleSaveSnapshot = async (req: AuthenticatedRequest, res: Response) => {
+    res.setHeader('Cache-Control', 'no-store, max-age=0');
+    try {
+      const body = (req.body || {}) as Record<string, unknown>;
+      const snapshot = (
+        body.snapshot && typeof body.snapshot === 'object' ? body.snapshot : body
+      ) as DbPortfolioSnapshotPayload;
+
+      if (!snapshot || typeof snapshot !== 'object') {
+        return res.status(400).json({ success: false, error: 'Invalid portfolio payload.' });
+      }
+
+      const saved = await savePortfolioSnapshotToDb(snapshot, req.user!.uid);
+      return res.status(200).json({
+        success: true,
+        ...saved,
+        savedAt: new Date().toISOString(),
+      });
+    } catch (err) {
+      console.error('[PORTFOLIO SNAPSHOT SAVE ERROR]', err);
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to save portfolio data to database.',
+      });
     }
+  };
 
-    const media = await readCloudflareMedia(rawKey);
-    if (!media.found || !media.buffer) {
-      return res.status(404).json({ error: 'Media not found.' });
-    }
+  app.post('/api/portfolio/snapshot', requireOwnerAuth, handleSaveSnapshot);
+  app.put('/api/portfolio/snapshot', requireOwnerAuth, handleSaveSnapshot);
 
-    res.setHeader('Content-Type', media.contentType || 'image/webp');
-    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
-    return res.status(200).send(media.buffer);
-  });
-
-  /**
-   * API Route: GET /api/portfolio/data
-   * Read-only seed endpoint (never mutates Git repository files; live updates go strictly to Cloud Store)
-   */
+  // Legacy seed reader kept read-only for fallback compatibility
   app.get('/api/portfolio/data', (_req: Request, res: Response) => {
     try {
       if (fs.existsSync(SEED_PORTFOLIO_FILE)) {
@@ -676,55 +443,203 @@ async function startServer(): Promise<void> {
     }
   });
 
-  /**
-   * API Route: POST /api/portfolio/data
-   */
-  app.post('/api/portfolio/data', (req: Request, res: Response) => {
-    const token = extractAdminTokenFromHeaders(
-      req.headers as Record<string, string | string[] | undefined>,
-      req.body
-    );
-    if (!verifySignedAdminToken(token, validOwnerTokens)) {
-      return res.status(403).json({ success: false, error: 'Unauthorized: Admin token required.' });
-    }
-    return res.json({
-      success: true,
-      cloudOnly: true,
-      message: 'Git repo untouched. Portfolio updates are persisted to Cloud storage.',
-    });
-  });
-
-  /**
-   * API Route: POST /api/portfolio/reset
-   */
-  app.post('/api/portfolio/reset', (req: Request, res: Response) => {
-    const token = extractAdminTokenFromHeaders(
-      req.headers as Record<string, string | string[] | undefined>,
-      req.body
-    );
-    if (!verifySignedAdminToken(token, validOwnerTokens)) {
-      return res.status(403).json({ success: false, error: 'Unauthorized: Admin token required.' });
-    }
-    return res.json({
-      success: true,
-      cloudOnly: true,
-      message: 'Git repo untouched.',
-    });
-  });
-
-  /**
-   * API Route: GET /api/visitors
-   * Retrieves current website total visitor counter metrics.
-   */
-  app.get('/api/visitors', (_req: Request, res: Response) => {
+  // ------------------------------------------------------------------------
+  // PostgreSQL User Submissions Endpoints (Contact Messages & Bug Tracker)
+  // ------------------------------------------------------------------------
+  app.post('/api/submissions/messages', async (req: Request, res: Response) => {
     try {
-      const stats = loadVisitorStats();
+      const { id, name, email, subject, message, createdAtIso } = req.body || {};
+      if (!name || !email || !subject || !message) {
+        return res.status(400).json({ success: false, error: 'All contact fields are required.' });
+      }
+
+      const cleanId =
+        typeof id === 'string' && id.trim()
+          ? id.trim().slice(0, 120)
+          : `msg_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`;
+
+      const row = await createContactMessageInDb({
+        id: cleanId,
+        name: String(name).trim().slice(0, 160),
+        email: String(email).trim().slice(0, 240),
+        subject: String(subject).trim().slice(0, 300),
+        message: String(message).trim().slice(0, 5000),
+        createdAtIso:
+          typeof createdAtIso === 'string' && createdAtIso.trim()
+            ? createdAtIso.trim()
+            : new Date().toISOString(),
+      });
+
+      return res.status(201).json({ success: true, data: row });
+    } catch (err) {
+      console.error('[SUBMISSION MESSAGE CREATE ERROR]', err);
+      return res.status(500).json({ success: false, error: 'Failed to store contact message.' });
+    }
+  });
+
+  app.get(
+    '/api/submissions/messages',
+    requireOwnerAuth,
+    async (_req: AuthenticatedRequest, res: Response) => {
+      res.setHeader('Cache-Control', 'no-store, max-age=0');
+      try {
+        const rows = await listContactMessagesFromDb();
+        return res.status(200).json({ success: true, data: rows });
+      } catch (err) {
+        console.error('[SUBMISSION MESSAGES LIST ERROR]', err);
+        return res.status(500).json({ success: false, error: 'Failed to fetch messages.' });
+      }
+    }
+  );
+
+  app.patch(
+    '/api/submissions/messages/:id',
+    requireOwnerAuth,
+    async (req: AuthenticatedRequest, res: Response) => {
+      try {
+        const id = req.params.id;
+        const { status } = req.body || {};
+        if (!['new', 'read', 'resolved'].includes(status)) {
+          return res.status(400).json({ success: false, error: 'Invalid status value.' });
+        }
+        const updated = await updateContactMessageStatusInDbServer(id, status);
+        if (!updated) {
+          return res.status(404).json({ success: false, error: 'Message not found.' });
+        }
+        return res.status(200).json({ success: true, data: updated });
+      } catch (err) {
+        console.error('[SUBMISSION MESSAGE UPDATE ERROR]', err);
+        return res.status(500).json({ success: false, error: 'Failed to update message status.' });
+      }
+    }
+  );
+
+  app.delete(
+    '/api/submissions/messages/:id',
+    requireOwnerAuth,
+    async (req: AuthenticatedRequest, res: Response) => {
+      try {
+        await deleteContactMessageFromDbServer(req.params.id);
+        return res.status(200).json({ success: true });
+      } catch (err) {
+        console.error('[SUBMISSION MESSAGE DELETE ERROR]', err);
+        return res.status(500).json({ success: false, error: 'Failed to delete message.' });
+      }
+    }
+  );
+
+  app.get('/api/submissions/bugs', async (_req: Request, res: Response) => {
+    res.setHeader('Cache-Control', 'no-store, max-age=0');
+    try {
+      const rows = await listBugReportsFromDb();
+      return res.status(200).json({ success: true, data: rows });
+    } catch (err) {
+      console.error('[SUBMISSION BUGS LIST ERROR]', err);
+      return res.status(500).json({ success: false, error: 'Failed to load defect reports.' });
+    }
+  });
+
+  app.post('/api/submissions/bugs', async (req: Request, res: Response) => {
+    try {
+      const body = req.body || {};
+      if (!body.title || !body.description) {
+        return res
+          .status(400)
+          .json({ success: false, error: 'Title and description are required.' });
+      }
+
+      const cleanId =
+        typeof body.id === 'string' && body.id.trim()
+          ? body.id.trim().slice(0, 120)
+          : `BUG_USER_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`;
+
+      const severity =
+        body.severity === 'Critical' || body.severity === 'Major' || body.severity === 'Minor'
+          ? body.severity
+          : 'Major';
+
+      const steps = Array.isArray(body.stepsToReproduce)
+        ? body.stepsToReproduce
+            .filter((s: unknown): s is string => typeof s === 'string' && s.trim().length > 0)
+            .slice(0, 25)
+        : ['Navigate to application URL', 'Observe anomalous outcome'];
+
+      const row = await createBugReportInDb({
+        id: cleanId,
+        title: String(body.title).trim().slice(0, 300),
+        project: String(body.project || 'SaaS E-Commerce Platform').trim().slice(0, 200),
+        severity,
+        description: String(body.description).trim().slice(0, 5000),
+        stepsToReproduce: steps,
+        expectedResult: String(
+          body.expectedResult || 'System executes operation smoothly without errors.'
+        )
+          .trim()
+          .slice(0, 2000),
+        actualResult: String(
+          body.actualResult || 'System encounters error or unexpected UI degradation.'
+        )
+          .trim()
+          .slice(0, 2000),
+        status: 'Open',
+        createdAtIso:
+          typeof body.createdAtIso === 'string' && body.createdAtIso.trim()
+            ? body.createdAtIso.trim()
+            : new Date().toISOString(),
+      });
+
+      return res.status(201).json({ success: true, data: row });
+    } catch (err) {
+      console.error('[SUBMISSION BUG CREATE ERROR]', err);
+      return res.status(500).json({ success: false, error: 'Failed to submit defect report.' });
+    }
+  });
+
+  app.patch(
+    '/api/submissions/bugs/:id',
+    requireOwnerAuth,
+    async (req: AuthenticatedRequest, res: Response) => {
+      try {
+        const id = req.params.id;
+        const { status, fallbackBug } = req.body || {};
+        if (status !== 'Open' && status !== 'Resolved') {
+          return res.status(400).json({ success: false, error: 'Invalid bug status.' });
+        }
+        const updated = await updateBugReportStatusInDbServer(id, status, fallbackBug);
+        if (!updated) {
+          return res.status(404).json({ success: false, error: 'Bug report not found.' });
+        }
+        return res.status(200).json({ success: true, data: updated });
+      } catch (err) {
+        console.error('[SUBMISSION BUG UPDATE ERROR]', err);
+        return res.status(500).json({ success: false, error: 'Failed to update bug report.' });
+      }
+    }
+  );
+
+  app.delete(
+    '/api/submissions/bugs/:id',
+    requireOwnerAuth,
+    async (req: AuthenticatedRequest, res: Response) => {
+      try {
+        await deleteBugReportFromDbServer(req.params.id);
+        return res.status(200).json({ success: true });
+      } catch (err) {
+        console.error('[SUBMISSION BUG DELETE ERROR]', err);
+        return res.status(500).json({ success: false, error: 'Failed to delete bug report.' });
+      }
+    }
+  );
+
+  // ------------------------------------------------------------------------
+  // PostgreSQL Visitor Analytics Endpoints
+  // ------------------------------------------------------------------------
+  app.get('/api/visitors', async (_req: Request, res: Response) => {
+    try {
+      const stats = await getVisitorStatsFromDb();
       return res.json({
         success: true,
-        totalVisitors: stats.totalVisitors,
-        totalPageViews: stats.totalPageViews,
-        todayVisitors: stats.todayVisitors,
-        todayDate: stats.todayDate,
+        ...stats,
       });
     } catch (err) {
       console.error('[VISITOR API ERROR]', err);
@@ -732,67 +647,13 @@ async function startServer(): Promise<void> {
     }
   });
 
-  /**
-   * API Route: POST /api/visitors/hit
-   * Registers a real pageview or visitor session and accurately increments total counts.
-   */
-  app.post('/api/visitors/hit', (req: Request, res: Response) => {
+  app.post('/api/visitors/hit', async (req: Request, res: Response) => {
     try {
       const { visitorId, sessionId, isNewSession } = req.body || {};
-      const stats = loadVisitorStats();
-
-      stats.totalPageViews += 1;
-
-      const vid = typeof visitorId === 'string' && visitorId.trim() ? visitorId.trim() : null;
-      const sid = typeof sessionId === 'string' && sessionId.trim() ? sessionId.trim() : null;
-      const uniqueId = vid || sid;
-
-      if (!Array.isArray(stats.uniqueVisitors)) {
-        stats.uniqueVisitors = Array.isArray(stats.sessions) ? [...stats.sessions] : [];
-      }
-      if (!Array.isArray(stats.todayVisitorsList)) {
-        stats.todayVisitorsList = [];
-      }
-
-      if (uniqueId) {
-        // Only increment total unique visitors if this device/browser hasn't visited before
-        if (!stats.uniqueVisitors.includes(uniqueId)) {
-          stats.uniqueVisitors.push(uniqueId);
-          stats.totalVisitors += 1;
-        }
-
-        // Only increment todayVisitors if this user hasn't visited today
-        if (!stats.todayVisitorsList.includes(uniqueId)) {
-          stats.todayVisitorsList.push(uniqueId);
-          stats.todayVisitors += 1;
-        }
-
-        if (sid && !stats.sessions.includes(sid)) {
-          stats.sessions.push(sid);
-        }
-
-        // Cap arrays to avoid unlimited memory growth
-        if (stats.uniqueVisitors.length > 20000) {
-          stats.uniqueVisitors = stats.uniqueVisitors.slice(-10000);
-        }
-        if (stats.todayVisitorsList.length > 5000) {
-          stats.todayVisitorsList = stats.todayVisitorsList.slice(-2000);
-        }
-        if (stats.sessions.length > 5000) {
-          stats.sessions = stats.sessions.slice(-2000);
-        }
-      } else if (isNewSession) {
-        stats.totalVisitors += 1;
-        stats.todayVisitors += 1;
-      }
-
-      saveVisitorStats(stats);
-
+      const stats = await recordVisitorHitInDb(visitorId, sessionId, Boolean(isNewSession));
       return res.json({
         success: true,
-        totalVisitors: stats.totalVisitors,
-        totalPageViews: stats.totalPageViews,
-        todayVisitors: stats.todayVisitors,
+        ...stats,
       });
     } catch (err) {
       console.error('[VISITOR HIT API ERROR]', err);
@@ -800,24 +661,20 @@ async function startServer(): Promise<void> {
     }
   });
 
-  /**
-   * API Route: /api/health
-   * Health check endpoint used by Render / Kubernetes container orchestrators.
-   */
+  // ------------------------------------------------------------------------
+  // Health Check & Asset Delivery
+  // ------------------------------------------------------------------------
   app.get('/api/health', (_req: Request, res: Response) => {
     res.json({ status: 'ok', service: 'portfolio-server', timestamp: new Date().toISOString() });
   });
 
-  // Serve application depending on development or production environment
   if (process.env.NODE_ENV !== 'production') {
-    // Mount Vite development server middleware for live module reloading
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
     });
     app.use(vite.middlewares);
   } else {
-    // Serve static client build assets in production
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
     app.get('*', (_req: Request, res: Response) => {
@@ -825,11 +682,9 @@ async function startServer(): Promise<void> {
     });
   }
 
-  // Start HTTP listener
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`[SERVER INFO] Sabbir SQA Portfolio server running on http://0.0.0.0:${PORT}`);
   });
 }
 
-// Execute server bootstrapper
 startServer();
