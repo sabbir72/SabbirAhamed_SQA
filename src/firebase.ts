@@ -26,7 +26,11 @@ import firebaseConfig from '../firebase-applet-config.json';
 export const TOKEN_SAFETY_BUFFER_MS = 6 * 60 * 1000;
 
 export const PRIMARY_OWNER_EMAIL = 'sabbircse72@gmail.com';
-export const OWNER_ADMIN_EMAILS: readonly string[] = ['sabbircse72@gmail.com'];
+export const PROJECT_OWNER_EMAIL = 'sabbir.altersense@gmail.com';
+export const OWNER_ADMIN_EMAILS: readonly string[] = [
+  'sabbircse72@gmail.com',
+  'sabbir.altersense@gmail.com',
+];
 
 interface InternalStsUser {
   stsTokenManager?: {
@@ -122,11 +126,10 @@ export function setPreferredOwnerEmail(): string {
   return PRIMARY_OWNER_EMAIL;
 }
 
-export function createOwnerGoogleProvider(forceAccountSelect = false): GoogleAuthProvider {
+export function createOwnerGoogleProvider(_forceAccountSelect = false): GoogleAuthProvider {
   const provider = new GoogleAuthProvider();
   provider.setCustomParameters({
-    login_hint: PRIMARY_OWNER_EMAIL,
-    ...(forceAccountSelect ? { prompt: 'select_account' } : { prompt: 'select_account' }),
+    prompt: 'select_account',
   });
   return provider;
 }
@@ -150,7 +153,7 @@ export function hasFreshOwnerAuthToken(user: User | null | undefined): boolean {
 
 export function isVerifiedFirebaseOwner(user: User | null | undefined): boolean {
   if (!user || !user.email || !user.emailVerified) return false;
-  return user.email.trim().toLowerCase() === PRIMARY_OWNER_EMAIL;
+  return OWNER_ADMIN_EMAILS.includes(user.email.trim().toLowerCase());
 }
 
 export async function getOwnerIdToken(forceRefresh = false): Promise<string | null> {

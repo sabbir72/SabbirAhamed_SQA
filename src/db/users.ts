@@ -2,10 +2,14 @@ import { db } from './index.ts';
 import { users } from './schema.ts';
 
 export const OWNER_ADMIN_EMAIL = 'sabbircse72@gmail.com';
+export const OWNER_ADMIN_EMAILS: readonly string[] = [
+  'sabbircse72@gmail.com',
+  'sabbir.altersense@gmail.com',
+];
 
 export async function getOrCreateUser(uid: string, email: string) {
   const normalizedEmail = email.trim().toLowerCase();
-  const role = normalizedEmail === OWNER_ADMIN_EMAIL ? 'admin' : 'user';
+  const role = OWNER_ADMIN_EMAILS.includes(normalizedEmail) ? 'admin' : 'user';
   const now = new Date();
 
   try {

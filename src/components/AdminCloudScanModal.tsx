@@ -372,6 +372,10 @@ export default function AdminCloudScanModal({
               (feedback?.message || cloudStatus.error || '').includes('Authorized Domains')) &&
               currentHostname && (
                 <div className="pt-2 border-t border-red-500/20 space-y-2">
+                  <p className="text-[11px] text-amber-200 leading-relaxed">
+                    নোট: Firebase Console-এ ডোমেইন যোগ করতে হলে প্রজেক্ট মালিক অ্যাকাউন্ট (
+                    <span className="font-mono font-semibold">sabbir.altersense@gmail.com</span>) দিয়ে খুলুন। তবে পাসওয়ার্ড দিয়ে আনলক করলে Firebase ছাড়াই সরাসরি অটো-সেভ কাজ করে।
+                  </p>
                   <div className="text-[11px] text-slate-200 font-mono break-all bg-black/40 border border-white/10 rounded-lg px-2.5 py-2">
                     {currentHostname}
                   </div>

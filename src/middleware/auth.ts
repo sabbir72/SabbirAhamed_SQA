@@ -1,6 +1,6 @@
 import type { NextFunction, Request, Response } from 'express';
 import { adminAuth } from '../lib/firebase-admin.ts';
-import { getOrCreateUser, OWNER_ADMIN_EMAIL } from '../db/users.ts';
+import { getOrCreateUser, OWNER_ADMIN_EMAIL, OWNER_ADMIN_EMAILS } from '../db/users.ts';
 import {
   extractAdminTokenFromHeaders,
   verifySignedAdminToken,
@@ -60,10 +60,10 @@ export async function requireOwnerAuth(
       return;
     }
 
-    if (email !== OWNER_ADMIN_EMAIL) {
+    if (!OWNER_ADMIN_EMAILS.includes(email)) {
       res.status(403).json({
         success: false,
-        error: `Unauthorized email (${email}). Only ${OWNER_ADMIN_EMAIL} is permitted.`,
+        error: `Unauthorized email (${email}). Owner account required.`,
       });
       return;
     }
