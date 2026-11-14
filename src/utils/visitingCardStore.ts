@@ -397,6 +397,19 @@ export interface VisitingCardConfig {
   headlineBn: string;
 }
 
+export function getLiveServerOrigin(): string {
+  if (typeof window !== 'undefined' && window.location?.origin) {
+    return window.location.origin.replace(/\/$/, '');
+  }
+  return 'https://sabbir-sqa.vercel.app';
+}
+
+export function getDefaultPermanentCardUrl(): string {
+  return `${getLiveServerOrigin()}/?card=1#vcard`;
+}
+
+export const LEGACY_DEFAULT_CARD_URL = 'https://sabbir-sqa.vercel.app/?card=1#vcard';
+
 export const DEFAULT_VCARD_CONFIG: VisitingCardConfig = {
   company: 'CarryBee',
   companyBn: 'ক্যারিবি',
@@ -404,7 +417,7 @@ export const DEFAULT_VCARD_CONFIG: VisitingCardConfig = {
   department: 'Manual & automation Test',
   departmentBn: 'ম্যানুয়াল ও অটোমেশন টেস্ট',
   verifiedBadge: 'SQA',
-  permanentUrl: 'https://sabbir-sqa.vercel.app/?card=1#vcard',
+  permanentUrl: '',
   defaultSkin: 'executive-dark',
   defaultQrMode: 'url',
   headlineEn: 'Software Quality Assurance & Automation Engineering',
@@ -413,33 +426,57 @@ export const DEFAULT_VCARD_CONFIG: VisitingCardConfig = {
 
 /**
  * Ensures QR code and NFC URLs consistently carry the query parameter (?card=1)
- * so that camera scanners on mobile devices reliably open the card modal directly.
+ * so that camera scanners on mobile devices reliably open the card modal directly
+ * on the active deployed main server or custom configured domain.
  */
 export function sanitizePermanentCardUrl(url?: string): string {
-  const officialCardUrl = 'https://sabbir-sqa.vercel.app/?card=1#vcard';
-  if (!url || typeof url !== 'string') return officialCardUrl;
-  
+  const activeDefault = getDefaultPermanentCardUrl();
+  if (!url || typeof url !== 'string') return activeDefault;
+
   const trimmed = url.trim();
-  if (
-    !trimmed ||
-    trimmed.includes('sabbirahamed.com') ||
-    trimmed.includes('run.app') ||
-    trimmed.includes('localhost') ||
-    trimmed.includes('web.app')
-  ) {
-    return officialCardUrl;
+  if (!trimmed || trimmed.includes('sabbirahamed.com')) {
+    return activeDefault;
   }
 
-  // If the URL does not contain 'card' anywhere, or is missing ?card= query param
-  if (!trimmed.toLowerCase().includes('card') || (!trimmed.includes('?card=') && !trimmed.includes('&card='))) {
-    if (trimmed.includes('#')) {
-      const [base] = trimmed.split('#');
+  // Upgrade legacy hardcoded placeholder to active deployed main server origin automatically
+  if (
+    trimmed === LEGACY_DEFAULT_CARD_URL &&
+    !getLiveServerOrigin().includes('sabbir-sqa.vercel.app')
+  ) {
+    return activeDefault;
+  }
+
+  const normalized = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+
+  if (
+    !normalized.toLowerCase().includes('card') ||
+    (!normalized.includes('?card=') && !normalized.includes('&card='))
+  ) {
+    if (normalized.includes('#')) {
+      const [base] = normalized.split('#');
       return `${base.replace(/\/$/, '')}/?card=1#vcard`;
     }
-    return `${trimmed.replace(/\/$/, '')}/?card=1#vcard`;
+    return `${normalized.replace(/\/$/, '')}/?card=1#vcard`;
   }
 
-  return trimmed;
+  return normalized;
+}
+
+export function getPortfolioBaseUrl(cardUrl?: string): string {
+  const resolved = sanitizePermanentCardUrl(cardUrl);
+  try {
+    return new URL(resolved).origin;
+  } catch {
+    return getLiveServerOrigin();
+  }
+}
+
+export function getPortfolioHostLabel(cardUrl?: string): string {
+  try {
+    return new URL(getPortfolioBaseUrl(cardUrl)).host;
+  } catch {
+    return 'sabbir-sqa.vercel.app';
+  }
 }
 
 export const VCARD_USER_CHANGED_EVENT = 'sqa_vcard_user_changed';

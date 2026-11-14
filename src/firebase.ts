@@ -153,13 +153,13 @@ export function isVerifiedFirebaseOwner(user: User | null | undefined): boolean 
   return user.email.trim().toLowerCase() === PRIMARY_OWNER_EMAIL;
 }
 
-export async function getOwnerIdToken(): Promise<string | null> {
+export async function getOwnerIdToken(forceRefresh = false): Promise<string | null> {
   const user = auth.currentUser;
   if (!user || !isVerifiedFirebaseOwner(user)) {
     return null;
   }
   try {
-    return await user.getIdToken();
+    return await user.getIdToken(forceRefresh);
   } catch {
     return null;
   }

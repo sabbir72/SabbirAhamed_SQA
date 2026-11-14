@@ -52,6 +52,8 @@ import {
   VisitingCardConfig,
   VCARD_STORE_UPDATED_EVENT,
   sanitizePermanentCardUrl,
+  getPortfolioBaseUrl,
+  getPortfolioHostLabel,
 } from '../utils/visitingCardStore';
 
 interface VisitingCardModalProps {
@@ -167,8 +169,10 @@ export const VisitingCardModal: React.FC<VisitingCardModalProps> = ({ isOpen, on
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const scanAnimationId = useRef<number | null>(null);
+  const isScanningRef = useRef<boolean>(false);
 
   const stopCameraScan = useCallback(() => {
+    isScanningRef.current = false;
     if (scanAnimationId.current) {
       cancelAnimationFrame(scanAnimationId.current);
       scanAnimationId.current = null;
@@ -176,6 +180,9 @@ export const VisitingCardModal: React.FC<VisitingCardModalProps> = ({ isOpen, on
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
+    }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
     }
     setIsScanning(false);
   }, []);
@@ -194,6 +201,8 @@ export const VisitingCardModal: React.FC<VisitingCardModalProps> = ({ isOpen, on
   }, []);
 
   const cardUrl = sanitizePermanentCardUrl(cardConfig.permanentUrl);
+  const portfolioBaseUrl = getPortfolioBaseUrl(cardUrl);
+  const portfolioHost = getPortfolioHostLabel(cardUrl);
   const userCompany = cardConfig.company || 'CarryBee';
   const currentSkinConfig = CARD_SKINS.find((s) => s.id === selectedSkin) || CARD_SKINS[0];
   const selectedMember =
@@ -365,7 +374,7 @@ export const VisitingCardModal: React.FC<VisitingCardModalProps> = ({ isOpen, on
       phone: rawPhone,
       email: rawEmail,
     };
-    const plainText = getEmailSignatureText(activeProfile, userCompany);
+    const plainText = getEmailSignatureText(activeProfile, userCompany, cardUrl);
     const html = generateEmailSignatureHtml(
       activeProfile,
       cardUrl,
@@ -755,7 +764,7 @@ export const VisitingCardModal: React.FC<VisitingCardModalProps> = ({ isOpen, on
         ctx.fillStyle = '#CBD5E1';
         ctx.fillText(displayedLocation, 560, 475);
         ctx.fillStyle = '#38BDF8';
-        ctx.fillText('sabbir-sqa.vercel.app', 560, 520);
+        ctx.fillText(portfolioHost, 560, 520);
 
         resolve(canvas);
       } else {
@@ -791,7 +800,7 @@ export const VisitingCardModal: React.FC<VisitingCardModalProps> = ({ isOpen, on
           ctx.fillText(displayedLocation, 480, 425);
 
           ctx.fillStyle = '#38BDF8';
-          ctx.fillText('sabbir-sqa.vercel.app', 480, 475);
+          ctx.fillText(portfolioHost, 480, 475);
 
           resolve(canvas);
         };
@@ -934,75 +943,153 @@ export const VisitingCardModal: React.FC<VisitingCardModalProps> = ({ isOpen, on
   };
 
   const scanTick = () => {
-    if (!videoRef.current || !canvasRef.current) return;
-    if (videoRef.current.readyState === videoRef.current.HAVE_ENOUGH_DATA) {
-      const canvas = canvasRef.current;
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        canvas.height = videoRef.current.videoHeight;
-        canvas.width = videoRef.current.videoWidth;
-        ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
-        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        const code = jsQR(imageData.data, imageData.width, imageData.height, {
-          inversionAttempts: 'dontInvert',
-        });
+    if (!isScanningRef.current) return;
 
-        if (code && code.data) {
-          playNfcTapAudio();
-          setScanResult(code.data);
-          stopCameraScan();
-          return;
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    if (
+      video &&
+      canvas &&
+      video.readyState >= video.HAVE_CURRENT_DATA &&
+      video.videoWidth > 0 &&
+      video.videoHeight > 0
+    ) {
+      try {
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        if (ctx) {
+          canvas.height = video.videoHeight;
+          canvas.width = video.videoWidth;
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+          const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          const code = jsQR(imageData.data, imageData.width, imageData.height, {
+            inversionAttempts: 'attemptBoth',
+          });
+
+          if (code && code.data) {
+            playNfcTapAudio();
+            setScanResult(code.data);
+            stopCameraScan();
+            return;
+          }
         }
+      } catch {
+        // Ignore transient canvas/video frame decode errors and keep scanning
       }
     }
-    scanAnimationId.current = requestAnimationFrame(scanTick);
+
+    if (isScanningRef.current) {
+      scanAnimationId.current = requestAnimationFrame(scanTick);
+    }
   };
 
   const startCameraScan = async () => {
     setCameraError(null);
     setScanResult(null);
+
+    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
+      setCameraError(
+        'Camera access is unavailable in this browser context. Please allow camera permission over HTTPS or upload a QR image instead.'
+      );
+      return;
+    }
+
+    isScanningRef.current = true;
     setIsScanning(true);
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment' },
-      });
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: 'environment' } },
+          audio: false,
+        });
+      } catch {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+          audio: false,
+        });
+      }
+
+      if (!isScanningRef.current) {
+        stream.getTracks().forEach((t) => t.stop());
+        return;
+      }
+
       streamRef.current = stream;
 
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
+        videoRef.current.muted = true;
         videoRef.current.setAttribute('playsinline', 'true');
-        videoRef.current.play();
-        scanAnimationId.current = requestAnimationFrame(scanTick);
+        await videoRef.current.play().catch(() => {});
+        if (isScanningRef.current) {
+          scanAnimationId.current = requestAnimationFrame(scanTick);
+        }
       }
-    } catch {
-      setIsScanning(false);
-      setCameraError('Camera unavailable. Please upload a QR image instead.');
+    } catch (err) {
+      stopCameraScan();
+      const errName = err instanceof DOMException ? err.name : '';
+      if (errName === 'NotAllowedError' || errName === 'PermissionDeniedError') {
+        setCameraError(
+          'Camera permission denied. Please allow camera access in browser settings or upload a QR image.'
+        );
+      } else {
+        setCameraError('Camera unavailable on this device/browser. Please upload a QR image instead.');
+      }
     }
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+    const inputEl = e.target;
+    const file = inputEl.files?.[0];
     if (!file) return;
 
+    setCameraError(null);
+
     const reader = new FileReader();
+    reader.onerror = () => {
+      inputEl.value = '';
+      setCameraError('Could not read the selected image file.');
+    };
     reader.onload = (event) => {
       const img = new Image();
+      img.onerror = () => {
+        inputEl.value = '';
+        setCameraError('Invalid image format. Please choose a PNG, JPG, or WebP QR image.');
+      };
       img.onload = () => {
-        const canvas = document.createElement('canvas');
-        canvas.width = img.width;
-        canvas.height = img.height;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return;
-        ctx.drawImage(img, 0, 0);
-        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        const code = jsQR(imageData.data, imageData.width, imageData.height);
-        if (code && code.data) {
-          playNfcTapAudio();
-          setCameraError(null);
-          setScanResult(code.data);
-        } else {
-          setCameraError('No valid QR code found in this image.');
+        inputEl.value = '';
+        const decodeAtDimension = (targetW: number, targetH: number) => {
+          const canvas = document.createElement('canvas');
+          canvas.width = Math.max(1, Math.round(targetW));
+          canvas.height = Math.max(1, Math.round(targetH));
+          const ctx = canvas.getContext('2d', { willReadFrequently: true });
+          if (!ctx) return null;
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          return jsQR(imageData.data, imageData.width, imageData.height, {
+            inversionAttempts: 'attemptBoth',
+          });
+        };
+
+        try {
+          const maxDim = 1200;
+          const scale = Math.min(maxDim / img.width, maxDim / img.height, 1);
+          let code = decodeAtDimension(img.width * scale, img.height * scale);
+
+          if (!code && scale < 1) {
+            code = decodeAtDimension(img.width, img.height);
+          }
+
+          if (code && code.data) {
+            playNfcTapAudio();
+            setCameraError(null);
+            setScanResult(code.data);
+          } else {
+            setCameraError('No valid QR code found in this image. Try a clearer or cropped QR image.');
+          }
+        } catch {
+          setCameraError('Failed to decode QR code from this image.');
         }
       };
       img.src = event.target?.result as string;
@@ -1123,7 +1210,7 @@ export const VisitingCardModal: React.FC<VisitingCardModalProps> = ({ isOpen, on
             <MapPin className="w-2.5 h-2.5 shrink-0" style={{ color: currentSkinConfig.accentColor }} />
             {displayedLocation}
           </span>
-          <span className="text-white/80 font-medium shrink-0">sabbir-sqa.vercel.app</span>
+          <span className="text-white/80 font-medium shrink-0 truncate max-w-[55%]">{portfolioHost}</span>
         </div>
       </div>
     </div>
@@ -1205,7 +1292,7 @@ export const VisitingCardModal: React.FC<VisitingCardModalProps> = ({ isOpen, on
               <span className="truncate">WhatsApp</span>
             </a>
             <a
-              href="https://sabbir-sqa.vercel.app"
+              href={portfolioBaseUrl}
               target="_blank"
               rel="noopener noreferrer"
               onClick={(e) => e.stopPropagation()}
@@ -1222,9 +1309,11 @@ export const VisitingCardModal: React.FC<VisitingCardModalProps> = ({ isOpen, on
       </div>
 
       {/* Subtle Footer */}
-      <div className="px-4 pb-2.5 flex items-center justify-between text-[9px] font-mono text-slate-400">
+      <div className="px-4 pb-2.5 flex items-center justify-between gap-2 text-[9px] font-mono text-slate-400">
         <span className="truncate">{displayedLocation}</span>
-        <span style={{ color: currentSkinConfig.accentColor }}>sabbir-sqa.vercel.app</span>
+        <span className="truncate max-w-[55%]" style={{ color: currentSkinConfig.accentColor }}>
+          {portfolioHost}
+        </span>
       </div>
     </div>
   );
@@ -1541,14 +1630,14 @@ export const VisitingCardModal: React.FC<VisitingCardModalProps> = ({ isOpen, on
               {/* Clean Social & Portfolio Strip */}
               <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 rounded-2xl bg-white/[0.03] border border-white/10 text-xs">
                 <a
-                  href="https://sabbir-sqa.vercel.app"
+                  href={portfolioBaseUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center space-x-2 text-white hover:text-[var(--color-accent)] font-medium transition-colors"
+                  className="inline-flex items-center space-x-2 text-white hover:text-[var(--color-accent)] font-medium transition-colors min-w-0"
                 >
-                  <Globe className="w-4 h-4 text-[var(--color-accent)]" />
-                  <span>sabbir-sqa.vercel.app</span>
-                  <ExternalLink className="w-3 h-3 text-slate-400" />
+                  <Globe className="w-4 h-4 text-[var(--color-accent)] shrink-0" />
+                  <span className="truncate max-w-[260px] sm:max-w-xs">{portfolioHost}</span>
+                  <ExternalLink className="w-3 h-3 text-slate-400 shrink-0" />
                 </a>
 
                 <div className="flex items-center space-x-4 text-slate-300">
@@ -1703,7 +1792,13 @@ export const VisitingCardModal: React.FC<VisitingCardModalProps> = ({ isOpen, on
 
                 {isScanning && (
                   <div className="relative w-full max-w-md mx-auto aspect-video sm:aspect-square bg-black rounded-2xl overflow-hidden border border-white/20 flex items-center justify-center">
-                    <video ref={videoRef} className="w-full h-full object-cover" playsInline />
+                    <video
+                      ref={videoRef}
+                      className="w-full h-full object-cover"
+                      playsInline
+                      muted
+                      autoPlay
+                    />
                     <canvas ref={canvasRef} className="hidden" />
                     <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                       <div className="w-48 h-48 border-2 border-[var(--color-accent)] rounded-2xl" />
@@ -1743,16 +1838,35 @@ export const VisitingCardModal: React.FC<VisitingCardModalProps> = ({ isOpen, on
                     <p className="text-xs font-mono text-slate-200 break-all bg-black/40 p-2.5 rounded-lg">
                       {scanResult}
                     </p>
-                    <div className="flex items-center space-x-2">
-                      {scanResult.startsWith('http') && (
+                    <div className="flex flex-wrap items-center gap-2">
+                      {/^(https?:\/\/|mailto:|tel:)/i.test(scanResult.trim()) && (
                         <a
-                          href={scanResult}
-                          target="_blank"
-                          rel="noopener noreferrer"
+                          href={scanResult.trim()}
+                          target={scanResult.trim().startsWith('http') ? '_blank' : undefined}
+                          rel={scanResult.trim().startsWith('http') ? 'noopener noreferrer' : undefined}
                           className="px-3.5 py-1.5 rounded-lg bg-[var(--color-accent)] text-black font-semibold text-xs"
                         >
                           Open Link
                         </a>
+                      )}
+                      {scanResult.trim().toUpperCase().startsWith('BEGIN:VCARD') && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const blob = new Blob([scanResult], { type: 'text/vcard;charset=utf-8' });
+                            const url = URL.createObjectURL(blob);
+                            const a = document.createElement('a');
+                            a.href = url;
+                            a.download = 'Scanned_Contact.vcf';
+                            document.body.appendChild(a);
+                            a.click();
+                            document.body.removeChild(a);
+                            URL.revokeObjectURL(url);
+                          }}
+                          className="px-3.5 py-1.5 rounded-lg bg-emerald-500 text-black font-semibold text-xs cursor-pointer"
+                        >
+                          Save .VCF Contact
+                        </button>
                       )}
                       <button
                         type="button"
@@ -1926,7 +2040,7 @@ export const VisitingCardModal: React.FC<VisitingCardModalProps> = ({ isOpen, on
                   {/* Portfolio */}
                   <div className="p-3.5 rounded-xl bg-white/[0.03] hover:bg-white/[0.05] border border-white/10 flex items-center justify-between gap-2 transition-colors">
                     <a
-                      href="https://sabbir-sqa.vercel.app"
+                      href={portfolioBaseUrl}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="flex items-center space-x-3 min-w-0 flex-1 group"
@@ -1937,7 +2051,7 @@ export const VisitingCardModal: React.FC<VisitingCardModalProps> = ({ isOpen, on
                       <div className="truncate">
                         <span className="text-[11px] text-slate-400 block">Portfolio</span>
                         <span className="text-white font-mono font-medium group-hover:text-sky-400 transition-colors truncate block">
-                          sabbir-sqa.vercel.app
+                          {portfolioHost}
                         </span>
                       </div>
                     </a>
@@ -2153,7 +2267,7 @@ export const VisitingCardModal: React.FC<VisitingCardModalProps> = ({ isOpen, on
 
                       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 pt-0.5 text-xs font-semibold text-sky-600">
                         <a
-                          href="https://sabbir-sqa.vercel.app"
+                          href={portfolioBaseUrl}
                           target="_blank"
                           rel="noreferrer"
                           className="hover:underline"
@@ -2262,9 +2376,9 @@ export const VisitingCardModal: React.FC<VisitingCardModalProps> = ({ isOpen, on
                       <p className="text-slate-400">{displayedLocation}</p>
                     </div>
 
-                    <div className="pt-2 border-t border-white/10 flex items-center justify-between text-[9.5px] text-slate-400 font-mono">
+                    <div className="pt-2 border-t border-white/10 flex items-center justify-between gap-2 text-[9.5px] text-slate-400 font-mono">
                       <span>{userCompany}</span>
-                      <span className="text-[var(--color-accent)]">sabbir-sqa.vercel.app</span>
+                      <span className="text-[var(--color-accent)] truncate max-w-[60%]">{portfolioHost}</span>
                     </div>
                   </div>
                 </div>
@@ -2318,9 +2432,9 @@ export const VisitingCardModal: React.FC<VisitingCardModalProps> = ({ isOpen, on
                       )}
                     </div>
 
-                    <div className="text-[9.5px] font-mono text-slate-400 flex items-center justify-between pt-2 border-t border-white/10">
+                    <div className="text-[9.5px] font-mono text-slate-400 flex items-center justify-between gap-2 pt-2 border-t border-white/10">
                       <span>{displayedDepartment}</span>
-                      <span className="text-white/80">sabbir-sqa.vercel.app</span>
+                      <span className="text-white/80 truncate max-w-[60%]">{portfolioHost}</span>
                     </div>
                   </div>
                 </div>
@@ -2361,15 +2475,15 @@ export const VisitingCardModal: React.FC<VisitingCardModalProps> = ({ isOpen, on
                       <div>{displayedLocation}</div>
                     </div>
 
-                    <div className="flex justify-between text-[9px] border-t border-slate-200 pt-1 text-slate-600">
+                    <div className="flex justify-between gap-2 text-[9px] border-t border-slate-200 pt-1 text-slate-600">
                       <span>{userCompany}</span>
-                      <span>sabbir-sqa.vercel.app</span>
+                      <span className="truncate max-w-[60%]">{portfolioHost}</span>
                     </div>
                   </div>
 
                   {/* Back */}
                   <div className="w-[3.5in] h-[2in] border border-slate-400 rounded-lg p-3.5 flex items-center justify-between bg-white text-black box-border">
-                    <div className="flex-1 pr-3">
+                    <div className="flex-1 pr-3 min-w-0">
                       <div className="text-[13px] font-bold">{selectedMember.name}</div>
                       <div className="text-[10px] text-sky-700 font-medium mt-0.5">
                         {selectedMember.role}
@@ -2377,8 +2491,8 @@ export const VisitingCardModal: React.FC<VisitingCardModalProps> = ({ isOpen, on
                       <div className="text-[9px] text-slate-600 mt-2 leading-snug">
                         Scan QR to save contact &amp; view portfolio.
                       </div>
-                      <div className="text-[8.5px] font-mono text-slate-500 mt-2">
-                        sabbir-sqa.vercel.app
+                      <div className="text-[8.5px] font-mono text-slate-500 mt-2 truncate">
+                        {portfolioHost}
                       </div>
                     </div>
 

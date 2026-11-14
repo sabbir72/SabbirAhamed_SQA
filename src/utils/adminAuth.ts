@@ -195,6 +195,11 @@ export function getAdminToken(): string | null {
   }
 }
 
+export function hasSignedAdminToken(): boolean {
+  const token = getAdminToken();
+  return Boolean(token && token.startsWith('sabbir_sqa_admin_v2_'));
+}
+
 function storeAdminToken(token: string): void {
   const now = Date.now();
   sessionStorage.setItem(ADMIN_TOKEN_KEY, token);

@@ -27,9 +27,7 @@ import BlogList from './components/BlogList';
 import BlogPost from './components/BlogPost';
 import AdminPortal from './components/AdminPortal';
 import AdminQuickAccess from './components/AdminQuickAccess';
-import AdminCloudScanModal, {
-  CLOUD_PROMPT_DISMISSED_SESSION_KEY,
-} from './components/AdminCloudScanModal';
+import AdminCloudScanModal from './components/AdminCloudScanModal';
 import { getCurrentRoute, navigateTo, navigateToHomeSection, AppRoute } from './utils/router';
 import {
   ADMIN_OAUTH_REDIRECT_COMPLETED_EVENT,
@@ -44,7 +42,7 @@ import {
   initializePortfolioStoreFromServer,
 } from './utils/portfolioStore';
 import { getStoredBlogCategories, getStoredBlogPosts } from './utils/blogStore';
-import { getCloudSyncStatus, initializeCloudRealtimeSync } from './utils/cloudSync';
+import { initializeCloudRealtimeSync } from './utils/cloudSync';
 import { initializeTheme } from './utils/themeStore';
 import AdminPasscodeModal, { SecurityModalMode } from './components/AdminPasscodeModal';
 import { VisitingCardModal } from './components/VisitingCardModal';
@@ -91,18 +89,6 @@ export default function App(): React.ReactNode {
       promptedLockedAdminRouteRef.current = false;
     }
 
-    if (isAdmin && isNowOnAdmin && !wasOnAdminRouteRef.current) {
-      const status = getCloudSyncStatus();
-      let dismissed = false;
-      try {
-        dismissed = sessionStorage.getItem(CLOUD_PROMPT_DISMISSED_SESSION_KEY) === '1';
-      } catch {
-        // ignore
-      }
-      if (!status.isOwnerConnected && !dismissed) {
-        setIsCloudScanModalOpen(true);
-      }
-    }
     if (!isAdmin) {
       setIsCloudScanModalOpen(false);
     }
@@ -249,9 +235,6 @@ export default function App(): React.ReactNode {
       if (getCurrentRoute().type !== 'admin') {
         navigateTo('/admin');
         setRoute(getCurrentRoute());
-      }
-      if (!getCloudSyncStatus().isOwnerConnected) {
-        setIsCloudScanModalOpen(true);
       }
     }
   }, []);

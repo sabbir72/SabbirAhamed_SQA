@@ -9,10 +9,9 @@
  * -----------------------------------------
  */
 
-import { getOwnerIdToken } from '../firebase';
 import { BUG_REPORTS } from '../data';
 import type { BugReport } from '../types';
-import { canFirebaseOwnerWrite } from './cloudSync';
+import { canFirebaseOwnerWrite, getOwnerRequestHeaders } from './cloudSync';
 
 export type ContactMessageStatus = 'new' | 'read' | 'resolved';
 
@@ -307,12 +306,12 @@ export function subscribeContactMessagesForAdmin(
 
   const fetchMessages = async () => {
     try {
-      const idToken = await getOwnerIdToken();
-      if (!idToken || disposed) return;
+      const authHeaders = await getOwnerRequestHeaders();
+      if (!authHeaders || disposed) return;
 
       const res = await fetch('/api/submissions/messages', {
         cache: 'no-store',
-        headers: { Authorization: `Bearer ${idToken}` },
+        headers: authHeaders,
       });
       if (!res.ok || disposed) return;
 
@@ -371,14 +370,14 @@ export async function updateContactMessageStatusInDb(
   writeLocalArray(LOCAL_CONTACT_MESSAGES_KEY, local);
 
   if (!canFirebaseOwnerWrite()) return;
-  const idToken = await getOwnerIdToken();
-  if (!idToken) return;
+  const authHeaders = await getOwnerRequestHeaders();
+  if (!authHeaders) return;
 
   const res = await fetch(`/api/submissions/messages/${encodeURIComponent(messageId)}`, {
     method: 'PATCH',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${idToken}`,
+      ...authHeaders,
     },
     body: JSON.stringify({ status }),
   });
@@ -394,12 +393,12 @@ export async function deleteContactMessageFromDb(messageId: string): Promise<voi
   writeLocalArray(LOCAL_CONTACT_MESSAGES_KEY, local);
 
   if (!canFirebaseOwnerWrite()) return;
-  const idToken = await getOwnerIdToken();
-  if (!idToken) return;
+  const authHeaders = await getOwnerRequestHeaders();
+  if (!authHeaders) return;
 
   const res = await fetch(`/api/submissions/messages/${encodeURIComponent(messageId)}`, {
     method: 'DELETE',
-    headers: { Authorization: `Bearer ${idToken}` },
+    headers: authHeaders,
   });
 
   if (!res.ok) {
@@ -420,14 +419,14 @@ export async function updateBugReportStatusInDb(
   writeLocalArray(LOCAL_BUG_REPORTS_KEY, updatedList);
 
   if (!canFirebaseOwnerWrite()) return;
-  const idToken = await getOwnerIdToken();
-  if (!idToken) return;
+  const authHeaders = await getOwnerRequestHeaders();
+  if (!authHeaders) return;
 
   const res = await fetch(`/api/submissions/bugs/${encodeURIComponent(bug.id)}`, {
     method: 'PATCH',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${idToken}`,
+      ...authHeaders,
     },
     body: JSON.stringify({
       status,
@@ -457,12 +456,12 @@ export async function deleteBugReportFromDb(bugId: string): Promise<void> {
   writeLocalArray(LOCAL_BUG_REPORTS_KEY, local);
 
   if (!canFirebaseOwnerWrite()) return;
-  const idToken = await getOwnerIdToken();
-  if (!idToken) return;
+  const authHeaders = await getOwnerRequestHeaders();
+  if (!authHeaders) return;
 
   const res = await fetch(`/api/submissions/bugs/${encodeURIComponent(bugId)}`, {
     method: 'DELETE',
-    headers: { Authorization: `Bearer ${idToken}` },
+    headers: authHeaders,
   });
 
   if (!res.ok) {

@@ -17,10 +17,14 @@ import { ProfileData } from './portfolioStore';
  * Compatible with iOS Contacts, Google Contacts, Android, and macOS Address Book.
  */
 export function buildVCardString(profile: ProfileData, portfolioUrl?: string): string {
-  // Never use AI Studio or run.app URLs in vCard
-  const url = portfolioUrl && !portfolioUrl.includes('aistudio') && !portfolioUrl.includes('run.app') && !portfolioUrl.includes('sabbirahamed.com')
-    ? portfolioUrl
-    : 'https://sabbir-sqa.vercel.app';
+  const fallbackOrigin =
+    typeof window !== 'undefined' && window.location?.origin
+      ? window.location.origin.replace(/\/$/, '')
+      : 'https://sabbir-sqa.vercel.app';
+  const url =
+    portfolioUrl && !portfolioUrl.includes('sabbirahamed.com')
+      ? portfolioUrl
+      : fallbackOrigin;
   const now = new Date().toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
   
   // Clean phone number for tel URI
@@ -273,7 +277,11 @@ export function getGoogleCalendarMeetingUrl(profile: ProfileData, cardUrl: strin
 /**
  * Executive Plain-Text Email Signature
  */
-export function getEmailSignatureText(profile: ProfileData, company = 'CarryBee'): string {
+export function getEmailSignatureText(
+  profile: ProfileData,
+  company = 'CarryBee',
+  cardUrl?: string
+): string {
   const name = profile.name || 'Sabbir Ahamed';
   const title = profile.title || 'Software Quality Assurance Engineer';
   const email = profile.email || 'sabbircse72@gmail.com';
@@ -281,13 +289,25 @@ export function getEmailSignatureText(profile: ProfileData, company = 'CarryBee'
   const location = profile.location || 'Dhaka, Bangladesh';
   const cleanLinkedin = (profile.linkedin || 'linkedin.com/in/sabbir-ahamed72').replace(/^https?:\/\/(www\.)?/, '');
   const cleanGithub = (profile.github || 'github.com/sabbir72').replace(/^https?:\/\/(www\.)?/, '');
+  const fallbackHost =
+    typeof window !== 'undefined' && window.location?.host
+      ? window.location.host
+      : 'sabbir-sqa.vercel.app';
+  let displayHost = fallbackHost;
+  if (cardUrl) {
+    try {
+      displayHost = new URL(cardUrl).host || fallbackHost;
+    } catch {
+      // keep fallbackHost
+    }
+  }
 
   return [
     name,
     `${title} · ${company}`,
     `${email}  |  ${phone}`,
     location,
-    `Portfolio: sabbir-sqa.vercel.app  |  LinkedIn: ${cleanLinkedin}  |  GitHub: ${cleanGithub}`,
+    `Portfolio: ${displayHost}  |  LinkedIn: ${cleanLinkedin}  |  GitHub: ${cleanGithub}`,
   ].join('\n');
 }
 
@@ -327,10 +347,14 @@ export function generateEmailSignatureHtml(
   const email = escapeSignatureHtml(profile.email || 'sabbircse72@gmail.com');
   const phone = escapeSignatureHtml(profile.phone || '+8801681387906');
   const location = escapeSignatureHtml(profile.location || 'Dhaka, Bangladesh');
-  const portfolioUrl =
-    cardUrl && !cardUrl.includes('run.app') && !cardUrl.includes('aistudio')
-      ? cardUrl.replace(/\?card=1#vcard$/, '').replace(/\/$/, '')
+  const fallbackOrigin =
+    typeof window !== 'undefined' && window.location?.origin
+      ? window.location.origin.replace(/\/$/, '')
       : 'https://sabbir-sqa.vercel.app';
+  const portfolioUrl =
+    cardUrl && !cardUrl.includes('sabbirahamed.com')
+      ? cardUrl.replace(/\?card=1#vcard$/, '').replace(/\/$/, '')
+      : fallbackOrigin;
   const linkedinUrl = profile.linkedin?.startsWith('http')
     ? profile.linkedin
     : `https://${profile.linkedin || 'www.linkedin.com/in/sabbir-ahamed72'}`;

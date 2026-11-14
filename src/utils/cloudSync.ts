@@ -39,7 +39,10 @@ import type {
 } from './visitingCardStore';
 import {
   ADMIN_AUTH_CHANGED_EVENT,
+  ADMIN_SESSION_EXPIRED_EVENT,
   clearAdminOAuthGracePeriod,
+  getAdminToken,
+  hasSignedAdminToken,
   isAdminAuthenticated,
   recordAdminActivity,
   startAdminOAuthGracePeriod,
@@ -135,14 +138,24 @@ function emitStatus(partial: Partial<CloudSyncStatus>): void {
     partial.firebaseConnected !== undefined
       ? partial.firebaseConnected
       : currentStatus.firebaseConnected;
+  const adminSessionActive = isAdminAuthenticated() && hasSignedAdminToken();
   const nextOwnerConnected =
-    partial.isOwnerConnected !== undefined ? partial.isOwnerConnected : nextFirebase;
+    partial.isOwnerConnected !== undefined
+      ? partial.isOwnerConnected
+      : nextFirebase || adminSessionActive;
+  const nextOwnerEmail =
+    partial.ownerEmail !== undefined
+      ? partial.ownerEmail
+      : nextOwnerConnected
+      ? currentStatus.ownerEmail || PRIMARY_OWNER_EMAIL
+      : null;
 
   currentStatus = {
     ...currentStatus,
     ...partial,
     firebaseConnected: nextFirebase,
     isOwnerConnected: nextOwnerConnected,
+    ownerEmail: nextOwnerEmail,
     hasUnsyncedChanges:
       partial.hasUnsyncedChanges !== undefined
         ? partial.hasUnsyncedChanges
@@ -162,9 +175,33 @@ function emitStatus(partial: Partial<CloudSyncStatus>): void {
   }
 }
 
+export async function getOwnerRequestHeaders(
+  forceRefreshFirebaseToken = false
+): Promise<Record<string, string> | null> {
+  if (!isAdminAuthenticated()) return null;
+
+  const headers: Record<string, string> = {};
+  const adminToken = getAdminToken();
+  if (adminToken && adminToken.startsWith('sabbir_sqa_admin_v2_')) {
+    headers['x-admin-token'] = adminToken;
+  }
+
+  const firebaseToken = await getOwnerIdToken(forceRefreshFirebaseToken);
+  if (firebaseToken) {
+    headers.Authorization = `Bearer ${firebaseToken}`;
+  }
+
+  if (!headers['x-admin-token'] && !headers.Authorization) {
+    return null;
+  }
+
+  return headers;
+}
+
 export function canFirebaseOwnerWrite(): boolean {
+  if (!isAdminAuthenticated()) return false;
+  if (hasSignedAdminToken()) return true;
   return (
-    isAdminAuthenticated() &&
     isVerifiedFirebaseOwner(auth.currentUser) &&
     hasFreshOwnerAuthToken(auth.currentUser)
   );
@@ -275,25 +312,53 @@ async function persistSnapshotToServer(snapshot: CloudPortfolioSnapshotPayload):
   if (typeof window === 'undefined' || isApplyingSnapshot) return false;
   if (!canFirebaseOwnerWrite()) return false;
 
-  const idToken = await getOwnerIdToken();
-  if (!idToken) return false;
+  const initialHeaders = await getOwnerRequestHeaders(false);
+  if (!initialHeaders) return false;
 
-  return enqueueSnapshotWrite(async () => {
-    const res = await fetch('/api/portfolio/snapshot', {
+  const sendSaveRequest = async (authHeaders: Record<string, string>) => {
+    return fetch('/api/portfolio/snapshot', {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${idToken}`,
+        ...authHeaders,
       },
       body: JSON.stringify({ snapshot }),
     });
+  };
 
-    const json = (await res.json().catch(() => ({}))) as {
-      success?: boolean;
-      error?: string;
-    };
+  return enqueueSnapshotWrite(async () => {
+    let res = await sendSaveRequest(initialHeaders);
+
+    if (res.status === 401) {
+      const refreshedHeaders = await getOwnerRequestHeaders(true);
+      if (refreshedHeaders && refreshedHeaders.Authorization) {
+        res = await sendSaveRequest(refreshedHeaders);
+      }
+    }
+
+    let json: { success?: boolean; error?: string } = {};
+    try {
+      const text = await res.text();
+      if (text) {
+        json = JSON.parse(text) as { success?: boolean; error?: string };
+      }
+    } catch {
+      json = {};
+    }
 
     if (!res.ok || !json.success) {
+      if (res.status === 401) {
+        throw new Error(
+          json.error ||
+            'সেশনের মেয়াদ শেষ হয়েছে (401)। Lock বাটন থেকে আবার Admin Password দিয়ে আনলক করুন।'
+        );
+      }
+      if (res.status === 404) {
+        throw new Error(
+          json.error ||
+            'সার্ভার এন্ডপয়েন্ট (/api/portfolio/snapshot) পাওয়া যায়নি (404)। সার্ভার রিফ্রেশ করে আবার চেষ্টা করুন।'
+        );
+      }
       throw new Error(json.error || `Save failed (${res.status}).`);
     }
 
@@ -674,6 +739,15 @@ export function initializeCloudRealtimeSync(callbacks: CloudBridgeCallbacks): vo
 
   void pullServerSnapshotOnce();
 
+  const initialAdminActive = isAdminAuthenticated() && hasSignedAdminToken();
+  if (initialAdminActive) {
+    emitStatus({
+      isOwnerConnected: true,
+      ownerEmail: PRIMARY_OWNER_EMAIL,
+      error: null,
+    });
+  }
+
   window.addEventListener(UNSYNCED_EDITS_CHANGED_EVENT, () => {
     emitStatus({ hasUnsyncedChanges: hasLocalUnsyncedEdits() });
   });
@@ -695,28 +769,44 @@ export function initializeCloudRealtimeSync(callbacks: CloudBridgeCallbacks): vo
     void forcePullLatestFromCloud(4000);
   });
 
-  window.addEventListener(ADMIN_AUTH_CHANGED_EVENT, () => {
+  const handleAdminAuthUpdate = () => {
+    const adminActive = isAdminAuthenticated() && hasSignedAdminToken();
+    const fbConnected =
+      isVerifiedFirebaseOwner(auth.currentUser) && hasFreshOwnerAuthToken(auth.currentUser);
+    emitStatus({
+      firebaseConnected: fbConnected,
+      isOwnerConnected: adminActive || fbConnected,
+      ownerEmail: adminActive || fbConnected ? PRIMARY_OWNER_EMAIL : null,
+      error: null,
+    });
     if (canFirebaseOwnerWrite() && hasLocalUnsyncedEdits()) {
       void syncAllLocalDataToCloud();
     }
-  });
+  };
+
+  window.addEventListener(ADMIN_AUTH_CHANGED_EVENT, handleAdminAuthUpdate);
+  window.addEventListener(ADMIN_SESSION_EXPIRED_EVENT, handleAdminAuthUpdate);
 
   onAuthStateChanged(auth, (user) => {
     clearTokenExpiryTimer();
 
     if (user && !hasFreshOwnerAuthToken(user)) {
       void purgeExpiredRuntimeAuthSession();
+      const adminActive = isAdminAuthenticated() && hasSignedAdminToken();
       emitStatus({
         firebaseConnected: false,
-        ownerEmail: null,
+        isOwnerConnected: adminActive,
+        ownerEmail: adminActive ? PRIMARY_OWNER_EMAIL : null,
       });
       return;
     }
 
     const fbConnected = isVerifiedFirebaseOwner(user) && hasFreshOwnerAuthToken(user);
+    const adminActive = isAdminAuthenticated() && hasSignedAdminToken();
     emitStatus({
       firebaseConnected: fbConnected,
-      ownerEmail: fbConnected && user ? user.email : null,
+      isOwnerConnected: fbConnected || adminActive,
+      ownerEmail: fbConnected && user ? user.email : adminActive ? PRIMARY_OWNER_EMAIL : null,
     });
 
     if (fbConnected && user) {
@@ -726,9 +816,11 @@ export function initializeCloudRealtimeSync(callbacks: CloudBridgeCallbacks): vo
       );
       tokenExpiryTimerId = window.setTimeout(() => {
         void purgeExpiredRuntimeAuthSession().then(() => {
+          const stillAdmin = isAdminAuthenticated() && hasSignedAdminToken();
           emitStatus({
             firebaseConnected: false,
-            ownerEmail: null,
+            isOwnerConnected: stillAdmin,
+            ownerEmail: stillAdmin ? PRIMARY_OWNER_EMAIL : null,
           });
         });
       }, msUntilSafeCutoff);

@@ -668,6 +668,13 @@ async function startServer(): Promise<void> {
     res.json({ status: 'ok', service: 'portfolio-server', timestamp: new Date().toISOString() });
   });
 
+  app.all('/api/*', (_req: Request, res: Response) => {
+    res.status(404).json({
+      success: false,
+      error: 'API endpoint not found on server.',
+    });
+  });
+
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
       server: { middlewareMode: true },

@@ -1,6 +1,10 @@
 import type { NextFunction, Request, Response } from 'express';
 import { adminAuth } from '../lib/firebase-admin.ts';
 import { getOrCreateUser, OWNER_ADMIN_EMAIL } from '../db/users.ts';
+import {
+  extractAdminTokenFromHeaders,
+  verifySignedAdminToken,
+} from '../../api/_lib/adminToken.ts';
 
 export interface AuthenticatedRequest extends Request {
   user?: {
@@ -16,13 +20,31 @@ export async function requireOwnerAuth(
   next: NextFunction
 ): Promise<void> {
   try {
+    // 1. Simple Mode: Verify server-signed HMAC Admin Session Token (works on any domain without Firebase popup)
+    const adminSessionToken = extractAdminTokenFromHeaders(
+      req.headers as Record<string, string | string[] | undefined>,
+      req.body
+    );
+
+    if (adminSessionToken && verifySignedAdminToken(adminSessionToken)) {
+      const dbUser = await getOrCreateUser('sabbir_ahamed_owner', OWNER_ADMIN_EMAIL);
+      req.user = {
+        uid: dbUser.id,
+        email: dbUser.email,
+        role: dbUser.role,
+      };
+      next();
+      return;
+    }
+
+    // 2. Fallback / Optional Mode: Verify Firebase Google ID Token for sabbircse72@gmail.com
     const authHeader = req.headers.authorization || '';
     const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
 
     if (!token) {
       res.status(401).json({
         success: false,
-        error: 'Authentication required. Please sign in with sabbircse72@gmail.com.',
+        error: 'Session required. Please unlock Admin Panel with your password.',
       });
       return;
     }
@@ -58,7 +80,7 @@ export async function requireOwnerAuth(
     console.error('[AUTH MIDDLEWARE ERROR]', err);
     res.status(401).json({
       success: false,
-      error: 'Invalid or expired authentication session. Please sign in again.',
+      error: 'Session expired. Please unlock Admin Panel with your password again.',
     });
   }
 }
