@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@300;400;500;600;700&family=Merriweather:wght@400;700&family=Source+Sans+3:wght@400;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
 @import "tailwindcss";
 
 :root {
@@ -206,6 +206,8 @@ body {
     background: #ffffff !important;
     color: #000000 !important;
     min-height: auto !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
 
   /* Cover Letter Print Layout */
@@ -265,18 +267,46 @@ body {
     padding: 10mm !important;
   }
 
-  /* Prevent page-break issues inside content blocks */
+  /* Smart CV & Document Pagination — clean breaks without oversized blank gaps */
   .print-only-resume h1,
   .print-only-resume h2,
-  .print-only-resume .space-y-4 > div,
-  .print-cover-letter-root div,
+  .print-only-resume h3,
+  .cv-section-heading {
+    break-after: avoid !important;
+    page-break-after: avoid !important;
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  .cv-keep-together,
+  .print-only-resume li,
+  .print-only-resume tr,
+  .print-cover-letter-root p,
+  .print-cover-letter-root li,
   .print-visiting-card-sheet div {
-    page-break-inside: avoid;
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  .print-only-resume p,
+  .print-cover-letter-root p {
+    orphans: 3;
+    widows: 3;
+  }
+
+  .print-only-resume ul,
+  .print-cover-letter-root ul {
+    list-style-position: outside !important;
+  }
+
+  .html2pdf__page-break {
+    margin: 0 !important;
+    padding: 0 !important;
   }
 
   @page {
     size: A4 portrait;
-    margin: 10mm 12mm;
+    margin: 12mm 13mm;
   }
 }
 

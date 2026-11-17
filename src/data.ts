@@ -107,7 +107,7 @@ export const WORK_EXPERIENCE: Experience[] = [
     period: '11/2026 - Present',
     location: 'Baridhara Diplomatic Zone, Dhaka, Bangladesh',
     highlights: [
-      '>> System Coverage: Courier Management System & ERP System <<',
+      'System Coverage: Courier Management System & ERP System',
       'Design, write, and maintain automated test suites (UI, API, and integration) across web and mobile platforms.',
       'Build and maintain end-to-end regression coverage for critical business workflows across Courier and ERP systems.',
       'Develop and maintain API test automation for backend microservices, including contract and data-integrity checks.',

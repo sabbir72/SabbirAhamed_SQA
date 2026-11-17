@@ -19,6 +19,13 @@ export const normalizeUrl = (url?: string): string => {
   if (trimmed.startsWith('mailto:') || trimmed.startsWith('tel:')) return trimmed;
   return `https://${trimmed}`;
 };
+
+// Clean highlight formatter (normalizes scope lines like "System Coverage: ..." cleanly)
+const parseHighlightItem = (raw: string) => {
+  const cleaned = raw.replace(/^>>\s*/, '').replace(/\s*<<$/, '').trim();
+  const isScope = /^system coverage:/i.test(cleaned);
+  return { text: cleaned, isScope };
+};
 // TypeScript Props Interface for ResumeBuilderModal
 interface ResumeBuilderModalProps {
   isOpen: boolean;
@@ -197,26 +204,53 @@ export default function ResumeBuilderModal({ isOpen, onClose, onOpenCoverLetter 
     return { totalScore: Math.min(100, score), checks };
   }, [customInfo, activeCareerObjective, selectedProjects]);
 
-  // PDF Export via html2pdf with strict size optimization (< 1MB) and guaranteed clickable hyperlinks
-  const handleDownloadPDF = () => {
+  // PDF Export via html2pdf with exact font sync, accurate color conversion, and crisp A4 pagination
+  const handleDownloadPDF = async () => {
     if (!resumeRef.current) return;
     setIsExportingPdf(true);
 
+    try {
+      const fontsReady = (document as Document & { fonts?: { ready: Promise<unknown> } }).fonts?.ready;
+      if (fontsReady) {
+        await Promise.race([fontsReady, new Promise((resolve) => setTimeout(resolve, 700))]);
+      }
+    } catch {
+      // Proceed even if font API is unavailable
+    }
+
     const element = resumeRef.current;
 
-    // A4 dimensions in mm
+    // A4 dimensions in mm: [top, left, bottom, right]
     const a4WidthMm = 210;
-    const a4HeightMm = 297;
-    // Margins: [top, right, bottom, left] in mm
-    const margin = [10, 10, 10, 10] as [number, number, number, number];
-    const marginY = margin[0]; // 10mm
-    const marginX = margin[3]; // 10mm
-    const innerWidthMm = a4WidthMm - margin[1] - margin[3]; // 190mm
+    const margin = [12, 13, 12, 13] as [number, number, number, number];
+    const marginY = margin[0]; // 12mm
+    const marginX = margin[1]; // 13mm
+    const innerWidthMm = a4WidthMm - margin[1] - margin[3]; // 184mm
+    const innerHeightMm = 297 - margin[0] - margin[2]; // 273mm
 
-    // Target width in CSS pixels for standard 96 DPI: 190mm * 96 / 25.4 = 718.11px -> 718px
-    const targetPxWidth = 718;
-    // Target inner page height in CSS pixels: 277mm * 96 / 25.4 = 1046.93px -> 1046px
-    const targetPxHeight = 1046;
+    // Target width in CSS pixels at 96 DPI: 184mm * 96 / 25.4 = 695.4px -> 695px
+    const targetPxWidth = 695;
+    // Match html2pdf's internal pxPageHeight ratio: floor(width * inner.ratio)
+    const targetPxHeight = Math.floor(targetPxWidth * (innerHeightMm / innerWidthMm));
+
+    // Pre-clean a detached clone BEFORE html2pdf runs pagebreaks.js so pagebreaks.js measures
+    // the exact 695px width & zero-padding layout that html2canvas screenshots (prevents height drift & line slicing)
+    const stagedClone = element.cloneNode(true) as HTMLElement;
+    stagedClone.className = stagedClone.className
+      .replace(/\b(shadow-\S+|rounded-\S+|min-h-\S+|p-\d+|sm:p-\S+|max-w-\S+)\b/g, '')
+      .trim();
+    stagedClone.style.padding = '0px';
+    stagedClone.style.margin = '0px';
+    stagedClone.style.minHeight = 'auto';
+    stagedClone.style.border = 'none';
+    stagedClone.style.boxShadow = 'none';
+    stagedClone.style.borderRadius = '0px';
+    stagedClone.style.width = `${targetPxWidth}px`;
+    stagedClone.style.maxWidth = `${targetPxWidth}px`;
+    stagedClone.style.boxSizing = 'border-box';
+    stagedClone.style.backgroundColor = '#ffffff';
+    stagedClone.style.color = '#111827';
+    stagedClone.style.fontVariantLigatures = 'none';
 
     const linkOverlays: {
       url: string;
@@ -230,60 +264,72 @@ export default function ResumeBuilderModal({ isOpen, onClose, onOpenCoverLetter 
     const opt = {
       margin: margin,
       filename: `${getCvBaseFileName()}.pdf`,
-      // Quality 0.88 with JPEG keeps text razor-sharp at 2x scale while dropping file size to ~400KB - 700KB (< 1MB)
-      image: { type: 'jpeg' as const, quality: 0.88 },
-      enableLinks: false, // Handled with our exact pixel-to-millimeter overlay engine
-      html2canvas: { 
-        scale: 2, 
-        useCORS: true, 
+      image: { type: 'jpeg' as const, quality: 0.94 },
+      enableLinks: false,
+      html2canvas: {
+        scale: 2,
+        useCORS: true,
         logging: false,
         backgroundColor: '#ffffff',
+        scrollX: 0,
+        scrollY: 0,
+        windowWidth: 960,
         onclone: (clonedDoc: Document) => {
-          // Replace oklch in all style tags to avoid html2canvas CSS parsing crash
+          // Accurately convert any oklch(...) color expressions into rgba(...) so backgrounds/borders keep exact tones
+          const colorCache = new Map<string, string>();
+          const colorCanvas = clonedDoc.createElement('canvas');
+          colorCanvas.width = 1;
+          colorCanvas.height = 1;
+          const colorCtx = colorCanvas.getContext('2d', { willReadFrequently: true });
+          const convertOklch = (val: string) => {
+            if (colorCache.has(val)) return colorCache.get(val)!;
+            let resolved = '#111827';
+            if (colorCtx) {
+              try {
+                colorCtx.clearRect(0, 0, 1, 1);
+                colorCtx.fillStyle = 'rgba(0,0,0,0)';
+                colorCtx.fillStyle = val;
+                colorCtx.fillRect(0, 0, 1, 1);
+                const [r, g, b, a] = colorCtx.getImageData(0, 0, 1, 1).data;
+                resolved = a === 0 ? 'transparent' : a < 255 ? `rgba(${r}, ${g}, ${b}, ${(a / 255).toFixed(3)})` : `rgb(${r}, ${g}, ${b})`;
+              } catch {
+                resolved = '#111827';
+              }
+            }
+            colorCache.set(val, resolved);
+            return resolved;
+          };
+
           const styles = clonedDoc.querySelectorAll('style');
           styles.forEach((styleTag) => {
             if (styleTag.innerHTML && styleTag.innerHTML.includes('oklch')) {
-              styleTag.innerHTML = styleTag.innerHTML.replace(/oklch\([^)]+\)/g, '#111827');
+              styleTag.innerHTML = styleTag.innerHTML.replace(/oklch\([^)]+\)/g, (match) => convertOklch(match));
             }
           });
 
+          // Inject crisp list indent and ligature-free rendering rules without wiping pagebreak spacer heights
+          const extraStyle = clonedDoc.createElement('style');
+          extraStyle.textContent = `
+            .print-only-resume {
+              padding: 0 !important;
+              margin: 0 !important;
+              min-height: auto !important;
+              box-shadow: none !important;
+              border-radius: 0 !important;
+              font-variant-ligatures: none !important;
+            }
+            .print-only-resume * {
+              box-sizing: border-box !important;
+              font-variant-ligatures: none !important;
+            }
+            ul {
+              list-style-position: outside !important;
+            }
+          `;
+          clonedDoc.head.appendChild(extraStyle);
+
           const root = clonedDoc.querySelector('.print-only-resume') as HTMLElement | null;
           if (root) {
-            // Lock background and layout to exact 190mm print width in CSS pixels
-            root.style.backgroundColor = '#ffffff';
-            root.style.color = '#000000';
-            root.style.border = 'none';
-            root.style.boxShadow = 'none';
-            root.style.borderRadius = '0px';
-            root.style.width = `${targetPxWidth}px`;
-            root.style.maxWidth = `${targetPxWidth}px`;
-            root.style.boxSizing = 'border-box';
-
-            const allEls = root.querySelectorAll('*');
-            allEls.forEach((el) => {
-              const htmlEl = el as HTMLElement;
-              const style = window.getComputedStyle(htmlEl);
-              if (style.color && style.color.includes('oklch')) {
-                htmlEl.style.color = '#111827';
-              }
-              if (style.backgroundColor && style.backgroundColor.includes('oklch')) {
-                if (htmlEl.classList.contains('bg-slate-900')) {
-                  htmlEl.style.backgroundColor = '#0f172a';
-                } else if (htmlEl.classList.contains('bg-slate-50') || htmlEl.classList.contains('bg-gray-100')) {
-                  htmlEl.style.backgroundColor = '#f3f4f6';
-                } else if (htmlEl.classList.contains('bg-slate-200')) {
-                  htmlEl.style.backgroundColor = '#e2e8f0';
-                } else {
-                  htmlEl.style.backgroundColor = 'transparent';
-                }
-              }
-              if (style.borderColor && style.borderColor.includes('oklch')) {
-                htmlEl.style.borderColor = '#d1d5db';
-              }
-            });
-
-            // Capture exact link coordinates from the CLONED document
-            // where width, wrapping, and heights exactly match the canvas painting
             const rootRect = root.getBoundingClientRect();
             const mmPerPx = innerWidthMm / (rootRect.width || targetPxWidth);
 
@@ -299,7 +345,6 @@ export default function ResumeBuilderModal({ isOpen, onClose, onOpenCoverLetter 
                 const rect = clientRects[i];
                 if (rect.width <= 0 || rect.height <= 0) continue;
 
-                // Relative offset inside the root canvas container
                 const leftPx = rect.left - rootRect.left;
                 const topPx = rect.top - rootRect.top;
                 const widthPx = rect.width;
@@ -308,58 +353,55 @@ export default function ResumeBuilderModal({ isOpen, onClose, onOpenCoverLetter 
                 const pageNum = Math.floor(topPx / targetPxHeight) + 1;
                 const yInPagePx = topPx % targetPxHeight;
 
-                const xMm = marginX + (leftPx * mmPerPx);
-                const yMm = marginY + (yInPagePx * mmPerPx);
+                const xMm = marginX + leftPx * mmPerPx;
+                const yMm = marginY + yInPagePx * mmPerPx;
                 const wMm = widthPx * mmPerPx;
                 const hMm = heightPx * mmPerPx;
 
-                // Add 0.8mm hit-box padding for effortless clicking
                 linkOverlays.push({
                   url,
-                  x: Math.max(0, xMm - 0.6),
-                  y: Math.max(0, yMm - 0.6),
-                  w: wMm + 1.2,
-                  h: hMm + 1.2,
-                  page: pageNum
+                  x: Math.max(0, xMm - 0.5),
+                  y: Math.max(0, yMm - 0.5),
+                  w: wMm + 1.0,
+                  h: hMm + 1.0,
+                  page: pageNum,
                 });
               }
             });
           }
-        }
+        },
       },
       jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' as const, compress: true },
-      pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
+      pagebreak: {
+        mode: ['css', 'legacy'],
+        avoid: ['.cv-keep-together', '.cv-section-heading', 'h1', 'h2', 'h3', 'li', 'tr'],
+      },
     };
 
     html2pdf()
       .set(opt)
-      .from(element)
+      .from(stagedClone)
       .toPdf()
       .get('pdf')
       .then((pdf: any) => {
         if (pdf && pdf.internal) {
-          // Patch jsPDF link function to ensure lower-left and upper-right coordinates strictly adhere to ISO 32000-1 PDF standard
-          pdf.link = function(x: number, y: number, w: number, h: number, options: any) {
+          pdf.link = function (x: number, y: number, w: number, h: number, options: any) {
             const pageInfo = this.internal.getCurrentPageInfo();
             const s = this.internal.getCoordinateString;
             const o = this.internal.getVerticalCoordinateString;
-            // PDF user space origin is at bottom-left:
-            // y + h is closer to bottom (lower numerical value in PDF coordinate space)
-            // y is closer to top (higher numerical value in PDF coordinate space)
             pageInfo.pageContext.annotations.push({
               finalBounds: {
                 x: s(x),
-                y: o(y + h), // yBottom
+                y: o(y + h),
                 w: s(x + w),
-                h: o(y)      // yTop
+                h: o(y),
               },
               options: options,
-              type: 'link'
+              type: 'link',
             });
           };
 
           const totalPages = pdf.internal.getNumberOfPages();
-          // Inject each verified clickable link overlay into its respective PDF page
           linkOverlays.forEach((item) => {
             if (item.page <= totalPages) {
               pdf.setPage(item.page);
@@ -369,7 +411,6 @@ export default function ResumeBuilderModal({ isOpen, onClose, onOpenCoverLetter 
           pdf.setPage(totalPages);
         }
 
-        // Save PDF directly through the jsPDF instance with embedded link annotations
         pdf.save(opt.filename);
         setIsExportingPdf(false);
       })
@@ -380,7 +421,7 @@ export default function ResumeBuilderModal({ isOpen, onClose, onOpenCoverLetter 
       });
   };
 
-  // Browser Print trigger with dedicated isolated iframe for A4 print/PDF output
+  // Browser Print trigger with dedicated isolated iframe, font-ready sync, and crisp A4 layout
   const handlePrint = () => {
     try {
       window.focus();
@@ -390,12 +431,14 @@ export default function ResumeBuilderModal({ isOpen, onClose, onOpenCoverLetter 
         return;
       }
 
-      // Collect all active styles and fonts from head
       const styleSheets = Array.from(document.querySelectorAll('style, link[rel="stylesheet"]'))
         .map((el) => el.outerHTML)
         .join('\n');
 
-      // Create an isolated print iframe
+      const printSafeClass = element.className
+        .replace(/\b(shadow-\S+|rounded-\S+|min-h-\S+|p-\d+|sm:p-\S+|max-w-\S+)\b/g, '')
+        .trim();
+
       const iframe = document.createElement('iframe');
       iframe.style.position = 'fixed';
       iframe.style.right = '0';
@@ -415,29 +458,53 @@ export default function ResumeBuilderModal({ isOpen, onClose, onOpenCoverLetter 
               <title>${getCvBaseFileName()}</title>
               ${styleSheets}
               <style>
-                @page { size: A4 portrait; margin: 10mm 12mm; }
-                body {
+                @page { size: A4 portrait; margin: 12mm 13mm; }
+                html, body {
                   background-color: #ffffff !important;
-                  color: #000000 !important;
+                  color: #111827 !important;
                   margin: 0 !important;
                   padding: 0 !important;
+                  width: 100% !important;
                   -webkit-print-color-adjust: exact !important;
                   print-color-adjust: exact !important;
                 }
                 .print-only-resume {
                   width: 100% !important;
                   max-width: 100% !important;
+                  min-height: auto !important;
                   box-shadow: none !important;
                   border: none !important;
+                  border-radius: 0 !important;
                   background: #ffffff !important;
-                  color: #000000 !important;
+                  color: #111827 !important;
                   padding: 0 !important;
                   margin: 0 !important;
+                  font-variant-ligatures: none !important;
+                }
+                .print-only-resume * {
+                  box-sizing: border-box !important;
+                }
+                .cv-section-heading, h1, h2, h3 {
+                  break-after: avoid !important;
+                  page-break-after: avoid !important;
+                  break-inside: avoid !important;
+                  page-break-inside: avoid !important;
+                }
+                .cv-keep-together, li, tr {
+                  break-inside: avoid !important;
+                  page-break-inside: avoid !important;
+                }
+                p {
+                  orphans: 3;
+                  widows: 3;
+                }
+                ul {
+                  list-style-position: outside !important;
                 }
               </style>
             </head>
             <body>
-              <div class="print-only-resume">
+              <div class="${printSafeClass}">
                 ${element.innerHTML}
               </div>
             </body>
@@ -445,7 +512,7 @@ export default function ResumeBuilderModal({ isOpen, onClose, onOpenCoverLetter 
         `);
         doc.close();
 
-        setTimeout(() => {
+        const triggerIframePrint = () => {
           try {
             iframe.contentWindow?.focus();
             iframe.contentWindow?.print();
@@ -457,8 +524,17 @@ export default function ResumeBuilderModal({ isOpen, onClose, onOpenCoverLetter 
             if (document.body.contains(iframe)) {
               document.body.removeChild(iframe);
             }
-          }, 1500);
-        }, 300);
+          }, 1800);
+        };
+
+        const fontsReady = (doc as Document & { fonts?: { ready: Promise<unknown> } }).fonts?.ready;
+        if (fontsReady) {
+          Promise.race([fontsReady, new Promise((resolve) => setTimeout(resolve, 600))]).then(() => {
+            setTimeout(triggerIframePrint, 120);
+          });
+        } else {
+          setTimeout(triggerIframePrint, 400);
+        }
       } else {
         window.print();
       }
@@ -542,12 +618,20 @@ export default function ResumeBuilderModal({ isOpen, onClose, onOpenCoverLetter 
       padding-bottom: 2pt;
       margin: 12pt 0 4pt 0;
       letter-spacing: 0.5pt;
+      page-break-after: avoid;
+      break-after: avoid;
     }
     table.data-table {
       width: 100%;
       border-collapse: collapse;
       margin-top: 3pt;
       margin-bottom: 2pt;
+      page-break-inside: avoid;
+      break-inside: avoid;
+    }
+    .keep-block {
+      page-break-inside: avoid;
+      break-inside: avoid;
     }
     td.left-col {
       text-align: left;
@@ -568,14 +652,16 @@ export default function ResumeBuilderModal({ isOpen, onClose, onOpenCoverLetter 
     }
     li.bullet-item {
       font-size: 9.5pt;
-      line-height: 1.35;
+      line-height: 1.38;
       margin-bottom: 2.5pt;
       color: #1a1a1a;
+      page-break-inside: avoid;
+      break-inside: avoid;
     }
     p {
       margin: 0 0 4pt 0;
       font-size: 9.5pt;
-      line-height: 1.35;
+      line-height: 1.38;
     }
     a {
       color: #0a66c2;
@@ -599,7 +685,7 @@ export default function ResumeBuilderModal({ isOpen, onClose, onOpenCoverLetter 
 
   <!-- Career Objective -->
   <div class="section-title">CAREER OBJECTIVE</div>
-  <p>${activeCareerObjective}</p>
+  <p class="keep-block">${activeCareerObjective}</p>
 
   <!-- Core Skills -->
   <div class="section-title">CORE TECHNICAL SKILLS</div>
@@ -615,14 +701,23 @@ export default function ResumeBuilderModal({ isOpen, onClose, onOpenCoverLetter 
   <!-- Work Experience -->
   <div class="section-title">WORK EXPERIENCE</div>
   ${WORK_EXPERIENCE.map(exp => `
-    <table class="data-table" border="0" cellpadding="0" cellspacing="0">
+    <table class="data-table" border="0" cellpadding="0" cellspacing="0" style="page-break-after: avoid; break-after: avoid;">
       <tr>
-        <td class="left-col" style="width: 70%;"><b>${exp.role}</b> - ${exp.company}</td>
-        <td class="right-col" style="width: 30%;">${exp.period} | ${exp.location}</td>
+        <td class="left-col" style="width: 68%;"><b>${exp.role}</b></td>
+        <td class="right-col" style="width: 32%;">${exp.period}</td>
+      </tr>
+      <tr>
+        <td class="left-col" style="width: 68%; color: #334155;">${exp.company}</td>
+        <td class="right-col" style="width: 32%; font-weight: normal; color: #475569;">${exp.location}</td>
       </tr>
     </table>
     <ul class="bullet-list">
-      ${exp.highlights.map(h => `<li class="bullet-item">${h}</li>`).join('')}
+      ${exp.highlights.map(h => {
+        const parsed = parseHighlightItem(h);
+        return parsed.isScope
+          ? `<li class="bullet-item" style="list-style: none; margin-left: -14pt; font-weight: bold; color: #0f172a;">${parsed.text}</li>`
+          : `<li class="bullet-item">${parsed.text}</li>`;
+      }).join('')}
     </ul>
   `).join('')}
 
@@ -630,33 +725,37 @@ export default function ResumeBuilderModal({ isOpen, onClose, onOpenCoverLetter 
   ${selectedProjects.length > 0 ? `
     <div class="section-title">KEY SQA PROJECTS</div>
     ${selectedProjects.map(proj => `
-      <table class="data-table" border="0" cellpadding="0" cellspacing="0">
-        <tr>
-          <td class="left-col" style="width: 75%;">
-            <b>${proj.title}</b>
-            ${proj.link ? ` [ <a href="${normalizeUrl(proj.link)}">GitHub Repo</a> ]` : ''}
-          </td>
-          <td class="right-col" style="width: 25%; color: #555555;">[ ${proj.type.toUpperCase()} ]</td>
-        </tr>
-      </table>
-      <p style="margin-bottom: 2pt;">${proj.description}</p>
-      <p style="font-size: 9pt; color: #444444; margin-bottom: 6pt;">
-        <b>Tools & Tech:</b> ${proj.tags.join(', ')}
-        ${proj.metrics && proj.metrics.length > 0 ? ` | <b>Metrics:</b> ${proj.metrics.map(m => `${m.label}: ${m.value}`).join(' • ')}` : ''}
-      </p>
+      <div class="keep-block" style="margin-bottom: 6pt;">
+        <table class="data-table" border="0" cellpadding="0" cellspacing="0">
+          <tr>
+            <td class="left-col" style="width: 75%;">
+              <b>${proj.title}</b>
+              ${proj.link ? ` [ <a href="${normalizeUrl(proj.link)}">GitHub Repo</a> ]` : ''}
+            </td>
+            <td class="right-col" style="width: 25%; color: #555555;">[ ${proj.type.toUpperCase()} ]</td>
+          </tr>
+        </table>
+        <p style="margin-bottom: 2pt;">${proj.description}</p>
+        <p style="font-size: 9pt; color: #444444; margin-bottom: 4pt;">
+          <b>Tools & Tech:</b> ${proj.tags.join(', ')}
+          ${proj.metrics && proj.metrics.length > 0 ? ` | <b>Metrics:</b> ${proj.metrics.map(m => `${m.label}: ${m.value}`).join(' • ')}` : ''}
+        </p>
+      </div>
     `).join('')}
   ` : ''}
 
   <!-- Education -->
   <div class="section-title">EDUCATION</div>
   ${EDUCATION_HISTORY.map(edu => `
-    <table class="data-table" border="0" cellpadding="0" cellspacing="0">
-      <tr>
-        <td class="left-col" style="width: 70%;"><b>${edu.degree}</b> - ${edu.institution}</td>
-        <td class="right-col" style="width: 30%;">${edu.period} | ${edu.location}</td>
-      </tr>
-    </table>
-    ${edu.details ? `<p style="font-size: 9pt; color: #444444; margin-top: 1pt; margin-bottom: 4pt;">${edu.details}</p>` : ''}
+    <div class="keep-block" style="margin-bottom: 4pt;">
+      <table class="data-table" border="0" cellpadding="0" cellspacing="0">
+        <tr>
+          <td class="left-col" style="width: 70%;"><b>${edu.degree}</b> - ${edu.institution}</td>
+          <td class="right-col" style="width: 30%;">${edu.period} | ${edu.location}</td>
+        </tr>
+      </table>
+      ${edu.details ? `<p style="font-size: 9pt; color: #444444; margin-top: 1pt; margin-bottom: 2pt;">${edu.details}</p>` : ''}
+    </div>
   `).join('')}
 
   <!-- Professional References -->
@@ -1315,98 +1414,147 @@ Software Quality Assurance Engineer`;
           {/* Printable A4 Container Card */}
           <div 
             ref={resumeRef}
-            className={`print-only-resume bg-white text-black shadow-2xl rounded-sm w-full max-w-[210mm] min-h-[297mm] p-8 sm:p-10 text-xs leading-relaxed selection:bg-amber-200 ${
+            className={`print-only-resume bg-white text-[#111827] shadow-2xl rounded-sm w-full max-w-[210mm] min-h-[297mm] p-7 sm:p-[13mm] text-[10.5px] leading-[1.42] selection:bg-amber-200 ${
               fontFamily === 'serif' ? 'font-ats-serif' : fontFamily === 'corporate' ? 'font-ats-corporate' : 'font-ats-modern'
             }`}
-            style={{ width: '100%', maxWidth: '210mm', color: '#000000', backgroundColor: '#ffffff' }}
+            style={{ width: '100%', maxWidth: '210mm', color: '#111827', backgroundColor: '#ffffff' }}
           >
 
             {/* TEMPLATE 1: CLASSIC ATS (DEFAULT) */}
             {template === 'classic-ats' && (
-              <div className="flex flex-col space-y-4">
+              <div>
                 {/* Header */}
-                <div className="pb-3 mb-4 text-center space-y-1">
-                  <h1 className="text-2xl font-bold uppercase tracking-wide text-black font-serif">{customInfo.name}</h1>
-                  <p className="text-xs font-bold text-black uppercase tracking-wider">{customInfo.title}</p>
-                  <p className="text-[11px] text-black font-mono font-medium">
-                    {customInfo.location} | <a href={`tel:${customInfo.phone}`} className="hover:underline font-semibold" style={{ color: '#000000' }}>{customInfo.phone}</a> | <a href={`mailto:${customInfo.email}`} className="hover:underline font-semibold" style={{ color: '#000000' }}>{customInfo.email}</a>
+                <div className="cv-keep-together mb-3.5 text-center">
+                  <h1 className="text-[21px] font-bold uppercase text-[#0f172a] leading-tight mb-0.5">{customInfo.name}</h1>
+                  <p className="text-[11px] font-bold text-[#1e293b] uppercase tracking-wide mb-1">{customInfo.title}</p>
+                  <p className="text-[10.5px] text-[#1e293b] font-medium mb-1">
+                    {customInfo.location} &nbsp;|&nbsp; <a href={`tel:${customInfo.phone}`} className="hover:underline font-semibold" style={{ color: '#0f172a' }}>{customInfo.phone}</a> &nbsp;|&nbsp; <a href={`mailto:${customInfo.email}`} className="hover:underline font-semibold" style={{ color: '#0f172a' }}>{customInfo.email}</a>
                   </p>
-                  <p className="text-[11px] text-black font-mono flex items-center justify-center gap-2 flex-wrap pt-0.5">
+                  <p className="text-[10.5px] text-[#1e293b] flex items-center justify-center gap-2 flex-wrap pb-2.5">
                     <span>
-                      LinkedIn: <a href={normalizeUrl(customInfo.linkedin)} target="_blank" rel="noopener noreferrer" className="text-[#0a66c2] hover:underline font-bold" style={{ color: '#0a66c2', textDecoration: 'underline' }}>(Click Here)</a>
+                      LinkedIn: <a href={normalizeUrl(customInfo.linkedin)} target="_blank" rel="noopener noreferrer" className="hover:underline font-semibold" style={{ color: '#0a66c2', textDecoration: 'underline' }}>View Profile</a>
                     </span>
                     <span>|</span>
                     <span>
-                      GitHub: <a href={normalizeUrl(customInfo.github)} target="_blank" rel="noopener noreferrer" className="text-gray-900 hover:underline font-bold" style={{ color: '#000000', textDecoration: 'underline' }}>(Click Here)</a>
+                      GitHub: <a href={normalizeUrl(customInfo.github)} target="_blank" rel="noopener noreferrer" className="hover:underline font-semibold" style={{ color: '#0f172a', textDecoration: 'underline' }}>Repositories</a>
                     </span>
                     <span>|</span>
                     <span>
-                      Portfolio: <a href={normalizeUrl(window.location.origin)} target="_blank" rel="noopener noreferrer" className="text-[#ea580c] hover:underline font-bold" style={{ color: '#ea580c', textDecoration: 'underline' }}>(Click Here)</a>
+                      Portfolio: <a href={normalizeUrl(window.location.origin)} target="_blank" rel="noopener noreferrer" className="hover:underline font-semibold" style={{ color: '#c2410c', textDecoration: 'underline' }}>Live Portfolio</a>
                     </span>
                   </p>
+                  <div style={{ height: '1.5px', backgroundColor: '#0f172a', width: '100%' }} />
                 </div>
 
                 {/* Career Objective */}
-                <div className="mb-4">
-                  <h2 className="text-xs font-bold uppercase border-b border-black pb-1 mb-2 text-black tracking-wider">CAREER OBJECTIVE</h2>
-                  <p className="text-[11px] text-black leading-relaxed text-justify">{activeCareerObjective}</p>
+                <div className="cv-keep-together mb-3.5">
+                  <div className="cv-section-heading mb-1.5">
+                    <h2 className="text-[11px] font-bold uppercase text-[#0f172a] leading-[1.35] pb-1">Career Objective</h2>
+                    <div style={{ height: '1.5px', backgroundColor: '#0f172a', width: '100%' }} />
+                  </div>
+                  <p className="text-[10.5px] text-[#111827] leading-[1.44] text-left">{activeCareerObjective}</p>
                 </div>
 
                 {/* Technical Skills */}
-                <div className="mb-4">
-                  <h2 className="text-xs font-bold uppercase border-b border-black pb-1 mb-2 text-black tracking-wider">Technical Skills & Core Competencies</h2>
-                  <div className="grid grid-cols-1 gap-1.5 text-[11px]">
+                <div className="cv-keep-together mb-3.5">
+                  <div className="cv-section-heading mb-1.5">
+                    <h2 className="text-[11px] font-bold uppercase text-[#0f172a] leading-[1.35] pb-1">Technical Skills &amp; Core Competencies</h2>
+                    <div style={{ height: '1.5px', backgroundColor: '#0f172a', width: '100%' }} />
+                  </div>
+                  <div className="text-[10.5px]">
                     {SKILL_CATEGORIES.map((cat) => (
-                      <div key={cat.category} className="flex">
-                        <span className="font-bold w-36 shrink-0 text-black">{cat.category}:</span>
-                        <span className="text-black">{cat.items.join(', ')}</span>
+                      <div key={cat.category} className="grid grid-cols-[155px_1fr] gap-x-3 items-start leading-[1.4] mb-1">
+                        <span className="font-bold text-[#0f172a]">{cat.category}:</span>
+                        <span className="text-[#1e293b]">{cat.items.join(', ')}</span>
                       </div>
                     ))}
                   </div>
                 </div>
 
                 {/* Professional Experience */}
-                <div className="mb-4 space-y-2.5">
-                  <h2 className="text-xs font-bold uppercase border-b border-black pb-1 mb-2 text-black tracking-wider">Professional Experience</h2>
-                  {WORK_EXPERIENCE.map((exp) => (
-                    <div key={exp.id} className="space-y-1 mb-3">
-                      <div className="flex justify-between font-bold text-[11px] text-black">
-                        <span>{exp.role} — {exp.company}</span>
-                        <span>{exp.period} | {exp.location}</span>
+                <div className="mb-3.5">
+                  <div className="cv-section-heading mb-1.5">
+                    <h2 className="text-[11px] font-bold uppercase text-[#0f172a] leading-[1.35] pb-1">Professional Experience</h2>
+                    <div style={{ height: '1.5px', backgroundColor: '#0f172a', width: '100%' }} />
+                  </div>
+                  {WORK_EXPERIENCE.map((exp) => {
+                    const parsed = exp.highlights.map(parseHighlightItem);
+                    const scopeLines = parsed.filter(item => item.isScope);
+                    const bulletLines = parsed.filter(item => !item.isScope);
+                    return (
+                      <div key={exp.id} className="mb-2.5">
+                        <div className="cv-keep-together">
+                          <div className="cv-section-heading mb-1">
+                            <div className="flex justify-between items-start gap-4 font-bold text-[11px] text-[#0f172a]">
+                              <span>{exp.role}</span>
+                              <span className="text-[10px] font-bold text-[#1e293b] shrink-0 whitespace-nowrap tabular-nums">{exp.period}</span>
+                            </div>
+                            <div className="flex justify-between items-start gap-4 text-[10px] text-[#334155] mt-0.5">
+                              <span className="font-semibold text-[#1e293b]">{exp.company}</span>
+                              <span className="text-right shrink-0">{exp.location}</span>
+                            </div>
+                            {scopeLines.map((s, idx) => (
+                              <p key={idx} className="text-[10px] font-semibold text-[#0f172a] mt-0.5">{s.text}</p>
+                            ))}
+                          </div>
+                          {bulletLines.length > 0 && (
+                            <ul className="list-disc pl-4 text-[10.5px] text-[#111827]">
+                              <li className="leading-[1.4] mb-0.5">{bulletLines[0].text}</li>
+                            </ul>
+                          )}
+                        </div>
+                        {bulletLines.length > 1 && (
+                          <ul className="list-disc pl-4 text-[10.5px] text-[#111827]">
+                            {bulletLines.slice(1).map((b, i) => (
+                              <li key={i} className="cv-keep-together leading-[1.4] mb-0.5">{b.text}</li>
+                            ))}
+                          </ul>
+                        )}
                       </div>
-                      <ul className="list-disc list-inside text-[11px] text-black space-y-0.5 pl-1">
-                        {exp.highlights.map((h, i) => (
-                          <li key={i} className="leading-snug">{h}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
 
                 {/* Key SQA Projects (Filtered!) */}
                 {selectedProjects.length > 0 && (
-                  <div className="mb-4 space-y-2">
-                    <h2 className="text-xs font-bold uppercase border-b border-black pb-1 mb-2 text-black tracking-wider">Featured SQA Automation & Testing Projects</h2>
+                  <div className="mb-3.5">
+                    <div className="cv-section-heading mb-1.5">
+                      <h2 className="text-[11px] font-bold uppercase text-[#0f172a] leading-[1.35] pb-1">Featured SQA Automation &amp; Testing Projects</h2>
+                      <div style={{ height: '1.5px', backgroundColor: '#0f172a', width: '100%' }} />
+                    </div>
                     {selectedProjects.map((proj) => (
-                      <div key={proj.id} className="space-y-0.5 text-[11px] mb-2">
-                        <div className="flex justify-between items-baseline font-bold text-black">
-                          <span>{proj.title} ({proj.type})</span>
+                      <div key={proj.id} className="cv-keep-together text-[10.5px] mb-2">
+                        <div className="flex justify-between items-start gap-4 font-bold text-[#0f172a] mb-0.5">
+                          <span>
+                            {proj.title} <span className="text-[9.5px] font-semibold text-[#475569]">({proj.type})</span>
+                          </span>
                           {proj.link && (
                             <a 
                               href={normalizeUrl(proj.link)} 
                               target="_blank" 
                               rel="noopener noreferrer" 
-                              className="text-[#0a66c2] hover:underline font-bold text-[10.5px] inline-flex items-center gap-0.5"
+                              className="hover:underline font-semibold text-[10px] shrink-0 whitespace-nowrap"
                               style={{ color: '#0a66c2', textDecoration: 'underline' }}
                             >
-                              GitHub Repo (Click Here) ↗
+                              GitHub Repo
                             </a>
                           )}
                         </div>
-                        <p className="text-black">{proj.description}</p>
-                        {proj.tags && (
-                          <p className="text-[10px] text-black font-mono">
-                            <span className="font-bold text-black">Tech Used:</span> {proj.tags.join(' • ')}
+                        <p className="text-[#1e293b] leading-[1.4] text-left mb-0.5">{proj.description}</p>
+                        {(proj.tags || (proj.metrics && proj.metrics.length > 0)) && (
+                          <p className="text-[10px] text-[#334155] leading-[1.35]">
+                            {proj.tags && (
+                              <>
+                                <span className="font-bold text-[#0f172a]">Tools:</span> {proj.tags.join(' • ')}
+                              </>
+                            )}
+                            {proj.metrics && proj.metrics.length > 0 && (
+                              <span>
+                                {proj.tags ? '  |  ' : ''}
+                                <span className="font-bold text-[#0f172a]">Impact:</span>{' '}
+                                {proj.metrics.map(m => `${m.label}: ${m.value}`).join(' • ')}
+                              </span>
+                            )}
                           </p>
                         )}
                       </div>
@@ -1415,20 +1563,23 @@ Software Quality Assurance Engineer`;
                 )}
 
                 {/* Education */}
-                <div className="mb-4 space-y-2.5">
-                  <h2 className="text-xs font-bold uppercase border-b border-black pb-1 mb-2 text-black tracking-wider">Education & Certifications</h2>
+                <div className="cv-keep-together mb-3.5">
+                  <div className="cv-section-heading mb-1.5">
+                    <h2 className="text-[11px] font-bold uppercase text-[#0f172a] leading-[1.35] pb-1">Education &amp; Certifications</h2>
+                    <div style={{ height: '1.5px', backgroundColor: '#0f172a', width: '100%' }} />
+                  </div>
                   {EDUCATION_HISTORY.map((edu) => (
-                    <div key={edu.id} className="text-[11px] space-y-0.5">
-                      <div className="flex justify-between items-baseline">
-                        <span className="font-bold text-black">
-                          {edu.degree} — <span className="font-semibold text-black">{edu.institution}</span>
+                    <div key={edu.id} className="text-[10.5px] mb-1.5">
+                      <div className="flex justify-between items-start gap-4">
+                        <span className="font-bold text-[#0f172a]">
+                          {edu.degree} <span className="font-semibold text-[#334155]">— {edu.institution}</span>
                         </span>
-                        <span className="font-mono text-[10.5px] font-bold text-black shrink-0 ml-4 whitespace-nowrap">
+                        <span className="text-[10px] font-bold text-[#1e293b] shrink-0 whitespace-nowrap tabular-nums">
                           {edu.period}
                         </span>
                       </div>
                       {edu.details && (
-                        <p className="text-[10px] text-black leading-snug pl-0.5">
+                        <p className="text-[10px] text-[#334155] leading-[1.36] mt-0.5">
                           {edu.details}
                         </p>
                       )}
@@ -1436,416 +1587,602 @@ Software Quality Assurance Engineer`;
                   ))}
                 </div>
 
-                {/* References */}
-                <div className="mb-2">
-                  <h2 className="text-xs font-bold uppercase border-b border-black pb-1 mb-2 text-black tracking-wider">Professional References</h2>
-                  {portfolioReferences.map((ref) => (
-                    <p key={ref.id} className="text-[11px] text-black mb-1">
-                      <span className="font-bold text-black">{ref.name}</span> — {ref.role}, {ref.company} | Email: {ref.email} | Phone: {ref.phone}
-                    </p>
-                  ))}
-                </div>
+                {/* References (grouped cleanly so neither heading nor contact line ever splits across pages) */}
+                {portfolioReferences.length > 0 && (
+                  <div className="cv-keep-together">
+                    <div className="cv-section-heading mb-1.5">
+                      <h2 className="text-[11px] font-bold uppercase text-[#0f172a] leading-[1.35] pb-1">Professional References</h2>
+                      <div style={{ height: '1.5px', backgroundColor: '#0f172a', width: '100%' }} />
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5">
+                      {portfolioReferences.map((ref) => (
+                        <div key={ref.id} className="text-[10px] text-[#111827] leading-[1.38]">
+                          <p className="font-bold text-[#0f172a]">{ref.name}</p>
+                          <p className="text-[#334155]">{ref.role}, {ref.company}</p>
+                          <p className="text-[#475569]">{ref.email} | {ref.phone}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
             {/* TEMPLATE 2: MODERN PROFESSIONAL */}
             {template === 'modern-pro' && (
-              <div className="space-y-5">
+              <div>
                 {/* Modern Header */}
-                <div className="p-5 -mx-8 -mt-8 mb-4 rounded-b-md space-y-1.5" style={{ backgroundColor: '#0f172a', color: '#ffffff' }}>
-                  <h1 className="text-2xl font-black uppercase tracking-tight" style={{ color: '#ffffff' }}>{customInfo.name}</h1>
-                  <p className="text-xs font-bold tracking-wider uppercase" style={{ color: '#f59e0b' }}>{customInfo.title}</p>
-                  <div className="flex flex-wrap gap-x-4 gap-y-1 text-[10.5px] font-mono pt-1" style={{ color: '#f8fafc' }}>
-                    <span>📍 {customInfo.location}</span>
-                    <span>📞 <a href={`tel:${customInfo.phone}`} className="hover:underline font-semibold" style={{ color: '#ffffff' }}>{customInfo.phone}</a></span>
-                    <span>✉️ <a href={`mailto:${customInfo.email}`} className="hover:underline font-semibold" style={{ color: '#ffffff' }}>{customInfo.email}</a></span>
-                    <span>🔗 <a href={normalizeUrl(customInfo.linkedin)} target="_blank" rel="noopener noreferrer" className="hover:underline font-bold" style={{ color: '#f59e0b', textDecoration: 'underline' }}>LinkedIn (Click Here)</a></span>
-                    <span>💻 <a href={normalizeUrl(customInfo.github)} target="_blank" rel="noopener noreferrer" className="hover:underline font-bold" style={{ color: '#f59e0b', textDecoration: 'underline' }}>GitHub (Click Here)</a></span>
-                    <span>🌐 <a href={normalizeUrl(window.location.origin)} target="_blank" rel="noopener noreferrer" className="hover:underline font-bold" style={{ color: '#f59e0b', textDecoration: 'underline' }}>Portfolio (Click Here)</a></span>
+                <div className="cv-keep-together px-5 py-3.5 rounded-md mb-3.5" style={{ backgroundColor: '#0f172a', color: '#ffffff' }}>
+                  <h1 className="text-[21px] font-bold uppercase leading-tight mb-0.5" style={{ color: '#ffffff' }}>{customInfo.name}</h1>
+                  <p className="text-[11px] font-bold uppercase tracking-wide mb-1.5" style={{ color: '#fbbf24' }}>{customInfo.title}</p>
+                  <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[10px]" style={{ color: '#e2e8f0' }}>
+                    <span>{customInfo.location}</span>
+                    <span>|</span>
+                    <span><a href={`tel:${customInfo.phone}`} className="hover:underline font-semibold" style={{ color: '#ffffff' }}>{customInfo.phone}</a></span>
+                    <span>|</span>
+                    <span><a href={`mailto:${customInfo.email}`} className="hover:underline font-semibold" style={{ color: '#ffffff' }}>{customInfo.email}</a></span>
+                    <span>|</span>
+                    <span><a href={normalizeUrl(customInfo.linkedin)} target="_blank" rel="noopener noreferrer" className="hover:underline font-semibold" style={{ color: '#fbbf24', textDecoration: 'underline' }}>LinkedIn</a></span>
+                    <span>|</span>
+                    <span><a href={normalizeUrl(customInfo.github)} target="_blank" rel="noopener noreferrer" className="hover:underline font-semibold" style={{ color: '#fbbf24', textDecoration: 'underline' }}>GitHub</a></span>
+                    <span>|</span>
+                    <span><a href={normalizeUrl(window.location.origin)} target="_blank" rel="noopener noreferrer" className="hover:underline font-semibold" style={{ color: '#fbbf24', textDecoration: 'underline' }}>Portfolio</a></span>
                   </div>
                 </div>
 
                 {/* Career Objective */}
-                <div>
-                  <h2 className="text-xs font-extrabold uppercase border-l-4 pl-2 mb-1" style={{ color: '#0f172a', borderColor: '#f59e0b' }}>CAREER OBJECTIVE</h2>
-                  <p className="text-[11px] leading-relaxed text-justify font-normal" style={{ color: '#000000' }}>{activeCareerObjective}</p>
+                <div className="cv-keep-together mb-3.5">
+                  <h2 className="cv-section-heading text-[11px] font-bold uppercase border-l-4 pl-2.5 mb-1.5 leading-[1.3]" style={{ color: '#0f172a', borderColor: '#f59e0b' }}>Career Objective</h2>
+                  <p className="text-[10.5px] leading-[1.44] text-left font-normal" style={{ color: '#111827' }}>{activeCareerObjective}</p>
                 </div>
 
                 {/* Skills Grid */}
-                <div>
-                  <h2 className="text-xs font-extrabold uppercase border-l-4 pl-2 mb-1.5" style={{ color: '#0f172a', borderColor: '#f59e0b' }}>Core Technical Toolkit</h2>
-                  <div className="grid grid-cols-2 gap-2 text-[11px]">
+                <div className="cv-keep-together mb-3.5">
+                  <h2 className="cv-section-heading text-[11px] font-bold uppercase border-l-4 pl-2.5 mb-1.5 leading-[1.3]" style={{ color: '#0f172a', borderColor: '#f59e0b' }}>Core Technical Toolkit</h2>
+                  <div className="grid grid-cols-2 gap-2 text-[10.5px]">
                     {SKILL_CATEGORIES.map((cat) => (
-                      <div key={cat.category} className="p-2 rounded border" style={{ backgroundColor: '#f8fafc', borderColor: '#cbd5e1' }}>
-                        <span className="font-bold block text-[10px] uppercase" style={{ color: '#0f172a' }}>{cat.category}</span>
-                        <span className="text-[10px] font-medium" style={{ color: '#000000' }}>{cat.items.join(', ')}</span>
+                      <div key={cat.category} className="px-2.5 py-1.5 rounded border" style={{ backgroundColor: '#f8fafc', borderColor: '#cbd5e1' }}>
+                        <span className="font-bold block text-[10px] uppercase mb-0.5" style={{ color: '#0f172a' }}>{cat.category}</span>
+                        <span className="text-[10px] leading-[1.35] block" style={{ color: '#1e293b' }}>{cat.items.join(', ')}</span>
                       </div>
                     ))}
                   </div>
                 </div>
 
                 {/* Experience */}
-                <div>
-                  <h2 className="text-xs font-extrabold uppercase border-l-4 pl-2 mb-2" style={{ color: '#0f172a', borderColor: '#f59e0b' }}>Work History</h2>
-                  <div className="space-y-2.5">
-                    {WORK_EXPERIENCE.map((exp) => (
-                      <div key={exp.id} className="space-y-1">
-                        <div className="flex justify-between items-baseline">
-                          <span className="font-bold text-[11px]" style={{ color: '#0f172a' }}>{exp.role} <span className="font-semibold" style={{ color: '#000000' }}>at {exp.company}</span></span>
-                          <span className="text-[10px] font-mono font-bold" style={{ color: '#000000' }}>{exp.period}</span>
+                <div className="mb-3.5">
+                  <h2 className="cv-section-heading text-[11px] font-bold uppercase border-l-4 pl-2.5 mb-1.5 leading-[1.3]" style={{ color: '#0f172a', borderColor: '#f59e0b' }}>Work History</h2>
+                  {WORK_EXPERIENCE.map((exp) => {
+                    const parsed = exp.highlights.map(parseHighlightItem);
+                    const scopeLines = parsed.filter(item => item.isScope);
+                    const bulletLines = parsed.filter(item => !item.isScope);
+                    return (
+                      <div key={exp.id} className="mb-2.5">
+                        <div className="cv-keep-together">
+                          <div className="cv-section-heading mb-1">
+                            <div className="flex justify-between items-start gap-4">
+                              <span className="font-bold text-[11px]" style={{ color: '#0f172a' }}>{exp.role}</span>
+                              <span className="text-[10px] font-bold shrink-0 whitespace-nowrap tabular-nums" style={{ color: '#334155' }}>{exp.period}</span>
+                            </div>
+                            <div className="flex justify-between items-start gap-4 text-[10px] mt-0.5" style={{ color: '#475569' }}>
+                              <span className="font-semibold" style={{ color: '#1e293b' }}>{exp.company}</span>
+                              <span className="text-right shrink-0">{exp.location}</span>
+                            </div>
+                            {scopeLines.map((s, idx) => (
+                              <p key={idx} className="text-[10px] font-semibold mt-0.5" style={{ color: '#0f172a' }}>{s.text}</p>
+                            ))}
+                          </div>
+                          {bulletLines.length > 0 && (
+                            <ul className="list-disc pl-4 text-[10.5px]" style={{ color: '#111827' }}>
+                              <li className="leading-[1.4] mb-0.5">{bulletLines[0].text}</li>
+                            </ul>
+                          )}
                         </div>
-                        <ul className="list-disc list-inside text-[10.5px] space-y-0.5" style={{ color: '#000000' }}>
-                          {exp.highlights.map((h, i) => (
-                            <li key={i}>{h}</li>
-                          ))}
-                        </ul>
+                        {bulletLines.length > 1 && (
+                          <ul className="list-disc pl-4 text-[10.5px]" style={{ color: '#111827' }}>
+                            {bulletLines.slice(1).map((b, i) => (
+                              <li key={i} className="cv-keep-together leading-[1.4] mb-0.5">{b.text}</li>
+                            ))}
+                          </ul>
+                        )}
                       </div>
-                    ))}
-                  </div>
+                    );
+                  })}
                 </div>
 
                 {/* Selected Projects */}
                 {selectedProjects.length > 0 && (
-                  <div>
-                    <h2 className="text-xs font-extrabold uppercase border-l-4 pl-2 mb-1.5" style={{ color: '#0f172a', borderColor: '#f59e0b' }}>Selected SQA Projects</h2>
-                    <div className="space-y-2">
-                      {selectedProjects.map((p) => (
-                        <div key={p.id} className="p-2 rounded border space-y-0.5 text-[10.5px]" style={{ backgroundColor: '#f8fafc', borderColor: '#cbd5e1' }}>
-                          <div className="flex justify-between items-center font-bold" style={{ color: '#0f172a' }}>
-                            <span>{p.title}</span>
-                            <div className="flex items-center gap-2">
-                              <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: '#e2e8f0', color: '#0f172a' }}>{p.type}</span>
-                              {p.link && (
-                                <a 
-                                  href={normalizeUrl(p.link)} 
-                                  target="_blank" 
-                                  rel="noopener noreferrer" 
-                                  className="hover:underline font-bold text-[10px]"
-                                  style={{ color: '#0a66c2', textDecoration: 'underline' }}
-                                >
-                                  GitHub Repo (Click Here) ↗
-                                </a>
-                              )}
-                            </div>
+                  <div className="mb-3.5">
+                    <h2 className="cv-section-heading text-[11px] font-bold uppercase border-l-4 pl-2.5 mb-1.5 leading-[1.3]" style={{ color: '#0f172a', borderColor: '#f59e0b' }}>Selected SQA Projects</h2>
+                    {selectedProjects.map((p) => (
+                      <div key={p.id} className="cv-keep-together px-2.5 py-1.5 rounded border text-[10.5px] mb-1.5" style={{ backgroundColor: '#f8fafc', borderColor: '#cbd5e1' }}>
+                        <div className="flex justify-between items-start gap-3 font-bold mb-0.5" style={{ color: '#0f172a' }}>
+                          <span>{p.title}</span>
+                          <div className="flex items-center gap-2 shrink-0 whitespace-nowrap">
+                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: '#e2e8f0', color: '#0f172a' }}>{p.type}</span>
+                            {p.link && (
+                              <a 
+                                href={normalizeUrl(p.link)} 
+                                target="_blank" 
+                                rel="noopener noreferrer" 
+                                className="hover:underline font-semibold text-[10px]"
+                                style={{ color: '#0a66c2', textDecoration: 'underline' }}
+                              >
+                                GitHub
+                              </a>
+                            )}
                           </div>
-                          <p className="font-normal" style={{ color: '#000000' }}>{p.description}</p>
+                        </div>
+                        <p className="font-normal leading-[1.38] text-left" style={{ color: '#1e293b' }}>{p.description}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Education */}
+                <div className="cv-keep-together mb-3.5">
+                  <h2 className="cv-section-heading text-[11px] font-bold uppercase border-l-4 pl-2.5 mb-1.5 leading-[1.3]" style={{ color: '#0f172a', borderColor: '#f59e0b' }}>Education</h2>
+                  {EDUCATION_HISTORY.map((edu) => (
+                    <div key={edu.id} className="flex justify-between items-start gap-4 text-[10.5px] mb-1">
+                      <div>
+                        <span className="font-bold" style={{ color: '#0f172a' }}>{edu.degree}</span> <span className="font-medium" style={{ color: '#334155' }}>— {edu.institution}</span>
+                      </div>
+                      <span className="text-[10px] font-bold shrink-0 whitespace-nowrap tabular-nums" style={{ color: '#334155' }}>{edu.period}</span>
+                    </div>
+                  ))}
+                </div>
+
+                {/* References */}
+                {portfolioReferences.length > 0 && (
+                  <div className="cv-keep-together">
+                    <h2 className="cv-section-heading text-[11px] font-bold uppercase border-l-4 pl-2.5 mb-1.5 leading-[1.3]" style={{ color: '#0f172a', borderColor: '#f59e0b' }}>References</h2>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5">
+                      {portfolioReferences.map((ref) => (
+                        <div key={ref.id} className="text-[10px] leading-[1.38]" style={{ color: '#111827' }}>
+                          <p className="font-bold" style={{ color: '#0f172a' }}>{ref.name}</p>
+                          <p style={{ color: '#334155' }}>{ref.role}, {ref.company}</p>
+                          <p style={{ color: '#475569' }}>{ref.email} | {ref.phone}</p>
                         </div>
                       ))}
                     </div>
                   </div>
                 )}
-
-                {/* Education */}
-                <div>
-                  <h2 className="text-xs font-extrabold uppercase border-l-4 pl-2 mb-1" style={{ color: '#0f172a', borderColor: '#f59e0b' }}>Education</h2>
-                  {EDUCATION_HISTORY.map((edu) => (
-                    <div key={edu.id} className="flex justify-between text-[11px]">
-                      <div>
-                        <span className="font-bold" style={{ color: '#0f172a' }}>{edu.degree}</span> — <span className="font-medium" style={{ color: '#000000' }}>{edu.institution}</span>
-                      </div>
-                      <span className="font-mono text-[10px] font-bold" style={{ color: '#000000' }}>{edu.period}</span>
-                    </div>
-                  ))}
-                </div>
               </div>
             )}
 
             {/* TEMPLATE 3: MINIMAL CLEAN */}
             {template === 'minimal' && (
-              <div className="space-y-5">
-                <div className="space-y-1">
-                  <h1 className="text-3xl font-light text-black tracking-tight">{customInfo.name}</h1>
-                  <p className="text-xs text-black font-semibold font-mono">{customInfo.title} • {customInfo.location}</p>
-                  <div className="text-[10.5px] text-black font-medium flex flex-wrap gap-x-2 pt-0.5">
-                    <a href={`mailto:${customInfo.email}`} className="hover:underline text-black font-semibold">{customInfo.email}</a>
-                    <span>•</span>
-                    <a href={`tel:${customInfo.phone}`} className="hover:underline text-black font-semibold">{customInfo.phone}</a>
-                    <span>•</span>
-                    <a href={normalizeUrl(customInfo.linkedin)} target="_blank" rel="noopener noreferrer" className="text-[#0a66c2] hover:underline font-bold" style={{ color: '#0a66c2', textDecoration: 'underline' }}>LinkedIn (Click Here)</a>
-                    <span>•</span>
-                    <a href={normalizeUrl(customInfo.github)} target="_blank" rel="noopener noreferrer" className="text-gray-900 hover:underline font-bold" style={{ color: '#000000', textDecoration: 'underline' }}>GitHub (Click Here)</a>
-                    <span>•</span>
-                    <a href={normalizeUrl(window.location.origin)} target="_blank" rel="noopener noreferrer" className="text-[#ea580c] hover:underline font-bold" style={{ color: '#ea580c', textDecoration: 'underline' }}>Portfolio (Click Here)</a>
+              <div>
+                <div className="cv-keep-together mb-3.5">
+                  <h1 className="text-[22px] font-semibold text-[#0f172a] leading-tight mb-0.5">{customInfo.name}</h1>
+                  <p className="text-[11px] text-[#334155] font-semibold mb-1">{customInfo.title} | {customInfo.location}</p>
+                  <div className="text-[10.5px] text-[#1e293b] font-medium flex flex-wrap gap-x-2 pb-2.5">
+                    <a href={`mailto:${customInfo.email}`} className="hover:underline font-semibold" style={{ color: '#0f172a' }}>{customInfo.email}</a>
+                    <span>|</span>
+                    <a href={`tel:${customInfo.phone}`} className="hover:underline font-semibold" style={{ color: '#0f172a' }}>{customInfo.phone}</a>
+                    <span>|</span>
+                    <a href={normalizeUrl(customInfo.linkedin)} target="_blank" rel="noopener noreferrer" className="hover:underline font-semibold" style={{ color: '#0a66c2', textDecoration: 'underline' }}>LinkedIn</a>
+                    <span>|</span>
+                    <a href={normalizeUrl(customInfo.github)} target="_blank" rel="noopener noreferrer" className="hover:underline font-semibold" style={{ color: '#0f172a', textDecoration: 'underline' }}>GitHub</a>
+                    <span>|</span>
+                    <a href={normalizeUrl(window.location.origin)} target="_blank" rel="noopener noreferrer" className="hover:underline font-semibold" style={{ color: '#c2410c', textDecoration: 'underline' }}>Portfolio</a>
                   </div>
+                  <div style={{ height: '1px', backgroundColor: '#cbd5e1', width: '100%' }} />
                 </div>
-
-                <div className="h-px bg-gray-400 w-full my-3" />
 
                 {/* Career Objective */}
-                <div className="space-y-1">
-                  <h2 className="text-xs font-bold tracking-widest uppercase text-black">CAREER OBJECTIVE</h2>
-                  <p className="text-[11px] text-black leading-relaxed font-normal">{activeCareerObjective}</p>
+                <div className="cv-keep-together mb-3.5">
+                  <h2 className="cv-section-heading text-[11px] font-bold uppercase text-[#0f172a] mb-1">Career Objective</h2>
+                  <p className="text-[10.5px] text-[#111827] leading-[1.44] text-left font-normal">{activeCareerObjective}</p>
                 </div>
 
-                <div className="space-y-2">
-                  <h2 className="text-xs font-bold tracking-widest uppercase text-black">Experience</h2>
-                  {WORK_EXPERIENCE.map((exp) => (
-                    <div key={exp.id} className="space-y-1">
-                      <div className="flex justify-between text-[11px] font-bold text-black">
-                        <span>{exp.role}, {exp.company}</span>
-                        <span className="text-black font-mono font-bold">{exp.period}</span>
+                <div className="mb-3.5">
+                  <h2 className="cv-section-heading text-[11px] font-bold uppercase text-[#0f172a] mb-1.5">Experience</h2>
+                  {WORK_EXPERIENCE.map((exp) => {
+                    const parsed = exp.highlights.map(parseHighlightItem);
+                    const scopeLines = parsed.filter(item => item.isScope);
+                    const bulletLines = parsed.filter(item => !item.isScope);
+                    return (
+                      <div key={exp.id} className="mb-2.5">
+                        <div className="cv-keep-together">
+                          <div className="cv-section-heading mb-1">
+                            <div className="flex justify-between items-start gap-4 text-[11px] font-bold text-[#0f172a]">
+                              <span>{exp.role}</span>
+                              <span className="text-[#334155] text-[10px] font-bold shrink-0 whitespace-nowrap tabular-nums">{exp.period}</span>
+                            </div>
+                            <div className="flex justify-between items-start gap-4 text-[10px] text-[#475569] mt-0.5">
+                              <span className="font-semibold text-[#334155]">{exp.company}</span>
+                              <span className="text-right shrink-0">{exp.location}</span>
+                            </div>
+                            {scopeLines.map((s, idx) => (
+                              <p key={idx} className="text-[10px] font-semibold text-[#0f172a] mt-0.5">{s.text}</p>
+                            ))}
+                          </div>
+                          {bulletLines.length > 0 && (
+                            <ul className="list-disc pl-4 text-[10.5px] text-[#111827]">
+                              <li className="leading-[1.4] mb-0.5">{bulletLines[0].text}</li>
+                            </ul>
+                          )}
+                        </div>
+                        {bulletLines.length > 1 && (
+                          <ul className="list-disc pl-4 text-[10.5px] text-[#111827]">
+                            {bulletLines.slice(1).map((b, i) => (
+                              <li key={i} className="cv-keep-together leading-[1.4] mb-0.5">{b.text}</li>
+                            ))}
+                          </ul>
+                        )}
                       </div>
-                      <ul className="list-disc list-inside text-[10.5px] text-black space-y-0.5">
-                        {exp.highlights.map((h, i) => (
-                          <li key={i}>{h}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
 
                 {selectedProjects.length > 0 && (
-                  <div className="space-y-2">
-                    <h2 className="text-xs font-bold tracking-widest uppercase text-black">Projects</h2>
+                  <div className="mb-3.5">
+                    <h2 className="cv-section-heading text-[11px] font-bold uppercase text-[#0f172a] mb-1.5">Projects</h2>
                     {selectedProjects.map((p) => (
-                      <div key={p.id} className="text-[10.5px]">
-                        <div className="flex justify-between items-baseline font-bold text-black">
-                          <span className="font-bold text-black">{p.title}</span>
+                      <div key={p.id} className="cv-keep-together text-[10.5px] mb-1.5">
+                        <div className="flex justify-between items-start gap-4 font-bold text-[#0f172a] mb-0.5">
+                          <span>{p.title}</span>
                           {p.link && (
                             <a 
                               href={normalizeUrl(p.link)} 
                               target="_blank" 
                               rel="noopener noreferrer" 
-                              className="text-[#0a66c2] hover:underline text-[10px] font-bold"
+                              className="hover:underline text-[10px] font-semibold shrink-0 whitespace-nowrap"
                               style={{ color: '#0a66c2', textDecoration: 'underline' }}
                             >
-                              GitHub (Click Here) ↗
+                              GitHub
                             </a>
                           )}
                         </div>
-                        <p className="text-black leading-snug">{p.description}</p>
+                        <p className="text-[#1e293b] leading-[1.4] text-left">{p.description}</p>
                       </div>
                     ))}
                   </div>
                 )}
 
-                <div className="space-y-1">
-                  <h2 className="text-xs font-bold tracking-widest uppercase text-black">Skills</h2>
-                  <p className="text-[10.5px] text-black font-medium">
+                <div className="cv-keep-together mb-3.5">
+                  <h2 className="cv-section-heading text-[11px] font-bold uppercase text-[#0f172a] mb-1">Skills</h2>
+                  <p className="text-[10.5px] text-[#111827] leading-[1.42] font-medium">
                     {SKILL_CATEGORIES.flatMap(c => c.items).join(' • ')}
                   </p>
                 </div>
 
-                <div className="space-y-1">
-                  <h2 className="text-xs font-bold tracking-widest uppercase text-black">Education</h2>
+                <div className="cv-keep-together mb-3.5">
+                  <h2 className="cv-section-heading text-[11px] font-bold uppercase text-[#0f172a] mb-1">Education</h2>
                   {EDUCATION_HISTORY.map((edu) => (
-                    <div key={edu.id} className="text-[10.5px] text-black font-medium">
-                      <span className="font-bold">{edu.degree}</span>, {edu.institution} ({edu.period})
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* TEMPLATE 4: EXECUTIVE */}
-            {template === 'executive' && (
-              <div className="space-y-4">
-                <div className="border-b-4 border-black pb-2 flex justify-between items-end">
-                  <div>
-                    <h1 className="text-2xl font-black uppercase text-black tracking-tight">{customInfo.name}</h1>
-                    <p className="text-xs font-bold text-black uppercase tracking-widest">{customInfo.title}</p>
-                  </div>
-                  <div className="text-right text-[10.5px] text-black space-y-0.5">
-                    <p>
-                      <a href={`mailto:${customInfo.email}`} className="hover:underline font-bold text-black">{customInfo.email}</a> • <a href={`tel:${customInfo.phone}`} className="hover:underline font-semibold">{customInfo.phone}</a>
-                    </p>
-                    <p className="font-medium">{customInfo.location}</p>
-                    <div className="flex justify-end items-center gap-1.5 pt-0.5 text-[10px] font-medium">
-                      <a href={normalizeUrl(customInfo.linkedin)} target="_blank" rel="noopener noreferrer" className="text-[#0a66c2] hover:underline font-bold" style={{ color: '#0a66c2', textDecoration: 'underline' }}>LinkedIn (Click Here)</a>
-                      <span>•</span>
-                      <a href={normalizeUrl(customInfo.github)} target="_blank" rel="noopener noreferrer" className="text-gray-900 hover:underline font-bold" style={{ color: '#000000', textDecoration: 'underline' }}>GitHub (Click Here)</a>
-                      <span>•</span>
-                      <a href={normalizeUrl(window.location.origin)} target="_blank" rel="noopener noreferrer" className="text-[#ea580c] hover:underline font-bold" style={{ color: '#ea580c', textDecoration: 'underline' }}>Portfolio (Click Here)</a>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Key Metrics Banner */}
-                <div className="grid grid-cols-4 gap-2 bg-gray-100 p-2 rounded text-center text-[10px] border border-gray-300">
-                  <div><span className="font-bold block text-black text-xs">{customInfo.experienceYears || '2'}+ Yrs</span> <span className="font-semibold text-black">Experience</span></div>
-                  <div><span className="font-bold block text-black text-xs">150+</span> <span className="font-semibold text-black">Test Cases</span></div>
-                  <div><span className="font-bold block text-black text-xs">100+</span> <span className="font-semibold text-black">Bugs Logged</span></div>
-                  <div><span className="font-bold block text-black text-xs">0%</span> <span className="font-semibold text-black">Error Rate</span></div>
-                </div>
-
-                {/* Career Objective */}
-                <div>
-                  <h2 className="text-xs font-bold uppercase tracking-wider text-black border-b border-black pb-0.5 mb-1">CAREER OBJECTIVE</h2>
-                  <p className="text-[11px] text-black leading-relaxed">{activeCareerObjective}</p>
-                </div>
-
-                <div>
-                  <h2 className="text-xs font-bold uppercase tracking-wider text-black border-b border-black pb-0.5 mb-1.5">Leadership & Technical Capabilities</h2>
-                  <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[10.5px]">
-                    {SKILL_CATEGORIES.map((c) => (
-                      <div key={c.category}>
-                        <span className="font-bold text-black">{c.category}: </span>
-                        <span className="text-black font-medium">{c.items.join(', ')}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div>
-                  <h2 className="text-xs font-bold uppercase tracking-wider text-black border-b border-black pb-0.5 mb-2">Professional Career History</h2>
-                  {WORK_EXPERIENCE.map((exp) => (
-                    <div key={exp.id} className="mb-2 space-y-0.5">
-                      <div className="flex justify-between font-bold text-[11px] text-black">
-                        <span>{exp.role} — {exp.company}</span>
-                        <span className="text-black font-mono font-bold">{exp.period}</span>
-                      </div>
-                      <ul className="list-disc list-inside text-[10.5px] text-black">
-                        {exp.highlights.map((h, i) => (
-                          <li key={i}>{h}</li>
-                        ))}
-                      </ul>
+                    <div key={edu.id} className="flex justify-between items-start gap-4 text-[10.5px] text-[#111827] font-medium mb-1">
+                      <span><span className="font-bold text-[#0f172a]">{edu.degree}</span> — {edu.institution}</span>
+                      <span className="text-[10px] font-bold shrink-0 whitespace-nowrap tabular-nums">{edu.period}</span>
                     </div>
                   ))}
                 </div>
 
-                {selectedProjects.length > 0 && (
-                  <div>
-                    <h2 className="text-xs font-bold uppercase tracking-wider text-black border-b border-black pb-0.5 mb-1">Key Deliverables & Projects</h2>
-                    {selectedProjects.map((p) => (
-                      <div key={p.id} className="text-[10.5px] mb-1">
-                        <div className="flex justify-between items-baseline">
-                          <span className="font-bold text-black">{p.title}:</span>
-                          {p.link && (
-                            <a 
-                              href={normalizeUrl(p.link)} 
-                              target="_blank" 
-                              rel="noopener noreferrer" 
-                              className="text-[#0a66c2] hover:underline font-bold text-[10px]"
-                              style={{ color: '#0a66c2', textDecoration: 'underline' }}
-                            >
-                              GitHub Repo (Click Here) ↗
-                            </a>
-                          )}
-                        </div>
-                        <span className="text-black leading-snug">{p.description}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                <div>
-                  <h2 className="text-xs font-bold uppercase tracking-wider text-black border-b border-black pb-0.5 mb-1">Education</h2>
-                  {EDUCATION_HISTORY.map((e) => (
-                    <p key={e.id} className="text-[10.5px] text-black">
-                      <span className="font-bold text-black">{e.degree}</span>, {e.institution} ({e.period})
-                    </p>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* TEMPLATE 5: CLEAN PORTFOLIO STYLE */}
-            {template === 'portfolio-style' && (
-              <div className="space-y-4">
-                <div className="flex justify-between items-start border-b-2 border-orange-500 pb-3">
-                  <div>
-                    <h1 className="text-2xl font-black text-black">{customInfo.name}</h1>
-                    <p className="text-xs font-bold text-orange-600 font-mono uppercase">{customInfo.title}</p>
-                    <p className="text-[10.5px] text-black font-mono font-medium mt-0.5">{customInfo.location}</p>
-                  </div>
-                  <div className="text-right text-[10.5px] text-black space-y-0.5">
-                    <p className="font-bold text-black">
-                      <a href={`mailto:${customInfo.email}`} className="hover:underline">{customInfo.email}</a>
-                    </p>
-                    <p>
-                      <a href={`tel:${customInfo.phone}`} className="hover:underline">{customInfo.phone}</a>
-                    </p>
-                    <div className="flex justify-end items-center gap-1.5 pt-0.5 text-[10px] font-medium">
-                      <a href={normalizeUrl(customInfo.linkedin)} target="_blank" rel="noopener noreferrer" className="text-[#0a66c2] hover:underline font-bold" style={{ color: '#0a66c2', textDecoration: 'underline' }}>LinkedIn (Click Here)</a>
-                      <span>•</span>
-                      <a href={normalizeUrl(customInfo.github)} target="_blank" rel="noopener noreferrer" className="text-gray-900 hover:underline font-bold" style={{ color: '#000000', textDecoration: 'underline' }}>GitHub (Click Here)</a>
-                      <span>•</span>
-                      <a href={normalizeUrl(window.location.origin)} target="_blank" rel="noopener noreferrer" className="text-[var(--color-accent)] hover:underline font-bold" style={{ color: 'var(--color-accent)', textDecoration: 'underline' }}>Portfolio (Click Here)</a>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Career Objective */}
-                <div>
-                  <h2 className="text-xs font-extrabold uppercase text-orange-600 tracking-wider mb-1">CAREER OBJECTIVE</h2>
-                  <p className="text-[11px] text-black leading-relaxed font-normal">{activeCareerObjective}</p>
-                </div>
-
-                <div>
-                  <h2 className="text-xs font-extrabold uppercase text-orange-600 tracking-wider mb-1.5">SQA Toolkit & Capabilities</h2>
-                  <div className="flex flex-wrap gap-1 text-[10px] font-mono">
-                    {SKILL_CATEGORIES.flatMap(c => c.items).map((skill, i) => (
-                      <span key={i} className="bg-gray-100 border border-gray-400 px-2 py-0.5 rounded text-black font-semibold">
-                        {skill}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-
-                <div>
-                  <h2 className="text-xs font-extrabold uppercase text-orange-600 tracking-wider mb-2">Experience & STLC Workflow</h2>
-                  {WORK_EXPERIENCE.map((exp) => (
-                    <div key={exp.id} className="mb-2 text-[11px]">
-                      <div className="flex justify-between font-bold text-black">
-                        <span>{exp.role} @ {exp.company}</span>
-                        <span className="text-black font-mono font-bold text-[10px]">{exp.period}</span>
-                      </div>
-                      <ul className="list-disc list-inside text-[10.5px] text-black mt-0.5 space-y-0.5">
-                        {exp.highlights.map((h, i) => (
-                          <li key={i}>{h}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  ))}
-                </div>
-
-                {selectedProjects.length > 0 && (
-                  <div>
-                    <h2 className="text-xs font-extrabold uppercase text-orange-600 tracking-wider mb-1.5">Verified Automation & QA Repositories</h2>
-                    <div className="space-y-1.5">
-                      {selectedProjects.map((p) => (
-                        <div key={p.id} className="p-2 border border-gray-300 rounded text-[10.5px]">
-                          <div className="flex justify-between items-center font-bold text-black">
-                            <span>{p.title}</span>
-                            <div className="flex items-center gap-2">
-                              <span className="text-blue-800 font-bold text-[10px] font-mono">{p.type}</span>
-                              {p.link && (
-                                <a 
-                                  href={normalizeUrl(p.link)} 
-                                  target="_blank" 
-                                  rel="noopener noreferrer" 
-                                  className="text-[#0a66c2] hover:underline font-bold text-[10px]"
-                                  style={{ color: '#0a66c2', textDecoration: 'underline' }}
-                                >
-                                  GitHub Repo (Click Here) ↗
-                                </a>
-                              )}
-                            </div>
-                          </div>
-                          <p className="text-black text-[10.5px] mt-0.5 leading-snug">{p.description}</p>
+                {portfolioReferences.length > 0 && (
+                  <div className="cv-keep-together">
+                    <h2 className="cv-section-heading text-[11px] font-bold uppercase text-[#0f172a] mb-1">References</h2>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5">
+                      {portfolioReferences.map((ref) => (
+                        <div key={ref.id} className="text-[10px] text-[#111827] leading-[1.38]">
+                          <p className="font-bold text-[#0f172a]">{ref.name}</p>
+                          <p className="text-[#334155]">{ref.role}, {ref.company}</p>
+                          <p className="text-[#475569]">{ref.email} | {ref.phone}</p>
                         </div>
                       ))}
                     </div>
                   </div>
                 )}
-                
-                <div>
-                  <h2 className="text-xs font-extrabold uppercase text-orange-600 tracking-wider mb-1">
-                    Education
-                  </h2>
+              </div>
+            )}
 
-                  {EDUCATION_HISTORY.map((edu) => (
-                    <div
-                      key={edu.id}
-                      className="text-[10.5px] text-black font-medium">
+            {/* TEMPLATE 4: EXECUTIVE */}
+            {template === 'executive' && (
+              <div>
+                <div className="cv-keep-together mb-3.5">
+                  <div className="pb-2.5 flex justify-between items-start gap-4">
+                    <div>
+                      <h1 className="text-[21px] font-bold uppercase text-[#0f172a] leading-tight mb-0.5">{customInfo.name}</h1>
+                      <p className="text-[11px] font-bold text-[#334155] uppercase tracking-wide">{customInfo.title}</p>
+                    </div>
+                    <div className="text-right text-[10px] text-[#111827] space-y-0.5 shrink-0">
+                      <p>
+                        <a href={`mailto:${customInfo.email}`} className="hover:underline font-bold" style={{ color: '#0f172a' }}>{customInfo.email}</a> | <a href={`tel:${customInfo.phone}`} className="hover:underline font-semibold" style={{ color: '#0f172a' }}>{customInfo.phone}</a>
+                      </p>
+                      <p className="font-medium text-[#334155]">{customInfo.location}</p>
+                      <div className="flex justify-end items-center gap-1.5 pt-0.5 text-[10px] font-semibold">
+                        <a href={normalizeUrl(customInfo.linkedin)} target="_blank" rel="noopener noreferrer" className="hover:underline" style={{ color: '#0a66c2', textDecoration: 'underline' }}>LinkedIn</a>
+                        <span>|</span>
+                        <a href={normalizeUrl(customInfo.github)} target="_blank" rel="noopener noreferrer" className="hover:underline" style={{ color: '#0f172a', textDecoration: 'underline' }}>GitHub</a>
+                        <span>|</span>
+                        <a href={normalizeUrl(window.location.origin)} target="_blank" rel="noopener noreferrer" className="hover:underline" style={{ color: '#c2410c', textDecoration: 'underline' }}>Portfolio</a>
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{ height: '2.5px', backgroundColor: '#0f172a', width: '100%' }} />
+                </div>
 
-                      <span className="font-bold text-black">{edu.degree}</span>
-                      - <span className="font-bold text-black">{edu.institution} ({edu.period})</span>
+                {/* Key Metrics Banner */}
+                <div className="cv-keep-together grid grid-cols-4 gap-2 p-2 rounded text-center text-[10px] border mb-3.5" style={{ backgroundColor: '#f3f4f6', borderColor: '#d1d5db' }}>
+                  <div><span className="font-bold block text-[#0f172a] text-xs">{customInfo.experienceYears || '2'}+ Yrs</span> <span className="font-semibold text-[#334155]">Experience</span></div>
+                  <div><span className="font-bold block text-[#0f172a] text-xs">150+</span> <span className="font-semibold text-[#334155]">Test Cases</span></div>
+                  <div><span className="font-bold block text-[#0f172a] text-xs">100+</span> <span className="font-semibold text-[#334155]">Bugs Logged</span></div>
+                  <div><span className="font-bold block text-[#0f172a] text-xs">0%</span> <span className="font-semibold text-[#334155]">Error Rate</span></div>
+                </div>
+
+                {/* Career Objective */}
+                <div className="cv-keep-together mb-3.5">
+                  <div className="cv-section-heading mb-1.5">
+                    <h2 className="text-[11px] font-bold uppercase text-[#0f172a] leading-[1.35] pb-1">Career Objective</h2>
+                    <div style={{ height: '1.5px', backgroundColor: '#0f172a', width: '100%' }} />
+                  </div>
+                  <p className="text-[10.5px] text-[#111827] leading-[1.44] text-left">{activeCareerObjective}</p>
+                </div>
+
+                <div className="cv-keep-together mb-3.5">
+                  <div className="cv-section-heading mb-1.5">
+                    <h2 className="text-[11px] font-bold uppercase text-[#0f172a] leading-[1.35] pb-1">Leadership &amp; Technical Capabilities</h2>
+                    <div style={{ height: '1.5px', backgroundColor: '#0f172a', width: '100%' }} />
+                  </div>
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-[10.5px] items-start">
+                    {SKILL_CATEGORIES.map((c) => (
+                      <div key={c.category} className="leading-[1.38]">
+                        <span className="font-bold text-[#0f172a]">{c.category}: </span>
+                        <span className="text-[#1e293b] font-medium">{c.items.join(', ')}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="mb-3.5">
+                  <div className="cv-section-heading mb-1.5">
+                    <h2 className="text-[11px] font-bold uppercase text-[#0f172a] leading-[1.35] pb-1">Professional Career History</h2>
+                    <div style={{ height: '1.5px', backgroundColor: '#0f172a', width: '100%' }} />
+                  </div>
+                  {WORK_EXPERIENCE.map((exp) => {
+                    const parsed = exp.highlights.map(parseHighlightItem);
+                    const scopeLines = parsed.filter(item => item.isScope);
+                    const bulletLines = parsed.filter(item => !item.isScope);
+                    return (
+                      <div key={exp.id} className="mb-2.5">
+                        <div className="cv-keep-together">
+                          <div className="cv-section-heading mb-1">
+                            <div className="flex justify-between items-start gap-4 font-bold text-[11px] text-[#0f172a]">
+                              <span>{exp.role}</span>
+                              <span className="text-[#334155] text-[10px] font-bold shrink-0 whitespace-nowrap tabular-nums">{exp.period}</span>
+                            </div>
+                            <div className="flex justify-between items-start gap-4 text-[10px] text-[#475569] mt-0.5">
+                              <span className="font-semibold text-[#1e293b]">{exp.company}</span>
+                              <span className="text-right shrink-0">{exp.location}</span>
+                            </div>
+                            {scopeLines.map((s, idx) => (
+                              <p key={idx} className="text-[10px] font-semibold text-[#0f172a] mt-0.5">{s.text}</p>
+                            ))}
+                          </div>
+                          {bulletLines.length > 0 && (
+                            <ul className="list-disc pl-4 text-[10.5px] text-[#111827]">
+                              <li className="leading-[1.4] mb-0.5">{bulletLines[0].text}</li>
+                            </ul>
+                          )}
+                        </div>
+                        {bulletLines.length > 1 && (
+                          <ul className="list-disc pl-4 text-[10.5px] text-[#111827]">
+                            {bulletLines.slice(1).map((b, i) => (
+                              <li key={i} className="cv-keep-together leading-[1.4] mb-0.5">{b.text}</li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {selectedProjects.length > 0 && (
+                  <div className="mb-3.5">
+                    <div className="cv-section-heading mb-1.5">
+                      <h2 className="text-[11px] font-bold uppercase text-[#0f172a] leading-[1.35] pb-1">Key Deliverables &amp; Projects</h2>
+                      <div style={{ height: '1.5px', backgroundColor: '#0f172a', width: '100%' }} />
+                    </div>
+                    {selectedProjects.map((p) => (
+                      <div key={p.id} className="cv-keep-together text-[10.5px] mb-1.5">
+                        <div className="flex justify-between items-start gap-4 mb-0.5">
+                          <span className="font-bold text-[#0f172a]">{p.title}</span>
+                          {p.link && (
+                            <a 
+                              href={normalizeUrl(p.link)} 
+                              target="_blank" 
+                              rel="noopener noreferrer" 
+                              className="hover:underline font-semibold text-[10px] shrink-0 whitespace-nowrap"
+                              style={{ color: '#0a66c2', textDecoration: 'underline' }}
+                            >
+                              GitHub Repo
+                            </a>
+                          )}
+                        </div>
+                        <p className="text-[#1e293b] leading-[1.4] text-left">{p.description}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <div className="cv-keep-together mb-3.5">
+                  <div className="cv-section-heading mb-1.5">
+                    <h2 className="text-[11px] font-bold uppercase text-[#0f172a] leading-[1.35] pb-1">Education</h2>
+                    <div style={{ height: '1.5px', backgroundColor: '#0f172a', width: '100%' }} />
+                  </div>
+                  {EDUCATION_HISTORY.map((e) => (
+                    <div key={e.id} className="flex justify-between items-start gap-4 text-[10.5px] text-[#111827] mb-1">
+                      <span><span className="font-bold text-[#0f172a]">{e.degree}</span> — {e.institution}</span>
+                      <span className="text-[10px] font-bold shrink-0 whitespace-nowrap tabular-nums">{e.period}</span>
                     </div>
                   ))}
                 </div>
-                 
 
+                {portfolioReferences.length > 0 && (
+                  <div className="cv-keep-together">
+                    <div className="cv-section-heading mb-1.5">
+                      <h2 className="text-[11px] font-bold uppercase text-[#0f172a] leading-[1.35] pb-1">References</h2>
+                      <div style={{ height: '1.5px', backgroundColor: '#0f172a', width: '100%' }} />
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5">
+                      {portfolioReferences.map((ref) => (
+                        <div key={ref.id} className="text-[10px] text-[#111827] leading-[1.38]">
+                          <p className="font-bold text-[#0f172a]">{ref.name}</p>
+                          <p className="text-[#334155]">{ref.role}, {ref.company}</p>
+                          <p className="text-[#475569]">{ref.email} | {ref.phone}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* TEMPLATE 5: CLEAN PORTFOLIO STYLE */}
+            {template === 'portfolio-style' && (
+              <div>
+                <div className="cv-keep-together mb-3.5">
+                  <div className="flex justify-between items-start gap-4 pb-2.5">
+                    <div>
+                      <h1 className="text-[21px] font-bold text-[#0f172a] leading-tight mb-0.5">{customInfo.name}</h1>
+                      <p className="text-[11px] font-bold uppercase mb-0.5" style={{ color: '#ea580c' }}>{customInfo.title}</p>
+                      <p className="text-[10.5px] text-[#334155] font-medium">{customInfo.location}</p>
+                    </div>
+                    <div className="text-right text-[10px] text-[#111827] space-y-0.5 shrink-0">
+                      <p className="font-bold text-[#0f172a]">
+                        <a href={`mailto:${customInfo.email}`} className="hover:underline" style={{ color: '#0f172a' }}>{customInfo.email}</a>
+                      </p>
+                      <p>
+                        <a href={`tel:${customInfo.phone}`} className="hover:underline" style={{ color: '#0f172a' }}>{customInfo.phone}</a>
+                      </p>
+                      <div className="flex justify-end items-center gap-1.5 pt-0.5 text-[10px] font-semibold">
+                        <a href={normalizeUrl(customInfo.linkedin)} target="_blank" rel="noopener noreferrer" className="hover:underline" style={{ color: '#0a66c2', textDecoration: 'underline' }}>LinkedIn</a>
+                        <span>|</span>
+                        <a href={normalizeUrl(customInfo.github)} target="_blank" rel="noopener noreferrer" className="hover:underline" style={{ color: '#0f172a', textDecoration: 'underline' }}>GitHub</a>
+                        <span>|</span>
+                        <a href={normalizeUrl(window.location.origin)} target="_blank" rel="noopener noreferrer" className="hover:underline" style={{ color: '#c2410c', textDecoration: 'underline' }}>Portfolio</a>
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{ height: '2px', backgroundColor: '#f97316', width: '100%' }} />
+                </div>
+
+                {/* Career Objective */}
+                <div className="cv-keep-together mb-3.5">
+                  <h2 className="cv-section-heading text-[11px] font-bold uppercase mb-1" style={{ color: '#ea580c' }}>Career Objective</h2>
+                  <p className="text-[10.5px] text-[#111827] leading-[1.44] text-left font-normal">{activeCareerObjective}</p>
+                </div>
+
+                <div className="cv-keep-together mb-3.5">
+                  <h2 className="cv-section-heading text-[11px] font-bold uppercase mb-1.5" style={{ color: '#ea580c' }}>SQA Toolkit &amp; Capabilities</h2>
+                  <div className="text-[10.5px]">
+                    {SKILL_CATEGORIES.map((cat) => (
+                      <div key={cat.category} className="grid grid-cols-[155px_1fr] gap-x-3 items-start leading-[1.38] mb-1">
+                        <span className="font-bold text-[#0f172a]">{cat.category}:</span>
+                        <span className="text-[#1e293b]">{cat.items.join(', ')}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="mb-3.5">
+                  <h2 className="cv-section-heading text-[11px] font-bold uppercase mb-1.5" style={{ color: '#ea580c' }}>Experience &amp; STLC Workflow</h2>
+                  {WORK_EXPERIENCE.map((exp) => {
+                    const parsed = exp.highlights.map(parseHighlightItem);
+                    const scopeLines = parsed.filter(item => item.isScope);
+                    const bulletLines = parsed.filter(item => !item.isScope);
+                    return (
+                      <div key={exp.id} className="text-[10.5px] mb-2.5">
+                        <div className="cv-keep-together">
+                          <div className="cv-section-heading mb-1">
+                            <div className="flex justify-between items-start gap-4 font-bold text-[11px] text-[#0f172a]">
+                              <span>{exp.role}</span>
+                              <span className="text-[#334155] font-bold text-[10px] shrink-0 whitespace-nowrap tabular-nums">{exp.period}</span>
+                            </div>
+                            <div className="flex justify-between items-start gap-4 text-[10px] text-[#475569] mt-0.5">
+                              <span className="font-semibold text-[#1e293b]">{exp.company}</span>
+                              <span className="text-right shrink-0">{exp.location}</span>
+                            </div>
+                            {scopeLines.map((s, idx) => (
+                              <p key={idx} className="text-[10px] font-semibold text-[#0f172a] mt-0.5">{s.text}</p>
+                            ))}
+                          </div>
+                          {bulletLines.length > 0 && (
+                            <ul className="list-disc pl-4 text-[10.5px] text-[#111827]">
+                              <li className="leading-[1.4] mb-0.5">{bulletLines[0].text}</li>
+                            </ul>
+                          )}
+                        </div>
+                        {bulletLines.length > 1 && (
+                          <ul className="list-disc pl-4 text-[10.5px] text-[#111827]">
+                            {bulletLines.slice(1).map((b, i) => (
+                              <li key={i} className="cv-keep-together leading-[1.4] mb-0.5">{b.text}</li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {selectedProjects.length > 0 && (
+                  <div className="mb-3.5">
+                    <h2 className="cv-section-heading text-[11px] font-bold uppercase mb-1.5" style={{ color: '#ea580c' }}>Verified Automation &amp; QA Repositories</h2>
+                    {selectedProjects.map((p) => (
+                      <div key={p.id} className="cv-keep-together px-2.5 py-1.5 border rounded text-[10.5px] mb-1.5" style={{ borderColor: '#cbd5e1', backgroundColor: '#ffffff' }}>
+                        <div className="flex justify-between items-start gap-3 font-bold text-[#0f172a] mb-0.5">
+                          <span>{p.title}</span>
+                          <div className="flex items-center gap-2 shrink-0 whitespace-nowrap">
+                            <span className="font-bold text-[9.5px]" style={{ color: '#1d4ed8' }}>{p.type}</span>
+                            {p.link && (
+                              <a 
+                                href={normalizeUrl(p.link)} 
+                                target="_blank" 
+                                rel="noopener noreferrer" 
+                                className="hover:underline font-semibold text-[10px]"
+                                style={{ color: '#0a66c2', textDecoration: 'underline' }}
+                              >
+                                GitHub
+                              </a>
+                            )}
+                          </div>
+                        </div>
+                        <p className="text-[#1e293b] text-[10.5px] leading-[1.38] text-left">{p.description}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                
+                <div className="cv-keep-together mb-3.5">
+                  <h2 className="cv-section-heading text-[11px] font-bold uppercase mb-1" style={{ color: '#ea580c' }}>
+                    Education
+                  </h2>
+                  {EDUCATION_HISTORY.map((edu) => (
+                    <div
+                      key={edu.id}
+                      className="flex justify-between items-start gap-4 text-[10.5px] text-[#111827] font-medium mb-1"
+                    >
+                      <span>
+                        <span className="font-bold text-[#0f172a]">{edu.degree}</span> <span className="font-semibold text-[#334155]">— {edu.institution}</span>
+                      </span>
+                      <span className="text-[10px] font-bold shrink-0 whitespace-nowrap tabular-nums">{edu.period}</span>
+                    </div>
+                  ))}
+                </div>
+
+                {portfolioReferences.length > 0 && (
+                  <div className="cv-keep-together">
+                    <h2 className="cv-section-heading text-[11px] font-bold uppercase mb-1" style={{ color: '#ea580c' }}>References</h2>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5">
+                      {portfolioReferences.map((ref) => (
+                        <div key={ref.id} className="text-[10px] text-[#111827] leading-[1.38]">
+                          <p className="font-bold text-[#0f172a]">{ref.name}</p>
+                          <p className="text-[#334155]">{ref.role}, {ref.company}</p>
+                          <p className="text-[#475569]">{ref.email} | {ref.phone}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 

@@ -349,12 +349,14 @@ ${PERSONAL_INFO.title}`;
         return;
       }
 
-      // Collect all active styles and fonts from head
       const styleSheets = Array.from(document.querySelectorAll('style, link[rel="stylesheet"]'))
         .map((el) => el.outerHTML)
         .join('\n');
 
-      // Create an isolated print iframe
+      const printSafeClass = element.className
+        .replace(/\b(shadow-\S+|rounded-\S+|min-h-\S+|p-\d+|sm:p-\d+|border-\S+|border|justify-between)\b/g, '')
+        .trim();
+
       const iframe = document.createElement('iframe');
       iframe.style.position = 'fixed';
       iframe.style.right = '0';
@@ -374,29 +376,38 @@ ${PERSONAL_INFO.title}`;
               <title>${PERSONAL_INFO.name.replace(/[^a-zA-Z0-9 ]/g, '')} - Cover Letter (${companyName.replace(/[^a-zA-Z0-9 ]/g, '')})</title>
               ${styleSheets}
               <style>
-                @page { size: A4 portrait; margin: 12mm 15mm; }
-                body {
+                @page { size: A4 portrait; margin: 14mm 15mm; }
+                html, body {
                   background-color: #ffffff !important;
                   color: #111827 !important;
                   margin: 0 !important;
                   padding: 0 !important;
+                  width: 100% !important;
                   -webkit-print-color-adjust: exact !important;
                   print-color-adjust: exact !important;
                 }
                 .print-cover-letter-root {
                   width: 100% !important;
                   max-width: 100% !important;
+                  min-height: auto !important;
                   box-shadow: none !important;
                   border: none !important;
+                  border-radius: 0 !important;
                   background: #ffffff !important;
                   color: #111827 !important;
                   padding: 0 !important;
                   margin: 0 !important;
+                  display: block !important;
+                  font-variant-ligatures: none !important;
+                }
+                .print-cover-letter-root p, .print-cover-letter-root li {
+                  break-inside: avoid !important;
+                  page-break-inside: avoid !important;
                 }
               </style>
             </head>
             <body>
-              <div class="print-cover-letter-root">
+              <div class="${printSafeClass}">
                 ${element.innerHTML}
               </div>
             </body>
@@ -404,7 +415,7 @@ ${PERSONAL_INFO.title}`;
         `);
         doc.close();
 
-        setTimeout(() => {
+        const triggerIframePrint = () => {
           try {
             iframe.contentWindow?.focus();
             iframe.contentWindow?.print();
@@ -416,8 +427,17 @@ ${PERSONAL_INFO.title}`;
             if (document.body.contains(iframe)) {
               document.body.removeChild(iframe);
             }
-          }, 1500);
-        }, 300);
+          }, 1600);
+        };
+
+        const fontsReady = (doc as Document & { fonts?: { ready: Promise<unknown> } }).fonts?.ready;
+        if (fontsReady) {
+          Promise.race([fontsReady, new Promise((resolve) => setTimeout(resolve, 600))]).then(() => {
+            setTimeout(triggerIframePrint, 120);
+          });
+        } else {
+          setTimeout(triggerIframePrint, 380);
+        }
       } else {
         window.print();
       }
@@ -427,59 +447,108 @@ ${PERSONAL_INFO.title}`;
     }
   };
 
-  const handleDownloadPdf = () => {
+  const handleDownloadPdf = async () => {
     if (!printRef.current) return;
     setIsExportingPdf(true);
 
+    try {
+      const fontsReady = (document as Document & { fonts?: { ready: Promise<unknown> } }).fonts?.ready;
+      if (fontsReady) {
+        await Promise.race([fontsReady, new Promise((resolve) => setTimeout(resolve, 700))]);
+      }
+    } catch {
+      // Proceed cleanly
+    }
+
     const element = printRef.current;
+    const stagedClone = element.cloneNode(true) as HTMLElement;
+    stagedClone.className = stagedClone.className
+      .replace(/\b(shadow-\S+|rounded-\S+|min-h-\S+|p-\d+|sm:p-\d+|border-\S+|border|justify-between)\b/g, '')
+      .trim();
+    stagedClone.style.padding = '0px';
+    stagedClone.style.margin = '0px';
+    stagedClone.style.minHeight = 'auto';
+    stagedClone.style.display = 'block';
+    stagedClone.style.border = 'none';
+    stagedClone.style.boxShadow = 'none';
+    stagedClone.style.borderRadius = '0px';
+    stagedClone.style.width = '680px';
+    stagedClone.style.maxWidth = '680px';
+    stagedClone.style.boxSizing = 'border-box';
+    stagedClone.style.backgroundColor = '#ffffff';
+    stagedClone.style.color = '#111827';
+    stagedClone.style.fontVariantLigatures = 'none';
+
     const opt = {
-      margin: [15, 15, 15, 15] as [number, number, number, number],
+      margin: [14, 15, 14, 15] as [number, number, number, number],
       filename: `${PERSONAL_INFO.name.replace(/\s+/g, '_')}_Cover_Letter_${companyName.replace(/\s+/g, '_')}.pdf`,
-      image: { type: 'jpeg' as const, quality: 0.98 },
-      html2canvas: { 
-        scale: 2, 
-        useCORS: true, 
+      image: { type: 'jpeg' as const, quality: 0.95 },
+      html2canvas: {
+        scale: 2,
+        useCORS: true,
         logging: false,
+        backgroundColor: '#ffffff',
+        scrollX: 0,
+        scrollY: 0,
+        windowWidth: 960,
         onclone: (clonedDoc: Document) => {
-          // Strip or replace oklch functions in all style tags to prevent html2canvas CSS parser crash
+          const colorCache = new Map<string, string>();
+          const colorCanvas = clonedDoc.createElement('canvas');
+          colorCanvas.width = 1;
+          colorCanvas.height = 1;
+          const colorCtx = colorCanvas.getContext('2d', { willReadFrequently: true });
+          const convertOklch = (val: string) => {
+            if (colorCache.has(val)) return colorCache.get(val)!;
+            let resolved = '#111827';
+            if (colorCtx) {
+              try {
+                colorCtx.clearRect(0, 0, 1, 1);
+                colorCtx.fillStyle = 'rgba(0,0,0,0)';
+                colorCtx.fillStyle = val;
+                colorCtx.fillRect(0, 0, 1, 1);
+                const [r, g, b, a] = colorCtx.getImageData(0, 0, 1, 1).data;
+                resolved = a === 0 ? 'transparent' : a < 255 ? `rgba(${r}, ${g}, ${b}, ${(a / 255).toFixed(3)})` : `rgb(${r}, ${g}, ${b})`;
+              } catch {
+                resolved = '#111827';
+              }
+            }
+            colorCache.set(val, resolved);
+            return resolved;
+          };
+
           const styles = clonedDoc.querySelectorAll('style');
           styles.forEach((styleTag) => {
             if (styleTag.innerHTML && styleTag.innerHTML.includes('oklch')) {
-              styleTag.innerHTML = styleTag.innerHTML.replace(/oklch\([^)]+\)/g, '#111827');
+              styleTag.innerHTML = styleTag.innerHTML.replace(/oklch\([^)]+\)/g, (match) => convertOklch(match));
             }
           });
 
-          const root = clonedDoc.querySelector('.print-cover-letter-root') as HTMLElement | null;
-          if (root) {
-            root.style.backgroundColor = '#ffffff';
-            root.style.color = '#111827';
-            root.style.border = 'none';
-            root.style.boxShadow = 'none';
-            root.style.borderRadius = '0px';
-            root.style.padding = '0px';
-            const allEls = root.querySelectorAll('*');
-            allEls.forEach((el) => {
-              const htmlEl = el as HTMLElement;
-              const style = window.getComputedStyle(htmlEl);
-              if (style.color && style.color.includes('oklch')) {
-                htmlEl.style.color = '#111827';
-              }
-              if (style.backgroundColor && style.backgroundColor.includes('oklch')) {
-                htmlEl.style.backgroundColor = '#ffffff';
-              }
-              if (style.borderColor && style.borderColor.includes('oklch')) {
-                htmlEl.style.borderColor = '#e5e7eb';
-              }
-            });
-          }
-        }
+          const extraStyle = clonedDoc.createElement('style');
+          extraStyle.textContent = `
+            .print-cover-letter-root {
+              padding: 0 !important;
+              margin: 0 !important;
+              min-height: auto !important;
+              display: block !important;
+              box-shadow: none !important;
+              border: none !important;
+              border-radius: 0 !important;
+              font-variant-ligatures: none !important;
+            }
+            .print-cover-letter-root * {
+              box-sizing: border-box !important;
+              font-variant-ligatures: none !important;
+            }
+          `;
+          clonedDoc.head.appendChild(extraStyle);
+        },
       },
-      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' as const },
-      pagebreak: { mode: ['avoid-all', 'css', 'legacy'] },
-      enableLinks: true
+      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' as const, compress: true },
+      pagebreak: { mode: ['css', 'legacy'], avoid: ['p', 'li', '.cv-keep-together'] },
+      enableLinks: true,
     };
 
-    html2pdf().set(opt).from(element).save().then(() => {
+    html2pdf().set(opt).from(stagedClone).save().then(() => {
       setIsExportingPdf(false);
     }).catch((err: unknown) => {
       console.error('PDF export error:', err);
@@ -987,21 +1056,21 @@ ${PERSONAL_INFO.title}`;
                     </div>
 
                     {/* Cover Letter Body Text */}
-                    <div className="text-sm text-gray-800 leading-relaxed space-y-4 pt-2 text-justify" style={{ color: '#1f2937' }}>
+                    <div className="text-[13.5px] text-gray-800 leading-[1.6] space-y-3.5 pt-2 text-left" style={{ color: '#1f2937' }}>
                       {activeLetterText.split('\n\n').slice(3, -2).map((paragraph, pIdx) => (
-                        <p key={pIdx} className="leading-relaxed">
+                        <p key={pIdx} className="leading-[1.6]">
                           {renderTextWithLinks(paragraph)}
                         </p>
                       ))}
                     </div>
 
                     {/* Closing & Sign-off */}
-                    <div className="pt-4 space-y-2 text-sm text-gray-900" style={{ color: '#111827' }}>
+                    <div className="pt-4 space-y-1.5 text-[13.5px] text-gray-900" style={{ color: '#111827' }}>
                       <p>Sincerely,</p>
-                      <div className="pt-2 font-bold font-display text-base" style={{ color: '#111827' }}>
+                      <div className="pt-2 font-bold text-base" style={{ color: '#111827' }}>
                         {PERSONAL_INFO.name}
                       </div>
-                      <p className="text-xs text-gray-600 font-mono" style={{ color: '#4b5563' }}>
+                      <p className="text-xs text-gray-600" style={{ color: '#4b5563' }}>
                         {PERSONAL_INFO.title}
                       </p>
                     </div>
@@ -1009,8 +1078,8 @@ ${PERSONAL_INFO.title}`;
                   </div>
 
                   {/* Clean Page Footer */}
-                  <div className="pt-8 border-t border-gray-200 text-[10px] text-gray-500 font-mono flex justify-between items-center" style={{ color: '#6b7280', borderColor: '#e5e7eb' }}>
-                    <span>Confidential Cover Letter • Prepared for {companyName}</span>
+                  <div className="mt-8 pt-4 border-t border-gray-200 text-[10px] text-gray-500 flex justify-between items-center" style={{ color: '#6b7280', borderColor: '#e5e7eb' }}>
+                    <span>Confidential Cover Letter | Prepared for {companyName}</span>
                     <span>Page 1 of 1</span>
                   </div>
 
