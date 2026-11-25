@@ -1,12 +1,13 @@
-import { useState, useRef, useMemo, useEffect, FormEvent } from 'react';
+import { useState, useRef, useMemo, useEffect } from 'react';
 import { 
-  X, Sparkles, Send, Copy, Check, Printer, Download, Edit3, Eye, 
+  X, Sparkles, Copy, Check, Printer, Download, 
   RotateCcw, FileText, CheckCircle2, AlertTriangle, Lightbulb, 
-  Building2, Briefcase, Calendar, MapPin, Globe, UserCheck, 
-  ChevronRight, Bookmark, Trash2, Award, ArrowRight, Type, ExternalLink
+  Building2, ChevronRight, Bookmark, Trash2, Award, Type
 } from 'lucide-react';
-import { PERSONAL_INFO, SKILL_CATEGORIES, WORK_EXPERIENCE, PROJECTS, EDUCATION_HISTORY } from '../data';
-import html2pdf from 'html2pdf.js';
+import { PERSONAL_INFO } from '../data';
+import { copyToClipboard } from '../utils/clipboard';
+import { exportPaginatedPdf, renderA4PreviewPages, triggerVectorPrint } from '../utils/printDocument';
+import { PrintPreviewModal } from './PrintPreviewModal';
 
 interface CoverLetterGeneratorModalProps {
   isOpen: boolean;
@@ -18,6 +19,7 @@ interface CoverLetterGeneratorModalProps {
 export type CoverLetterTone = 'professional' | 'formal' | 'enthusiastic';
 export type CoverLetterTemplate = 'modern-executive' | 'classic-corporate' | 'minimalist-tech';
 export type CoverLetterFontFamily = 'serif' | 'modern' | 'corporate';
+export type PdfQualityMode = 'under-1mb' | 'normal';
 
 function normalizeUrl(url: string): string {
   if (!url) return '';
@@ -133,10 +135,22 @@ export default function CoverLetterGeneratorModal({
   // UI Feedback State
   const [copied, setCopied] = useState(false);
   const [isExportingPdf, setIsExportingPdf] = useState(false);
+  const [pdfQualityMode, setPdfQualityMode] = useState<PdfQualityMode>('under-1mb');
+  const [lastPdfInfo, setLastPdfInfo] = useState<{ sizeLabel: string; mode: PdfQualityMode } | null>(null);
   const [savedLetters, setSavedLetters] = useState<SavedCoverLetter[]>([]);
   const [activeTab, setActiveTab] = useState<'editor' | 'preview' | 'match-score' | 'history'>('preview');
+  const [isPrintPreviewOpen, setIsPrintPreviewOpen] = useState(false);
+  const [isGeneratingPrintPreview, setIsGeneratingPrintPreview] = useState(false);
+  const [printPreviewPages, setPrintPreviewPages] = useState<string[]>([]);
 
   const printRef = useRef<HTMLDivElement>(null);
+
+  const formatByteSize = (bytes: number): string => {
+    if (bytes < 1024 * 1024) {
+      return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+    }
+    return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+  };
 
   // Auto-Detect Role Type for specialized SQA emphasis
   const detectedRoleCategory = useMemo(() => {
@@ -333,228 +347,100 @@ ${PERSONAL_INFO.title}`;
     }, 600);
   };
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(activeLetterText);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const handleCopy = async () => {
+    const ok = await copyToClipboard(activeLetterText);
+    if (ok) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
   };
 
-  // Browser Print trigger with dedicated isolated iframe for A4 print/PDF output
-  const handlePrint = () => {
+  // Browser Print trigger with viewport-mounted 1px iframe & sandbox detection
+  const handlePrint = async () => {
+    return triggerVectorPrint({
+      sourceElement: printRef.current,
+      documentTitle: `${PERSONAL_INFO.name.replace(/[^a-zA-Z0-9 ]/g, '')} - Cover Letter (${companyName.replace(/[^a-zA-Z0-9 ]/g, '')})`,
+      marginMm: [14, 15, 14, 15],
+      pageMarginCss: '14mm 15mm',
+      stripClassesRegex: /\b(shadow-\S+|rounded-\S+|min-h-\S+|p-\d+|sm:p-\d+|border-\S+|border|justify-between)\b/g,
+    });
+  };
+
+  // Opens exact A4 paginated Print & PDF Preview modal when user clicks "Print / PDF"
+  const handleOpenPrintPreview = async () => {
+    setIsPrintPreviewOpen(true);
+    setPrintPreviewPages([]);
+    if (!printRef.current) return;
+
+    setIsGeneratingPrintPreview(true);
     try {
-      window.focus();
-      const element = printRef.current;
-      if (!element) {
-        window.print();
-        return;
-      }
-
-      const styleSheets = Array.from(document.querySelectorAll('style, link[rel="stylesheet"]'))
-        .map((el) => el.outerHTML)
-        .join('\n');
-
-      const printSafeClass = element.className
-        .replace(/\b(shadow-\S+|rounded-\S+|min-h-\S+|p-\d+|sm:p-\d+|border-\S+|border|justify-between)\b/g, '')
-        .trim();
-
-      const iframe = document.createElement('iframe');
-      iframe.style.position = 'fixed';
-      iframe.style.right = '0';
-      iframe.style.bottom = '0';
-      iframe.style.width = '0';
-      iframe.style.height = '0';
-      iframe.style.border = '0';
-      document.body.appendChild(iframe);
-
-      const doc = iframe.contentWindow?.document;
-      if (doc) {
-        doc.open();
-        doc.write(`
-          <!DOCTYPE html>
-          <html>
-            <head>
-              <title>${PERSONAL_INFO.name.replace(/[^a-zA-Z0-9 ]/g, '')} - Cover Letter (${companyName.replace(/[^a-zA-Z0-9 ]/g, '')})</title>
-              ${styleSheets}
-              <style>
-                @page { size: A4 portrait; margin: 14mm 15mm; }
-                html, body {
-                  background-color: #ffffff !important;
-                  color: #111827 !important;
-                  margin: 0 !important;
-                  padding: 0 !important;
-                  width: 100% !important;
-                  -webkit-print-color-adjust: exact !important;
-                  print-color-adjust: exact !important;
-                }
-                .print-cover-letter-root {
-                  width: 100% !important;
-                  max-width: 100% !important;
-                  min-height: auto !important;
-                  box-shadow: none !important;
-                  border: none !important;
-                  border-radius: 0 !important;
-                  background: #ffffff !important;
-                  color: #111827 !important;
-                  padding: 0 !important;
-                  margin: 0 !important;
-                  display: block !important;
-                  font-variant-ligatures: none !important;
-                }
-                .print-cover-letter-root p, .print-cover-letter-root li {
-                  break-inside: avoid !important;
-                  page-break-inside: avoid !important;
-                }
-              </style>
-            </head>
-            <body>
-              <div class="${printSafeClass}">
-                ${element.innerHTML}
-              </div>
-            </body>
-          </html>
-        `);
-        doc.close();
-
-        const triggerIframePrint = () => {
-          try {
-            iframe.contentWindow?.focus();
-            iframe.contentWindow?.print();
-          } catch (e) {
-            console.warn('Iframe print failed, falling back to window.print()', e);
-            window.print();
-          }
-          setTimeout(() => {
-            if (document.body.contains(iframe)) {
-              document.body.removeChild(iframe);
-            }
-          }, 1600);
-        };
-
-        const fontsReady = (doc as Document & { fonts?: { ready: Promise<unknown> } }).fonts?.ready;
-        if (fontsReady) {
-          Promise.race([fontsReady, new Promise((resolve) => setTimeout(resolve, 600))]).then(() => {
-            setTimeout(triggerIframePrint, 120);
-          });
-        } else {
-          setTimeout(triggerIframePrint, 380);
-        }
-      } else {
-        window.print();
-      }
+      const rendered = await renderA4PreviewPages({
+        sourceElement: printRef.current,
+        margin: [14, 15, 14, 15],
+        stripClassesRegex: /\b(shadow-\S+|rounded-\S+|min-h-\S+|p-\d+|sm:p-\d+|border-\S+|border|justify-between)\b/g,
+      });
+      setPrintPreviewPages(rendered.pages);
     } catch (err) {
-      console.error('Print error:', err);
-      window.print();
+      console.error('Cover letter preview render error:', err);
+    } finally {
+      setIsGeneratingPrintPreview(false);
     }
   };
 
   const handleDownloadPdf = async () => {
-    if (!printRef.current) return;
+    if (!printRef.current || isExportingPdf) return;
     setIsExportingPdf(true);
 
     try {
-      const fontsReady = (document as Document & { fonts?: { ready: Promise<unknown> } }).fonts?.ready;
-      if (fontsReady) {
-        await Promise.race([fontsReady, new Promise((resolve) => setTimeout(resolve, 700))]);
+      const element = printRef.current;
+      const margin = [14, 15, 14, 15] as [number, number, number, number];
+      const filename = `${PERSONAL_INFO.name.replace(/\s+/g, '_')}_Cover_Letter_${companyName.replace(/\s+/g, '_')}.pdf`;
+
+      const renderPdfPass = (scale: number, quality: number, compress: boolean) =>
+        exportPaginatedPdf({
+          sourceElement: element,
+          margin,
+          filename,
+          scale,
+          quality,
+          compress,
+          stripClassesRegex: /\b(shadow-\S+|rounded-\S+|min-h-\S+|p-\d+|sm:p-\d+|border-\S+|border|justify-between)\b/g,
+          urlNormalizer: (raw) =>
+            raw.startsWith('http://') ||
+            raw.startsWith('https://') ||
+            raw.startsWith('mailto:') ||
+            raw.startsWith('tel:')
+              ? raw
+              : normalizeUrl(raw),
+        });
+
+      let result: { pdf: any; byteLength: number };
+      if (pdfQualityMode === 'under-1mb') {
+        result = await renderPdfPass(1.85, 0.86, true);
+        if (result.byteLength > 980 * 1024) {
+          result = await renderPdfPass(1.45, 0.72, true);
+        }
+        if (result.byteLength > 995 * 1024) {
+          result = await renderPdfPass(1.2, 0.6, true);
+        }
+      } else {
+        result = await renderPdfPass(2.5, 0.99, false);
       }
-    } catch {
-      // Proceed cleanly
-    }
 
-    const element = printRef.current;
-    const stagedClone = element.cloneNode(true) as HTMLElement;
-    stagedClone.className = stagedClone.className
-      .replace(/\b(shadow-\S+|rounded-\S+|min-h-\S+|p-\d+|sm:p-\d+|border-\S+|border|justify-between)\b/g, '')
-      .trim();
-    stagedClone.style.padding = '0px';
-    stagedClone.style.margin = '0px';
-    stagedClone.style.minHeight = 'auto';
-    stagedClone.style.display = 'block';
-    stagedClone.style.border = 'none';
-    stagedClone.style.boxShadow = 'none';
-    stagedClone.style.borderRadius = '0px';
-    stagedClone.style.width = '680px';
-    stagedClone.style.maxWidth = '680px';
-    stagedClone.style.boxSizing = 'border-box';
-    stagedClone.style.backgroundColor = '#ffffff';
-    stagedClone.style.color = '#111827';
-    stagedClone.style.fontVariantLigatures = 'none';
+      if (result.byteLength > 0) {
+        setLastPdfInfo({
+          sizeLabel: formatByteSize(result.byteLength),
+          mode: pdfQualityMode,
+        });
+      }
 
-    const opt = {
-      margin: [14, 15, 14, 15] as [number, number, number, number],
-      filename: `${PERSONAL_INFO.name.replace(/\s+/g, '_')}_Cover_Letter_${companyName.replace(/\s+/g, '_')}.pdf`,
-      image: { type: 'jpeg' as const, quality: 0.95 },
-      html2canvas: {
-        scale: 2,
-        useCORS: true,
-        logging: false,
-        backgroundColor: '#ffffff',
-        scrollX: 0,
-        scrollY: 0,
-        windowWidth: 960,
-        onclone: (clonedDoc: Document) => {
-          const colorCache = new Map<string, string>();
-          const colorCanvas = clonedDoc.createElement('canvas');
-          colorCanvas.width = 1;
-          colorCanvas.height = 1;
-          const colorCtx = colorCanvas.getContext('2d', { willReadFrequently: true });
-          const convertOklch = (val: string) => {
-            if (colorCache.has(val)) return colorCache.get(val)!;
-            let resolved = '#111827';
-            if (colorCtx) {
-              try {
-                colorCtx.clearRect(0, 0, 1, 1);
-                colorCtx.fillStyle = 'rgba(0,0,0,0)';
-                colorCtx.fillStyle = val;
-                colorCtx.fillRect(0, 0, 1, 1);
-                const [r, g, b, a] = colorCtx.getImageData(0, 0, 1, 1).data;
-                resolved = a === 0 ? 'transparent' : a < 255 ? `rgba(${r}, ${g}, ${b}, ${(a / 255).toFixed(3)})` : `rgb(${r}, ${g}, ${b})`;
-              } catch {
-                resolved = '#111827';
-              }
-            }
-            colorCache.set(val, resolved);
-            return resolved;
-          };
-
-          const styles = clonedDoc.querySelectorAll('style');
-          styles.forEach((styleTag) => {
-            if (styleTag.innerHTML && styleTag.innerHTML.includes('oklch')) {
-              styleTag.innerHTML = styleTag.innerHTML.replace(/oklch\([^)]+\)/g, (match) => convertOklch(match));
-            }
-          });
-
-          const extraStyle = clonedDoc.createElement('style');
-          extraStyle.textContent = `
-            .print-cover-letter-root {
-              padding: 0 !important;
-              margin: 0 !important;
-              min-height: auto !important;
-              display: block !important;
-              box-shadow: none !important;
-              border: none !important;
-              border-radius: 0 !important;
-              font-variant-ligatures: none !important;
-            }
-            .print-cover-letter-root * {
-              box-sizing: border-box !important;
-              font-variant-ligatures: none !important;
-            }
-          `;
-          clonedDoc.head.appendChild(extraStyle);
-        },
-      },
-      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' as const, compress: true },
-      pagebreak: { mode: ['css', 'legacy'], avoid: ['p', 'li', '.cv-keep-together'] },
-      enableLinks: true,
-    };
-
-    html2pdf().set(opt).from(stagedClone).save().then(() => {
-      setIsExportingPdf(false);
-    }).catch((err: unknown) => {
+      result.pdf.save(filename);
+    } catch (err) {
       console.error('PDF export error:', err);
+      void handlePrint();
+    } finally {
       setIsExportingPdf(false);
-      window.print();
-    });
+    }
   };
 
   const handleSaveToHistory = () => {
@@ -602,8 +488,23 @@ ${PERSONAL_INFO.title}`;
         </div>
 
         {/* Action Header Buttons */}
-        <div className="flex items-center space-x-2">
+        <div className="flex items-center flex-wrap gap-2">
           <button
+            type="button"
+            onClick={() => setPdfQualityMode((m) => (m === 'under-1mb' ? 'normal' : 'under-1mb'))}
+            className={`hidden md:inline-flex items-center space-x-1.5 px-2.5 py-1.5 rounded-lg border text-[11px] font-mono font-semibold transition-all cursor-pointer ${
+              pdfQualityMode === 'under-1mb'
+                ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/25'
+                : 'bg-white/10 border-white/20 text-slate-100 hover:bg-white/15'
+            }`}
+            title="Toggle PDF file size limit (<1MB compression ON or Normal full quality OFF)"
+          >
+            <span className={`w-2 h-2 rounded-full ${pdfQualityMode === 'under-1mb' ? 'bg-emerald-400' : 'bg-sky-400'}`} />
+            <span>{pdfQualityMode === 'under-1mb' ? 'Limit <1MB: ON' : 'Normal Size: ON'}</span>
+          </button>
+
+          <button
+            type="button"
             onClick={handleCopy}
             className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/15 text-white text-xs font-mono font-medium transition-colors cursor-pointer"
           >
@@ -612,26 +513,36 @@ ${PERSONAL_INFO.title}`;
           </button>
 
           <button
-            onClick={handlePrint}
+            type="button"
+            onClick={handleOpenPrintPreview}
             className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/15 text-white text-xs font-mono font-medium transition-colors cursor-pointer"
-            title="Print or Save to PDF"
+            title="Preview exact A4 pages, Print, or Save PDF"
           >
             <Printer className="w-3.5 h-3.5 text-amber-400" />
             <span>Print / PDF</span>
           </button>
 
           <button
+            type="button"
             onClick={handleDownloadPdf}
             disabled={isExportingPdf}
-            className="flex items-center space-x-1.5 px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-white text-xs font-mono font-bold shadow-lg shadow-[var(--color-accent)]/25 transition-all cursor-pointer disabled:opacity-50"
+            className="flex items-center space-x-1.5 px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-[var(--color-accent-ink,#060911)] text-xs font-mono font-bold shadow-lg shadow-[var(--color-accent)]/25 transition-all cursor-pointer disabled:opacity-50"
           >
             <Download className="w-3.5 h-3.5" />
-            <span>{isExportingPdf ? 'Exporting...' : 'Download PDF'}</span>
+            <span>
+              {isExportingPdf
+                ? 'Exporting...'
+                : pdfQualityMode === 'under-1mb'
+                ? 'PDF (<1MB)'
+                : 'PDF (Normal)'}
+            </span>
           </button>
 
           <button
+            type="button"
             onClick={onClose}
-            className="p-2 rounded-lg bg-white/5 hover:bg-white/10 text-white transition-colors cursor-pointer ml-2"
+            className="p-2 rounded-lg bg-white/5 hover:bg-white/10 text-white transition-colors cursor-pointer ml-1"
+            aria-label="Close"
           >
             <X className="w-5 h-5" />
           </button>
@@ -647,26 +558,30 @@ ${PERSONAL_INFO.title}`;
           {/* Navigation Control Tabs */}
           <div className="grid grid-cols-4 gap-1 p-1 bg-[#12151C] rounded-xl border border-white/10 text-xs font-mono">
             <button
+              type="button"
               onClick={() => setActiveTab('preview')}
-              className={`py-2 rounded-lg text-center transition-colors cursor-pointer ${activeTab === 'preview' ? 'bg-[var(--color-accent)] text-white font-bold' : 'text-[#9CA3AF] hover:text-white'}`}
+              className={`py-2 rounded-lg text-center transition-colors cursor-pointer ${activeTab === 'preview' ? 'bg-[var(--color-accent)] text-[var(--color-accent-ink,#060911)] font-extrabold' : 'text-slate-300 hover:text-white'}`}
             >
               Preview
             </button>
             <button
+              type="button"
               onClick={() => setActiveTab('editor')}
-              className={`py-2 rounded-lg text-center transition-colors cursor-pointer ${activeTab === 'editor' ? 'bg-[var(--color-accent)] text-white font-bold' : 'text-[#9CA3AF] hover:text-white'}`}
+              className={`py-2 rounded-lg text-center transition-colors cursor-pointer ${activeTab === 'editor' ? 'bg-[var(--color-accent)] text-[var(--color-accent-ink,#060911)] font-extrabold' : 'text-slate-300 hover:text-white'}`}
             >
               Inputs
             </button>
             <button
+              type="button"
               onClick={() => setActiveTab('match-score')}
-              className={`py-2 rounded-lg text-center transition-colors cursor-pointer ${activeTab === 'match-score' ? 'bg-[var(--color-accent)] text-white font-bold' : 'text-[#9CA3AF] hover:text-white'}`}
+              className={`py-2 rounded-lg text-center transition-colors cursor-pointer ${activeTab === 'match-score' ? 'bg-[var(--color-accent)] text-[var(--color-accent-ink,#060911)] font-extrabold' : 'text-slate-300 hover:text-white'}`}
             >
               Match ({matchAnalysis.score}%)
             </button>
             <button
+              type="button"
               onClick={() => setActiveTab('history')}
-              className={`py-2 rounded-lg text-center transition-colors cursor-pointer ${activeTab === 'history' ? 'bg-[var(--color-accent)] text-white font-bold' : 'text-[#9CA3AF] hover:text-white'}`}
+              className={`py-2 rounded-lg text-center transition-colors cursor-pointer ${activeTab === 'history' ? 'bg-[var(--color-accent)] text-[var(--color-accent-ink,#060911)] font-extrabold' : 'text-slate-300 hover:text-white'}`}
             >
               Saved ({savedLetters.length})
             </button>
@@ -797,11 +712,12 @@ ${PERSONAL_INFO.title}`;
                 ].map((t) => (
                   <button
                     key={t.id}
+                    type="button"
                     onClick={() => setTone(t.id as CoverLetterTone)}
                     className={`py-2 px-1 rounded-lg border text-center transition-all cursor-pointer ${
                       tone === t.id 
-                        ? 'bg-[var(--color-accent)] border-[var(--color-accent)] text-white font-bold' 
-                        : 'bg-[#12151C] border-white/5 text-[#9CA3AF] hover:text-white'
+                        ? 'bg-[var(--color-accent)] border-[var(--color-accent)] text-[var(--color-accent-ink,#060911)] font-bold' 
+                        : 'bg-[#12151C] border-white/10 text-slate-300 hover:text-white'
                     }`}
                   >
                     {t.label}
@@ -818,11 +734,12 @@ ${PERSONAL_INFO.title}`;
                 ].map((tmpl) => (
                   <button
                     key={tmpl.id}
+                    type="button"
                     onClick={() => setTemplate(tmpl.id as CoverLetterTemplate)}
                     className={`py-1.5 px-1 rounded-lg border text-center transition-all cursor-pointer ${
                       template === tmpl.id 
                         ? 'bg-blue-600 border-blue-500 text-white font-bold' 
-                        : 'bg-[#12151C] border-white/5 text-[#9CA3AF] hover:text-white'
+                        : 'bg-[#12151C] border-white/10 text-slate-300 hover:text-white'
                     }`}
                   >
                     {tmpl.label}
@@ -852,29 +769,72 @@ ${PERSONAL_INFO.title}`;
                     onClick={() => setFontFamily(f.id as CoverLetterFontFamily)}
                     className={`p-2 rounded-xl border text-left transition-all cursor-pointer ${
                       fontFamily === f.id
-                        ? 'bg-[var(--color-accent)] border-[var(--color-accent)] text-white font-bold shadow-sm'
-                        : 'bg-[#12151C] border-white/10 text-[#9CA3AF] hover:text-white hover:border-white/20'
+                        ? 'bg-[var(--color-accent)] border-[var(--color-accent)] text-[var(--color-accent-ink,#060911)] font-bold shadow-sm'
+                        : 'bg-[#12151C] border-white/10 text-slate-200 hover:text-white hover:border-white/25'
                     }`}
                   >
                     <span className="block text-xs font-bold leading-tight">{f.label}</span>
-                    <span className={`block text-[9px] mt-0.5 ${fontFamily === f.id ? 'text-white/80' : 'text-[#6B7280]'}`}>{f.sub}</span>
+                    <span className={`block text-[9px] mt-0.5 ${fontFamily === f.id ? 'text-[var(--color-accent-ink,#060911)]/80 font-semibold' : 'text-slate-400'}`}>{f.sub}</span>
                   </button>
                 ))}
               </div>
-              <p className="text-[10.5px] text-[#9CA3AF] font-mono leading-relaxed">
+              <p className="text-[10.5px] text-slate-300 font-mono leading-relaxed">
                 ✓ Hyperlinks for LinkedIn, GitHub, and Portfolio are natively interactive in the exported PDF and printout.
               </p>
             </div>
 
+            {/* Toggleable PDF Size & Quality Mode */}
+            <div className="p-2.5 rounded-xl bg-[#12151C] border border-white/10 space-y-2">
+              <div className="flex items-center justify-between text-[11px] font-mono">
+                <span className="text-slate-200 font-semibold">PDF Size &amp; Quality Mode</span>
+                {lastPdfInfo && (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 font-bold">
+                    Last: {lastPdfInfo.sizeLabel}
+                  </span>
+                )}
+              </div>
+              <div className="grid grid-cols-2 gap-1.5 font-mono text-[11px]">
+                <button
+                  type="button"
+                  onClick={() => setPdfQualityMode('under-1mb')}
+                  className={`p-2 rounded-lg border text-left transition-all cursor-pointer ${
+                    pdfQualityMode === 'under-1mb'
+                      ? 'bg-[var(--color-accent)] border-[var(--color-accent)] text-[var(--color-accent-ink,#060911)] font-bold shadow-sm'
+                      : 'bg-[#0B0D12] border-white/10 text-slate-200 hover:border-white/25 hover:text-white'
+                  }`}
+                >
+                  <span className="block text-xs font-bold leading-tight">Under 1 MB</span>
+                  <span className={`block text-[9px] mt-0.5 ${pdfQualityMode === 'under-1mb' ? 'text-[var(--color-accent-ink,#060911)]/80 font-semibold' : 'text-slate-400'}`}>
+                    1MB Cap ON • Compact
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPdfQualityMode('normal')}
+                  className={`p-2 rounded-lg border text-left transition-all cursor-pointer ${
+                    pdfQualityMode === 'normal'
+                      ? 'bg-[var(--color-accent)] border-[var(--color-accent)] text-[var(--color-accent-ink,#060911)] font-bold shadow-sm'
+                      : 'bg-[#0B0D12] border-white/10 text-slate-200 hover:border-white/25 hover:text-white'
+                  }`}
+                >
+                  <span className="block text-xs font-bold leading-tight">Normal Quality</span>
+                  <span className={`block text-[9px] mt-0.5 ${pdfQualityMode === 'normal' ? 'text-[var(--color-accent-ink,#060911)]/80 font-semibold' : 'text-slate-400'}`}>
+                    1MB Cap OFF • 2.5x HD
+                  </span>
+                </button>
+              </div>
+            </div>
+
             {/* Trigger AI Generator Button */}
             <button
+              type="button"
               onClick={handleGenerate}
               disabled={isGenerating || !companyName.trim() || !jobTitle.trim()}
-              className="w-full py-3.5 bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-white font-bold text-xs font-mono rounded-xl flex items-center justify-center space-x-2 transition-all shadow-lg shadow-[var(--color-accent)]/25 cursor-pointer disabled:opacity-50 shimmer"
+              className="w-full py-3.5 bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-[var(--color-accent-ink,#060911)] font-extrabold text-xs font-mono rounded-xl flex items-center justify-center space-x-2 transition-all shadow-lg shadow-[var(--color-accent)]/25 cursor-pointer disabled:opacity-50 shimmer"
             >
               {isGenerating ? (
                 <>
-                  <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  <span className="w-4 h-4 border-2 border-[#060911]/30 border-t-[#060911] rounded-full animate-spin" />
                   <span>AI Generating...</span>
                 </>
               ) : (
@@ -887,8 +847,9 @@ ${PERSONAL_INFO.title}`;
 
             {/* Save to History Button */}
             <button
+              type="button"
               onClick={handleSaveToHistory}
-              className="w-full py-2.5 bg-[#12151C] hover:bg-white/10 text-white font-mono text-xs rounded-xl border border-white/10 flex items-center justify-center space-x-2 transition-all cursor-pointer"
+              className="w-full py-2.5 bg-[#12151C] hover:bg-white/10 text-white font-mono text-xs rounded-xl border border-white/15 flex items-center justify-center space-x-2 transition-all cursor-pointer"
             >
               <Bookmark className="w-3.5 h-3.5 text-amber-400" />
               <span>Save Letter to History</span>
@@ -901,23 +862,25 @@ ${PERSONAL_INFO.title}`;
         {/* RIGHT PANEL: Live A4 Preview & Match Analysis */}
         <div className="flex-1 bg-[#1A1D26] overflow-y-auto p-4 sm:p-8 flex justify-center items-start">
           
-          {/* TAB 1 & 2: LIVE A4 PREVIEW OR EDITABLE TEXTAREA */}
+          {/* TAB 1 & 2: LIVE A4 PREVIEW TOOLBAR & OPTIONAL EDIT TEXTAREA */}
           {(activeTab === 'preview' || activeTab === 'editor') && (
             <div className="w-full max-w-[210mm] space-y-4">
               
               {/* Preview Control Toolbar */}
-              <div className="flex items-center justify-between no-print bg-[#12151C] p-3 rounded-2xl border border-white/10 text-xs font-mono">
-                <div className="flex items-center space-x-3">
-                  <span className="text-[#9CA3AF]">Mode:</span>
+              <div className="flex items-center justify-between flex-wrap gap-2 no-print bg-[#12151C] p-3 rounded-2xl border border-white/10 text-xs font-mono">
+                <div className="flex items-center space-x-2">
+                  <span className="text-slate-300">Mode:</span>
                   <button
+                    type="button"
                     onClick={() => setIsEditing(false)}
-                    className={`px-3 py-1 rounded-lg transition-all cursor-pointer ${!isEditing ? 'bg-[var(--color-accent)] text-white font-bold' : 'text-[#9CA3AF] hover:text-white'}`}
+                    className={`px-3 py-1 rounded-lg transition-all cursor-pointer ${!isEditing ? 'bg-[var(--color-accent)] text-[var(--color-accent-ink,#060911)] font-extrabold' : 'text-slate-300 hover:text-white'}`}
                   >
                     A4 Visual Preview
                   </button>
                   <button
+                    type="button"
                     onClick={() => setIsEditing(true)}
-                    className={`px-3 py-1 rounded-lg transition-all cursor-pointer ${isEditing ? 'bg-[var(--color-accent)] text-white font-bold' : 'text-[#9CA3AF] hover:text-white'}`}
+                    className={`px-3 py-1 rounded-lg transition-all cursor-pointer ${isEditing ? 'bg-[var(--color-accent)] text-[var(--color-accent-ink,#060911)] font-extrabold' : 'text-slate-300 hover:text-white'}`}
                   >
                     Edit Text
                   </button>
@@ -930,9 +893,9 @@ ${PERSONAL_INFO.title}`;
               </div>
 
               {/* Editable Text Area Mode */}
-              {isEditing ? (
+              {isEditing && (
                 <div className="p-6 bg-white rounded-2xl shadow-2xl space-y-3 border border-gray-300">
-                  <label className="text-xs font-mono text-gray-700 font-bold block">
+                  <label className="text-xs font-mono text-gray-800 font-bold block">
                     Edit Cover Letter Text Directly:
                   </label>
                   <textarea
@@ -943,21 +906,32 @@ ${PERSONAL_INFO.title}`;
                   />
                   <div className="flex justify-end space-x-3">
                     <button
+                      type="button"
                       onClick={() => setCustomContent(defaultLetterContent)}
-                      className="px-4 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-mono transition-colors cursor-pointer"
+                      className="px-4 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-800 text-xs font-mono font-semibold transition-colors cursor-pointer"
                     >
                       Reset to AI Default
                     </button>
                     <button
+                      type="button"
                       onClick={() => setIsEditing(false)}
-                      className="px-5 py-2 rounded-xl bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-white text-xs font-mono font-bold transition-all cursor-pointer"
+                      className="px-5 py-2 rounded-xl bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-[var(--color-accent-ink,#060911)] text-xs font-mono font-bold transition-all cursor-pointer"
                     >
                       Done Editing
                     </button>
                   </div>
                 </div>
-              ) : (
-                /* Standard Rendered A4 Printable View */
+              )}
+
+              {/* Standard Rendered A4 Printable View (Always mounted inside page or offscreen when hidden) */}
+              <div
+                className={
+                  isEditing
+                    ? 'fixed -left-[9999px] top-0 w-[680px] opacity-0 pointer-events-none'
+                    : 'w-full'
+                }
+                aria-hidden={isEditing}
+              >
                 <div 
                   ref={printRef}
                   className={`print-cover-letter-root bg-white text-gray-900 p-8 sm:p-12 rounded-lg shadow-2xl border border-gray-200 min-h-[297mm] flex flex-col justify-between leading-relaxed text-sm select-text ${
@@ -970,7 +944,7 @@ ${PERSONAL_INFO.title}`;
                     
                     {/* Modern Executive Header */}
                     {template === 'modern-executive' && (
-                      <div className="border-b-2 border-orange-500 pb-4 mb-4 flex justify-between items-start">
+                      <div className="cv-keep-together border-b-2 border-orange-500 pb-4 mb-4 flex justify-between items-start">
                         <div>
                           <h1 className="text-2xl font-black text-gray-900 uppercase tracking-tight" style={{ color: '#111827' }}>
                             {PERSONAL_INFO.name}
@@ -1000,7 +974,7 @@ ${PERSONAL_INFO.title}`;
 
                     {/* Classic Corporate Header */}
                     {template === 'classic-corporate' && (
-                      <div className="text-center border-b border-gray-300 pb-4 mb-4 space-y-1">
+                      <div className="cv-keep-together text-center border-b border-gray-300 pb-4 mb-4 space-y-1">
                         <h1 className="text-2xl font-bold text-gray-900 uppercase tracking-wider" style={{ color: '#111827' }}>
                           {PERSONAL_INFO.name}
                         </h1>
@@ -1023,7 +997,7 @@ ${PERSONAL_INFO.title}`;
 
                     {/* Minimalist Tech Header */}
                     {template === 'minimalist-tech' && (
-                      <div className="border-l-4 border-gray-900 pl-4 py-1 mb-4 space-y-0.5" style={{ borderColor: '#111827' }}>
+                      <div className="cv-keep-together border-l-4 border-gray-900 pl-4 py-1 mb-4 space-y-0.5" style={{ borderColor: '#111827' }}>
                         <h1 className="text-xl font-black text-gray-900 uppercase" style={{ color: '#111827' }}>
                           {PERSONAL_INFO.name}
                         </h1>
@@ -1042,7 +1016,7 @@ ${PERSONAL_INFO.title}`;
                     )}
 
                     {/* Date & Recipient Info Block */}
-                    <div className="space-y-3 text-xs text-gray-800 font-mono pt-2" style={{ color: '#1f2937' }}>
+                    <div className="cv-keep-together space-y-3 text-xs text-gray-800 font-mono pt-2" style={{ color: '#1f2937' }}>
                       <p className="font-semibold">{date}</p>
                       <div>
                         <p className="font-bold text-gray-900 text-sm" style={{ color: '#111827' }}>{hiringManager || 'Hiring Manager'}</p>
@@ -1058,14 +1032,14 @@ ${PERSONAL_INFO.title}`;
                     {/* Cover Letter Body Text */}
                     <div className="text-[13.5px] text-gray-800 leading-[1.6] space-y-3.5 pt-2 text-left" style={{ color: '#1f2937' }}>
                       {activeLetterText.split('\n\n').slice(3, -2).map((paragraph, pIdx) => (
-                        <p key={pIdx} className="leading-[1.6]">
+                        <p key={pIdx} className="cv-keep-together leading-[1.6]">
                           {renderTextWithLinks(paragraph)}
                         </p>
                       ))}
                     </div>
 
                     {/* Closing & Sign-off */}
-                    <div className="pt-4 space-y-1.5 text-[13.5px] text-gray-900" style={{ color: '#111827' }}>
+                    <div className="cv-keep-together pt-4 space-y-1.5 text-[13.5px] text-gray-900" style={{ color: '#111827' }}>
                       <p>Sincerely,</p>
                       <div className="pt-2 font-bold text-base" style={{ color: '#111827' }}>
                         {PERSONAL_INFO.name}
@@ -1078,14 +1052,94 @@ ${PERSONAL_INFO.title}`;
                   </div>
 
                   {/* Clean Page Footer */}
-                  <div className="mt-8 pt-4 border-t border-gray-200 text-[10px] text-gray-500 flex justify-between items-center" style={{ color: '#6b7280', borderColor: '#e5e7eb' }}>
+                  <div className="cv-keep-together mt-8 pt-4 border-t border-gray-200 text-[10px] text-gray-500 flex justify-between items-center" style={{ color: '#6b7280', borderColor: '#e5e7eb' }}>
                     <span>Confidential Cover Letter | Prepared for {companyName}</span>
-                    <span>Page 1 of 1</span>
+                    <span>Formal Cover Letter</span>
                   </div>
 
                 </div>
-              )}
+              </div>
 
+            </div>
+          )}
+
+          {/* Offscreen fallback mount when user is on Match or History tab so top-bar Print / PDF always works */}
+          {activeTab !== 'preview' && activeTab !== 'editor' && (
+            <div
+              className="fixed -left-[9999px] top-0 w-[680px] opacity-0 pointer-events-none"
+              aria-hidden="true"
+            >
+              <div
+                ref={printRef}
+                className={`print-cover-letter-root bg-white text-gray-900 p-8 leading-relaxed text-sm ${
+                  fontFamily === 'serif' ? 'font-ats-serif' : fontFamily === 'corporate' ? 'font-ats-corporate' : 'font-ats-modern'
+                }`}
+                style={{ backgroundColor: '#ffffff', color: '#111827' }}
+              >
+                <div className="space-y-6">
+                  {template === 'modern-executive' && (
+                    <div className="border-b-2 border-orange-500 pb-4 mb-4 flex justify-between items-start">
+                      <div>
+                        <h1 className="text-2xl font-black text-gray-900 uppercase tracking-tight" style={{ color: '#111827' }}>
+                          {PERSONAL_INFO.name}
+                        </h1>
+                        <p className="text-xs font-bold text-orange-600 font-mono uppercase tracking-wider mt-0.5" style={{ color: '#ea580c' }}>
+                          {PERSONAL_INFO.title}
+                        </p>
+                      </div>
+                      <div className="text-right text-[11px] text-gray-600 font-mono space-y-0.5" style={{ color: '#4b5563' }}>
+                        <p>{PERSONAL_INFO.location}</p>
+                        <p className="font-semibold text-gray-900" style={{ color: '#111827' }}>
+                          <a href={`mailto:${PERSONAL_INFO.email}`}>{PERSONAL_INFO.email}</a>
+                        </p>
+                        <p>
+                          <a href={`tel:${PERSONAL_INFO.phone}`}>{PERSONAL_INFO.phone}</a>
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                  {template === 'classic-corporate' && (
+                    <div className="text-center border-b border-gray-300 pb-4 mb-4 space-y-1">
+                      <h1 className="text-2xl font-bold text-gray-900 uppercase tracking-wider" style={{ color: '#111827' }}>
+                        {PERSONAL_INFO.name}
+                      </h1>
+                      <p className="text-xs text-gray-600 font-mono" style={{ color: '#4b5563' }}>
+                        {PERSONAL_INFO.title} • {PERSONAL_INFO.location}
+                      </p>
+                    </div>
+                  )}
+                  {template === 'minimalist-tech' && (
+                    <div className="border-l-4 border-gray-900 pl-4 py-1 mb-4 space-y-0.5" style={{ borderColor: '#111827' }}>
+                      <h1 className="text-xl font-black text-gray-900 uppercase" style={{ color: '#111827' }}>
+                        {PERSONAL_INFO.name}
+                      </h1>
+                    </div>
+                  )}
+                  <div className="space-y-3 text-xs text-gray-800 font-mono pt-2" style={{ color: '#1f2937' }}>
+                    <p className="font-semibold">{date}</p>
+                    <div>
+                      <p className="font-bold text-gray-900 text-sm" style={{ color: '#111827' }}>{hiringManager || 'Hiring Manager'}</p>
+                      <p className="font-bold text-gray-800" style={{ color: '#111827' }}>{companyName}</p>
+                      {companyLocation && <p>{companyLocation}</p>}
+                    </div>
+                    <p className="font-bold text-gray-900 text-sm pt-2" style={{ color: '#111827' }}>
+                      Subject: Application for {jobTitle} Position
+                    </p>
+                  </div>
+                  <div className="text-[13.5px] text-gray-800 leading-[1.6] space-y-3.5 pt-2 text-left" style={{ color: '#1f2937' }}>
+                    {activeLetterText.split('\n\n').slice(3, -2).map((paragraph, pIdx) => (
+                      <p key={pIdx} className="leading-[1.6]">
+                        {renderTextWithLinks(paragraph)}
+                      </p>
+                    ))}
+                  </div>
+                  <div className="pt-4 space-y-1.5 text-[13.5px] text-gray-900" style={{ color: '#111827' }}>
+                    <p>Sincerely,</p>
+                    <div className="pt-2 font-bold text-base" style={{ color: '#111827' }}>{PERSONAL_INFO.name}</div>
+                    <p className="text-xs text-gray-600" style={{ color: '#4b5563' }}>{PERSONAL_INFO.title}</p>
+                  </div>
+                </div>
+              </div>
             </div>
           )}
 
@@ -1209,13 +1263,14 @@ ${PERSONAL_INFO.title}`;
 
                       <div className="flex justify-end space-x-2 pt-2 border-t border-white/5">
                         <button
+                          type="button"
                           onClick={() => {
                             setCustomContent(letter.content);
                             setCompanyName(letter.companyName);
                             setJobTitle(letter.jobTitle);
                             setActiveTab('preview');
                           }}
-                          className="px-4 py-1.5 rounded-lg bg-[var(--color-accent)] text-white font-mono text-xs font-bold cursor-pointer hover:bg-[var(--color-accent-hover)]"
+                          className="px-4 py-1.5 rounded-lg bg-[var(--color-accent)] text-[var(--color-accent-ink,#060911)] font-mono text-xs font-bold cursor-pointer hover:bg-[var(--color-accent-hover)]"
                         >
                           Load & Edit
                         </button>
@@ -1230,6 +1285,24 @@ ${PERSONAL_INFO.title}`;
         </div>
 
       </div>
+
+      <PrintPreviewModal
+        isOpen={isPrintPreviewOpen}
+        onClose={() => setIsPrintPreviewOpen(false)}
+        title="Cover Letter"
+        fileName={`${PERSONAL_INFO.name.replace(/\s+/g, '_')}_Cover_Letter_${companyName.replace(/\s+/g, '_')}.pdf`}
+        pages={printPreviewPages}
+        margin={[14, 15, 14, 15]}
+        isLoading={isGeneratingPrintPreview}
+        isExportingPdf={isExportingPdf}
+        pdfQualityMode={pdfQualityMode}
+        onTogglePdfQualityMode={() =>
+          setPdfQualityMode((m) => (m === 'under-1mb' ? 'normal' : 'under-1mb'))
+        }
+        onDownloadPdf={handleDownloadPdf}
+        onPrintNow={handlePrint}
+        lastPdfInfo={lastPdfInfo}
+      />
 
     </div>
   );

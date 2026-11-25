@@ -15,6 +15,7 @@ export interface ColorTheme {
   name: string;
   subtitle: string;
   primary: string;
+  contrastInk: string;
   light: string;
   hover: string;
   glow: string;
@@ -31,6 +32,7 @@ export const COLOR_THEMES: Record<string, ColorTheme> = {
     name: 'Cyber Cyan',
     subtitle: 'Precision QA Automation & Cloud Test Suites (Default)',
     primary: '#00D2FF',
+    contrastInk: '#060911',
     light: '#38BDF8',
     hover: '#0284C7',
     glow: 'rgba(0, 210, 255, 0.28)',
@@ -45,6 +47,7 @@ export const COLOR_THEMES: Record<string, ColorTheme> = {
     name: 'Sapphire Indigo',
     subtitle: 'Enterprise SDET & High-Tech Core Systems',
     primary: '#6366F1',
+    contrastInk: '#FFFFFF',
     light: '#818CF8',
     hover: '#4F46E5',
     glow: 'rgba(99, 102, 241, 0.3)',
@@ -59,6 +62,7 @@ export const COLOR_THEMES: Record<string, ColorTheme> = {
     name: 'Emerald Verified',
     subtitle: '100% Passed Test Pipelines & Zero Defects',
     primary: '#10B981',
+    contrastInk: '#060911',
     light: '#34D399',
     hover: '#059669',
     glow: 'rgba(16, 185, 129, 0.3)',
@@ -73,6 +77,7 @@ export const COLOR_THEMES: Record<string, ColorTheme> = {
     name: 'Neon Violet',
     subtitle: 'Next-Gen Modern Developer Aesthetics',
     primary: '#A855F7',
+    contrastInk: '#060911',
     light: '#C084FC',
     hover: '#9333EA',
     glow: 'rgba(168, 85, 247, 0.3)',
@@ -87,6 +92,7 @@ export const COLOR_THEMES: Record<string, ColorTheme> = {
     name: 'Sunset Amber',
     subtitle: 'Warm Radiant High-Contrast Classic',
     primary: '#FF6B35',
+    contrastInk: '#060911',
     light: '#FF814F',
     hover: '#E8551E',
     glow: 'rgba(255, 107, 53, 0.3)',
@@ -109,6 +115,7 @@ export function applyThemeToDocument(theme: ColorTheme): void {
   const root = document.documentElement;
   
   root.style.setProperty('--color-accent', theme.primary);
+  root.style.setProperty('--color-accent-ink', theme.contrastInk || '#060911');
   root.style.setProperty('--color-accent-light', theme.light);
   root.style.setProperty('--color-accent-hover', theme.hover);
   root.style.setProperty('--color-accent-glow', theme.glow);

@@ -150,7 +150,7 @@ export default function ThemeSelectorModal({ isOpen, onClose }: ThemeSelectorMod
 
                   {/* Mini Accent Preview Bar */}
                   <div className="mt-3 pt-3 border-t border-white/[0.06] flex items-center justify-between text-[10px] font-mono">
-                    <span className="text-[#6B7280]">Accent Hex:</span>
+                    <span className="text-slate-400">Accent Hex:</span>
                     <span 
                       className="font-bold tracking-wider"
                       style={{ color: theme.primary }}

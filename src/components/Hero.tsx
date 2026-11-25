@@ -3,6 +3,7 @@ import { Mail, Phone, MapPin, ArrowRight, Check, Copy, Code, BookOpen, Nfc } fro
 import { PERSONAL_INFO } from '../data';
 import { navigateTo } from '../utils/router';
 import { getStoredProfile, PORTFOLIO_UPDATED_EVENT } from '../utils/portfolioStore';
+import { copyToClipboard } from '../utils/clipboard';
 
 const FALLBACK_AVATAR = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=800';
 
@@ -24,10 +25,12 @@ export default function Hero({ onOpenResumeBuilder, onOpenCoverLetter, onOpenVis
     return () => window.removeEventListener(PORTFOLIO_UPDATED_EVENT, handleUpdate);
   }, []);
 
-  const handleCopyEmail = () => {
-    navigator.clipboard.writeText(profile.email || PERSONAL_INFO.email);
-    setCopiedEmail(true);
-    setTimeout(() => setCopiedEmail(false), 2000);
+  const handleCopyEmail = async () => {
+    const ok = await copyToClipboard(profile.email || PERSONAL_INFO.email);
+    if (ok) {
+      setCopiedEmail(true);
+      setTimeout(() => setCopiedEmail(false), 2000);
+    }
   };
 
   const primaryAvatar = profile.avatar || PERSONAL_INFO.avatar || '/sabbir_avatar.jpeg';

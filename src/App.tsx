@@ -11,7 +11,7 @@
  * -----------------------------------------
  */
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react';
 import Navbar from './components/Navbar';
 import Hero from './components/Hero';
 import SkillsGrid from './components/SkillsGrid';
@@ -21,13 +21,7 @@ import ExperienceTimeline from './components/ExperienceTimeline';
 import CareerVision from './components/CareerVision';
 import EducationAndReferences from './components/EducationAndReferences';
 import Contact from './components/Contact';
-import ResumeBuilderModal from './components/ResumeBuilderModal';
-import CoverLetterGeneratorModal from './components/CoverLetterGeneratorModal';
-import BlogList from './components/BlogList';
-import BlogPost from './components/BlogPost';
-import AdminPortal from './components/AdminPortal';
 import AdminQuickAccess from './components/AdminQuickAccess';
-import AdminCloudScanModal from './components/AdminCloudScanModal';
 import { getCurrentRoute, navigateTo, navigateToHomeSection, AppRoute } from './utils/router';
 import {
   ADMIN_OAUTH_REDIRECT_COMPLETED_EVENT,
@@ -44,9 +38,36 @@ import {
 import { getStoredBlogCategories, getStoredBlogPosts } from './utils/blogStore';
 import { initializeCloudRealtimeSync } from './utils/cloudSync';
 import { initializeTheme } from './utils/themeStore';
-import AdminPasscodeModal, { SecurityModalMode } from './components/AdminPasscodeModal';
-import { VisitingCardModal } from './components/VisitingCardModal';
+import type { SecurityModalMode } from './components/AdminPasscodeModal';
 import Footer from './components/Footer';
+
+const AdminPortal = lazy(() => import('./components/AdminPortal'));
+const BlogList = lazy(() => import('./components/BlogList'));
+const BlogPost = lazy(() => import('./components/BlogPost'));
+const ResumeBuilderModal = lazy(() => import('./components/ResumeBuilderModal'));
+const CoverLetterGeneratorModal = lazy(() => import('./components/CoverLetterGeneratorModal'));
+const AdminPasscodeModal = lazy(() => import('./components/AdminPasscodeModal'));
+const AdminCloudScanModal = lazy(() => import('./components/AdminCloudScanModal'));
+const VisitingCardModal = lazy(() =>
+  import('./components/VisitingCardModal').then((m) => ({ default: m.VisitingCardModal }))
+);
+
+const LazyChunkFallback = ({ fullScreen = false }: { fullScreen?: boolean }) => (
+  <div
+    className={
+      fullScreen
+        ? 'min-h-[60vh] flex items-center justify-center p-8'
+        : 'fixed inset-0 z-[60] bg-black/75 backdrop-blur-sm flex items-center justify-center'
+    }
+    role="status"
+    aria-live="polite"
+  >
+    <div className="flex flex-col items-center gap-3">
+      <div className="w-8 h-8 rounded-full border-2 border-[var(--color-accent,#00D2FF)]/30 border-t-[var(--color-accent,#00D2FF)] animate-spin" />
+      <span className="text-xs font-mono text-slate-300 tracking-wide">Loading module...</span>
+    </div>
+  </div>
+);
 
 export default function App(): React.ReactNode {
   const [dark, setDark] = useState<boolean>(true);
@@ -258,29 +279,35 @@ export default function App(): React.ReactNode {
       {/* Main Page Sections or Blog Page or Admin Page */}
       <main className="flex-grow">
         {route.type === 'admin' && (
-          <AdminPortal
-            onBack={handleReturnHomeFromAdmin}
-            initialTab={route.initialTab || 'overview'}
-            onOpenResumeBuilder={handleOpenResumeBuilder}
-            onOpenCoverLetter={handleOpenCoverLetter}
-            onOpenMainSecurity={handleOpenSecurityModal}
-            onOpenCloudScan={handleOpenCloudScanModal}
-          />
+          <Suspense fallback={<LazyChunkFallback fullScreen />}>
+            <AdminPortal
+              onBack={handleReturnHomeFromAdmin}
+              initialTab={route.initialTab || 'overview'}
+              onOpenResumeBuilder={handleOpenResumeBuilder}
+              onOpenCoverLetter={handleOpenCoverLetter}
+              onOpenMainSecurity={handleOpenSecurityModal}
+              onOpenCloudScan={handleOpenCloudScanModal}
+            />
+          </Suspense>
         )}
 
         {route.type === 'blog-list' && (
-          <BlogList
-            onSelectPost={(slug) => navigateTo(`/blog/${slug}`)}
-          />
+          <Suspense fallback={<LazyChunkFallback fullScreen />}>
+            <BlogList
+              onSelectPost={(slug) => navigateTo(`/blog/${slug}`)}
+            />
+          </Suspense>
         )}
 
         {route.type === 'blog-post' && (
-          <BlogPost
-            slug={route.slug}
-            onBackToBlog={() => navigateTo('/blog')}
-            onSelectPost={(slug) => navigateTo(`/blog/${slug}`)}
-            onOpenContact={() => navigateToHomeSection('#contact')}
-          />
+          <Suspense fallback={<LazyChunkFallback fullScreen />}>
+            <BlogPost
+              slug={route.slug}
+              onBackToBlog={() => navigateTo('/blog')}
+              onSelectPost={(slug) => navigateTo(`/blog/${slug}`)}
+              onOpenContact={() => navigateToHomeSection('#contact')}
+            />
+          </Suspense>
         )}
 
         {(route.type === 'home' || route.type === 'vcard') && (
@@ -309,62 +336,74 @@ export default function App(): React.ReactNode {
       </main>
 
       {/* Virtual Visiting Card & Smart NFC Suite Modal */}
-      <VisitingCardModal
-        isOpen={isVisitingCardModalOpen}
-        onClose={() => {
-          setIsVisitingCardModalOpen(false);
-          const search = window.location.search.toLowerCase();
-          const hash = window.location.hash.toLowerCase();
-          const path = window.location.pathname.toLowerCase();
-          if (
-            hash.includes('card') ||
-            search.includes('card') ||
-            search.includes('vcard') ||
-            path === '/vcard' ||
-            path === '/card'
-          ) {
-            window.history.pushState(null, '', '/');
-            setRoute(getCurrentRoute());
-          }
-        }}
-      />
+      {isVisitingCardModalOpen && (
+        <Suspense fallback={<LazyChunkFallback />}>
+          <VisitingCardModal
+            isOpen={isVisitingCardModalOpen}
+            onClose={() => {
+              setIsVisitingCardModalOpen(false);
+              const search = window.location.search.toLowerCase();
+              const hash = window.location.hash.toLowerCase();
+              const path = window.location.pathname.toLowerCase();
+              if (
+                hash.includes('card') ||
+                search.includes('card') ||
+                search.includes('vcard') ||
+                path === '/vcard' ||
+                path === '/card'
+              ) {
+                window.history.pushState(null, '', '/');
+                setRoute(getCurrentRoute());
+              }
+            }}
+          />
+        </Suspense>
+      )}
 
       {/* Resume Builder Modal */}
       {isResumeModalOpen && (
-        <ResumeBuilderModal
-          isOpen={isResumeModalOpen}
-          onClose={() => setIsResumeModalOpen(false)}
-          onOpenCoverLetter={handleOpenCoverLetter}
-        />
+        <Suspense fallback={<LazyChunkFallback />}>
+          <ResumeBuilderModal
+            isOpen={isResumeModalOpen}
+            onClose={() => setIsResumeModalOpen(false)}
+            onOpenCoverLetter={handleOpenCoverLetter}
+          />
+        </Suspense>
       )}
 
       {/* Cover Letter Generator Modal */}
       {isCoverLetterModalOpen && (
-        <CoverLetterGeneratorModal
-          isOpen={isCoverLetterModalOpen}
-          onClose={() => setIsCoverLetterModalOpen(false)}
-        />
+        <Suspense fallback={<LazyChunkFallback />}>
+          <CoverLetterGeneratorModal
+            isOpen={isCoverLetterModalOpen}
+            onClose={() => setIsCoverLetterModalOpen(false)}
+          />
+        </Suspense>
       )}
 
       {/* Single External Main Security System Modal */}
       {isAdminPasscodeModalOpen && (
-        <AdminPasscodeModal
-          isOpen={isAdminPasscodeModalOpen}
-          initialMode={securityModalMode}
-          onClose={handleCloseSecurityModal}
-          onSuccess={handleSecurityModalSuccess}
-          returnHomeOnCancel={route.type === 'admin' && !isAdmin}
-          title="Main System Security"
-          description="Enter your password to unlock full portfolio management or update your password."
-        />
+        <Suspense fallback={<LazyChunkFallback />}>
+          <AdminPasscodeModal
+            isOpen={isAdminPasscodeModalOpen}
+            initialMode={securityModalMode}
+            onClose={handleCloseSecurityModal}
+            onSuccess={handleSecurityModalSuccess}
+            returnHomeOnCancel={route.type === 'admin' && !isAdmin}
+            title="Main System Security"
+            description="Enter your password to unlock full portfolio management or update your password."
+          />
+        </Suspense>
       )}
 
       {/* Admin-Exclusive Pre-Git Cloud Scan & Backup Reminder Modal */}
       {isAdmin && isCloudScanModalOpen && (
-        <AdminCloudScanModal
-          isOpen={isCloudScanModalOpen}
-          onClose={() => setIsCloudScanModalOpen(false)}
-        />
+        <Suspense fallback={<LazyChunkFallback />}>
+          <AdminCloudScanModal
+            isOpen={isCloudScanModalOpen}
+            onClose={() => setIsCloudScanModalOpen(false)}
+          />
+        </Suspense>
       )}
 
       {/* Rich Executive Glassmorphism Footer (hidden inside full-screen Admin Dashboard) */}

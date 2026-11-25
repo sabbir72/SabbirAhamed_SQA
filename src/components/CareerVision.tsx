@@ -138,10 +138,10 @@ export default function CareerVision() {
                     <div className="flex items-center justify-between mb-3">
                       <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded ${
                         isActive 
-                          ? 'bg-[var(--color-accent)] text-white' 
+                          ? 'bg-[var(--color-accent)] text-[var(--color-accent-ink,#060911)]' 
                           : isVision 
                             ? 'bg-purple-600 text-white' 
-                            : 'bg-white/10 text-gray-400'
+                            : 'bg-white/10 text-slate-300'
                       }`}>
                         {String(idx + 1).padStart(2, '0')}
                       </span>
@@ -160,7 +160,7 @@ export default function CareerVision() {
 
                   {idx < careerFlow.length - 1 && (
                     <div className="hidden lg:flex justify-end mt-4">
-                      <ArrowRight className={`w-3.5 h-3.5 ${isActive ? 'text-[var(--color-accent)]' : 'text-gray-600'}`} />
+                      <ArrowRight className={`w-3.5 h-3.5 ${isActive ? 'text-[var(--color-accent)]' : 'text-slate-400'}`} />
                     </div>
                   )}
                 </div>

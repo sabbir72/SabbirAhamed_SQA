@@ -40,6 +40,7 @@ import { navigateTo } from '../utils/router';
 import { getStoredProfile } from '../utils/portfolioStore';
 import { PERSONAL_INFO } from '../data';
 import CreateBlogModal from './CreateBlogModal';
+import { copyToClipboard } from '../utils/clipboard';
 
 const getAuthorAvatar = (author?: { name?: string; avatar?: string }) => {
   const liveAvatar = getStoredProfile().avatar || PERSONAL_INFO.avatar || '/sabbir_avatar.jpeg';
@@ -140,16 +141,20 @@ export default function BlogPost({ slug, onBackToBlog, onSelectPost }: BlogPostP
     window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
   }, [post]);
 
-  const handleCopyLink = () => {
-    navigator.clipboard.writeText(window.location.href);
-    setCopiedLink(true);
-    setTimeout(() => setCopiedLink(false), 2500);
+  const handleCopyLink = async () => {
+    const ok = await copyToClipboard(window.location.href);
+    if (ok) {
+      setCopiedLink(true);
+      setTimeout(() => setCopiedLink(false), 2500);
+    }
   };
 
-  const handleCopyCode = (codeText: string, codeId: string) => {
-    navigator.clipboard.writeText(codeText);
-    setCopiedCodeId(codeId);
-    setTimeout(() => setCopiedCodeId(null), 2000);
+  const handleCopyCode = async (codeText: string, codeId: string) => {
+    const ok = await copyToClipboard(codeText);
+    if (ok) {
+      setCopiedCodeId(codeId);
+      setTimeout(() => setCopiedCodeId(null), 2000);
+    }
   };
 
   const handlePublishDraftDirectly = () => {
@@ -468,7 +473,7 @@ export default function BlogPost({ slug, onBackToBlog, onSelectPost }: BlogPostP
               href={`https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(window.location.href)}`}
               target="_blank"
               rel="noopener noreferrer"
-              className="p-2.5 rounded-full bg-[#12151C] hover:bg-[var(--color-accent)] text-white border border-white/10 transition-colors cursor-pointer"
+              className="p-2.5 rounded-full bg-[#12151C] hover:bg-[var(--color-accent)] text-white hover:text-[var(--color-accent-ink,#060911)] border border-white/10 transition-colors cursor-pointer"
               title="Share on LinkedIn"
             >
               <Linkedin className="w-4 h-4" />
@@ -477,14 +482,14 @@ export default function BlogPost({ slug, onBackToBlog, onSelectPost }: BlogPostP
               href={`https://twitter.com/intent/tweet?url=${encodeURIComponent(window.location.href)}&text=${encodeURIComponent(post.title)}`}
               target="_blank"
               rel="noopener noreferrer"
-              className="p-2.5 rounded-full bg-[#12151C] hover:bg-[var(--color-accent)] text-white border border-white/10 transition-colors cursor-pointer"
+              className="p-2.5 rounded-full bg-[#12151C] hover:bg-[var(--color-accent)] text-white hover:text-[var(--color-accent-ink,#060911)] border border-white/10 transition-colors cursor-pointer"
               title="Share on Twitter"
             >
               <Twitter className="w-4 h-4" />
             </a>
             <button
               onClick={handleCopyLink}
-              className="p-2.5 rounded-full bg-[#12151C] hover:bg-[var(--color-accent)] text-white border border-white/10 transition-colors cursor-pointer"
+              className="p-2.5 rounded-full bg-[#12151C] hover:bg-[var(--color-accent)] text-white hover:text-[var(--color-accent-ink,#060911)] border border-white/10 transition-colors cursor-pointer"
               title="Copy Article Link"
             >
               {copiedLink ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}

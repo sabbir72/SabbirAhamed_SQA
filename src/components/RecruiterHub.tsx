@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Briefcase, Copy, Check, FileText, Search, Sparkles, UserCheck, Code, Award, MessageSquare, Target, Terminal, ChevronRight, X } from 'lucide-react';
 import { PERSONAL_INFO } from '../data';
+import { copyToClipboard } from '../utils/clipboard';
 
 interface SectionItem {
   id: string;
@@ -346,11 +347,13 @@ export default function RecruiterHub() {
     return matchesCategory && matchesSearch;
   });
 
-  const handleCopy = (text: string | string[], id: string) => {
+  const handleCopy = async (text: string | string[], id: string) => {
     const stringToCopy = Array.isArray(text) ? text.join('\n') : text;
-    navigator.clipboard.writeText(stringToCopy);
-    setCopiedId(id);
-    setTimeout(() => setCopiedId(null), 2000);
+    const ok = await copyToClipboard(stringToCopy);
+    if (ok) {
+      setCopiedId(id);
+      setTimeout(() => setCopiedId(null), 2000);
+    }
   };
 
   return (
@@ -394,10 +397,10 @@ export default function RecruiterHub() {
               <button
                 key={cat}
                 onClick={() => setActiveCategory(cat)}
-                className={`px-4 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+                className={`px-4 py-1.5 rounded-full text-xs font-medium border transition-colors cursor-pointer ${
                   activeCategory === cat
-                    ? 'bg-accent text-white border-accent font-bold shadow-sm'
-                    : 'bg-zinc-100 dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 hover:border-accent'
+                    ? 'bg-[var(--color-accent)] text-[var(--color-accent-ink,#060911)] border-[var(--color-accent)] font-bold shadow-sm'
+                    : 'bg-zinc-100 dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300 hover:border-[var(--color-accent)]'
                 }`}
               >
                 {cat}

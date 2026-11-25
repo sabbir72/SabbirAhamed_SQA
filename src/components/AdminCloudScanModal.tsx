@@ -27,6 +27,7 @@ import {
   syncAllLocalDataToCloud,
 } from '../utils/cloudSync';
 import { PRIMARY_OWNER_EMAIL } from '../firebase';
+import { copyToClipboard } from '../utils/clipboard';
 import {
   getStoredPortfolioData,
   PORTFOLIO_UPDATED_EVENT,
@@ -383,12 +384,10 @@ export default function AdminCloudScanModal({
                     <button
                       type="button"
                       onClick={async () => {
-                        try {
-                          await navigator.clipboard.writeText(currentHostname);
+                        const ok = await copyToClipboard(currentHostname);
+                        if (ok) {
                           setCopiedDomain(true);
                           window.setTimeout(() => setCopiedDomain(false), 2000);
-                        } catch {
-                          // ignore clipboard failures
                         }
                       }}
                       className="flex-1 min-h-[38px] px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/15 text-white font-medium text-xs inline-flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap"

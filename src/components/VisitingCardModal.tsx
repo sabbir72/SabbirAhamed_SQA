@@ -55,6 +55,7 @@ import {
   getPortfolioBaseUrl,
   getPortfolioHostLabel,
 } from '../utils/visitingCardStore';
+import { copyToClipboard } from '../utils/clipboard';
 
 interface VisitingCardModalProps {
   isOpen: boolean;
@@ -243,6 +244,12 @@ export const VisitingCardModal: React.FC<VisitingCardModalProps> = ({ isOpen, on
   }, [isOpen, stopCameraScan]);
 
   useEffect(() => {
+    return () => {
+      stopCameraScan();
+    };
+  }, [stopCameraScan]);
+
+  useEffect(() => {
     if (!isOpen) return;
     const generateCardBackQr = async () => {
       try {
@@ -332,9 +339,11 @@ export const VisitingCardModal: React.FC<VisitingCardModalProps> = ({ isOpen, on
     setTimeout(() => setCopied(null), 2200);
   };
 
-  const handleCopyValue = (value: string, key: string) => {
-    navigator.clipboard.writeText(value);
-    triggerCopied(key);
+  const handleCopyValue = async (value: string, key: string) => {
+    const ok = await copyToClipboard(value);
+    if (ok) {
+      triggerCopied(key);
+    }
   };
 
   const handleDownloadVcf = () => {
@@ -363,7 +372,7 @@ export const VisitingCardModal: React.FC<VisitingCardModalProps> = ({ isOpen, on
         // Fallback to clipboard copy
       }
     }
-    handleCopyValue(cardUrl, 'link');
+    await handleCopyValue(cardUrl, 'link');
   };
 
   const handleCopySignature = async () => {
@@ -382,6 +391,7 @@ export const VisitingCardModal: React.FC<VisitingCardModalProps> = ({ isOpen, on
       cardConfig.companyLogo
     );
 
+    let copiedOk = false;
     try {
       if (typeof ClipboardItem !== 'undefined' && navigator.clipboard?.write) {
         await navigator.clipboard.write([
@@ -390,16 +400,22 @@ export const VisitingCardModal: React.FC<VisitingCardModalProps> = ({ isOpen, on
             'text/html': new Blob([html], { type: 'text/html' }),
           }),
         ]);
-      } else {
-        await navigator.clipboard.writeText(plainText);
+        copiedOk = true;
       }
     } catch {
-      await navigator.clipboard.writeText(plainText);
+      copiedOk = false;
     }
-    triggerCopied('signature');
+
+    if (!copiedOk) {
+      copiedOk = await copyToClipboard(plainText);
+    }
+
+    if (copiedOk) {
+      triggerCopied('signature');
+    }
   };
 
-  const handleCopySignatureHtml = () => {
+  const handleCopySignatureHtml = async () => {
     const activeProfile: ProfileData = {
       ...profile,
       name: selectedMember.name,
@@ -413,8 +429,10 @@ export const VisitingCardModal: React.FC<VisitingCardModalProps> = ({ isOpen, on
       userCompany,
       cardConfig.companyLogo
     );
-    navigator.clipboard.writeText(html);
-    triggerCopied('signature-html');
+    const ok = await copyToClipboard(html);
+    if (ok) {
+      triggerCopied('signature-html');
+    }
   };
 
   const handleDownloadSignaturePng = async () => {
@@ -911,16 +929,235 @@ export const VisitingCardModal: React.FC<VisitingCardModalProps> = ({ isOpen, on
     triggerCopied('sheet-png');
   };
 
+  const escapeHtml = (str: string) =>
+    str
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+
   const handlePrintCards = () => {
     try {
-      document.body.classList.add('printing-visiting-card');
-      const cleanUp = () => {
-        document.body.classList.remove('printing-visiting-card');
-        window.removeEventListener('afterprint', cleanUp);
+      const qrSrc = cardBackQrUrl || qrDataUrl || '';
+      const iframe = document.createElement('iframe');
+      iframe.setAttribute('aria-hidden', 'true');
+      iframe.style.position = 'fixed';
+      iframe.style.left = '-9999px';
+      iframe.style.top = '0';
+      iframe.style.width = '794px';
+      iframe.style.height = '1123px';
+      iframe.style.opacity = '0';
+      iframe.style.pointerEvents = 'none';
+      iframe.style.border = '0';
+      document.body.appendChild(iframe);
+
+      const cleanupIframe = () => {
+        if (document.body.contains(iframe)) {
+          document.body.removeChild(iframe);
+        }
       };
-      window.addEventListener('afterprint', cleanUp);
-      window.print();
-      setTimeout(cleanUp, 3000);
+
+      const doc = iframe.contentWindow?.document;
+      if (doc) {
+        doc.open();
+        doc.write(`
+          <!DOCTYPE html>
+          <html>
+            <head>
+              <title>${escapeHtml(selectedMember.name)} — Business Card Print Sheet</title>
+              <style>
+                @page { size: A4 portrait; margin: 16mm; }
+                * { box-sizing: border-box; }
+                html, body {
+                  margin: 0;
+                  padding: 0;
+                  background: #ffffff;
+                  color: #0f172a;
+                  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                  -webkit-print-color-adjust: exact;
+                  print-color-adjust: exact;
+                }
+                .sheet-header {
+                  text-align: center;
+                  border-bottom: 1.5px solid #cbd5e1;
+                  padding-bottom: 12px;
+                  margin-bottom: 28px;
+                }
+                .sheet-header h1 {
+                  margin: 0;
+                  font-size: 18px;
+                  font-weight: 800;
+                  letter-spacing: 0.02em;
+                  text-transform: uppercase;
+                  color: #0f172a;
+                }
+                .sheet-header p {
+                  margin: 4px 0 0;
+                  font-size: 12px;
+                  color: #475569;
+                }
+                .cards-wrap {
+                  display: flex;
+                  flex-direction: column;
+                  align-items: center;
+                  gap: 28px;
+                }
+                .card-label {
+                  font-size: 11px;
+                  font-weight: 700;
+                  color: #475569;
+                  text-transform: uppercase;
+                  letter-spacing: 0.08em;
+                  margin-bottom: 6px;
+                }
+                .card {
+                  width: 3.5in;
+                  height: 2in;
+                  border: 1.5px solid #94a3b8;
+                  border-radius: 10px;
+                  padding: 14px 16px;
+                  background: #ffffff;
+                  color: #0f172a;
+                  display: flex;
+                  flex-direction: column;
+                  justify-content: space-between;
+                  position: relative;
+                }
+                .card-back {
+                  flex-direction: row;
+                  align-items: center;
+                  justify-content: space-between;
+                }
+                .top-row {
+                  display: flex;
+                  justify-content: space-between;
+                  align-items: flex-start;
+                }
+                .name {
+                  font-size: 15px;
+                  font-weight: 800;
+                  color: #0f172a;
+                }
+                .role {
+                  font-size: 11px;
+                  font-weight: 600;
+                  color: #0369a1;
+                  margin-top: 2px;
+                }
+                .badge {
+                  font-size: 9px;
+                  font-weight: 700;
+                  padding: 2px 6px;
+                  border: 1px solid #059669;
+                  border-radius: 4px;
+                  color: #047857;
+                }
+                .contacts {
+                  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+                  font-size: 10px;
+                  line-height: 1.45;
+                  color: #1e293b;
+                }
+                .footer-row {
+                  display: flex;
+                  justify-content: space-between;
+                  font-size: 9px;
+                  color: #475569;
+                  border-top: 1px solid #e2e8f0;
+                  padding-top: 5px;
+                }
+                .qr-box {
+                  border: 1px solid #cbd5e1;
+                  border-radius: 6px;
+                  padding: 4px;
+                  background: #ffffff;
+                  flex-shrink: 0;
+                }
+                .qr-box img {
+                  width: 78px;
+                  height: 78px;
+                  display: block;
+                }
+              </style>
+            </head>
+            <body>
+              <div class="sheet-header">
+                <h1>${escapeHtml(selectedMember.name)} — Business Card</h1>
+                <p>${escapeHtml(selectedMember.role)} • ${escapeHtml(userCompany)} (${escapeHtml(displayedDepartment)})</p>
+              </div>
+              <div class="cards-wrap">
+                <div>
+                  <div class="card-label">Front Side (3.5" × 2.0")</div>
+                  <div class="card">
+                    <div class="top-row">
+                      <div>
+                        <div class="name">${escapeHtml(selectedMember.name)}</div>
+                        <div class="role">${escapeHtml(selectedMember.role)}</div>
+                      </div>
+                      <span class="badge">${escapeHtml(cardConfig.verifiedBadge || 'SQA')}</span>
+                    </div>
+                    <div class="contacts">
+                      <div>${escapeHtml(rawPhone)}</div>
+                      <div>${escapeHtml(rawEmail)}</div>
+                      <div>${escapeHtml(displayedLocation)}</div>
+                    </div>
+                    <div class="footer-row">
+                      <span>${escapeHtml(userCompany)}</span>
+                      <span>${escapeHtml(portfolioHost)}</span>
+                    </div>
+                  </div>
+                </div>
+                <div>
+                  <div class="card-label">Back Side (3.5" × 2.0")</div>
+                  <div class="card card-back">
+                    <div style="padding-right: 12px; min-width: 0; flex: 1;">
+                      <div class="name" style="font-size: 13px;">${escapeHtml(selectedMember.name)}</div>
+                      <div class="role" style="font-size: 10px;">${escapeHtml(selectedMember.role)}</div>
+                      <div style="font-size: 9px; color: #475569; margin-top: 8px; line-height: 1.35;">
+                        Scan QR code to save vCard contact &amp; view live portfolio.
+                      </div>
+                      <div style="font-size: 8.5px; color: #334155; font-family: monospace; margin-top: 8px; word-break: break-all;">
+                        ${escapeHtml(portfolioHost)}
+                      </div>
+                    </div>
+                    ${qrSrc ? `<div class="qr-box"><img src="${qrSrc}" alt="QR Code" /></div>` : ''}
+                  </div>
+                </div>
+              </div>
+            </body>
+          </html>
+        `);
+        doc.close();
+
+        const triggerPrint = () => {
+          try {
+            if (iframe.contentWindow) {
+              iframe.contentWindow.onafterprint = cleanupIframe;
+              iframe.contentWindow.focus();
+              iframe.contentWindow.print();
+            } else {
+              window.print();
+            }
+          } catch {
+            cleanupIframe();
+            handleDownloadFullPrintSheet();
+          }
+          setTimeout(cleanupIframe, 4500);
+        };
+
+        const img = doc.querySelector('img');
+        if (img && !img.complete) {
+          img.onload = () => setTimeout(triggerPrint, 120);
+          img.onerror = () => setTimeout(triggerPrint, 120);
+          setTimeout(triggerPrint, 900);
+        } else {
+          setTimeout(triggerPrint, 200);
+        }
+      } else {
+        cleanupIframe();
+        handleDownloadFullPrintSheet();
+      }
     } catch {
       handleDownloadFullPrintSheet();
     }
@@ -1387,7 +1624,7 @@ export const VisitingCardModal: React.FC<VisitingCardModalProps> = ({ isOpen, on
             }}
             className={`px-3.5 py-2 rounded-xl flex items-center space-x-1.5 transition-all whitespace-nowrap cursor-pointer ${
               activeTab === 'card'
-                ? 'bg-[var(--color-accent)] text-black font-semibold shadow-md'
+                ? 'bg-[var(--color-accent)] text-[var(--color-accent-ink,#060911)] font-semibold shadow-md'
                 : 'text-slate-400 hover:text-white hover:bg-white/5'
             }`}
           >
@@ -1400,7 +1637,7 @@ export const VisitingCardModal: React.FC<VisitingCardModalProps> = ({ isOpen, on
             onClick={() => setActiveTab('scan')}
             className={`px-3.5 py-2 rounded-xl flex items-center space-x-1.5 transition-all whitespace-nowrap cursor-pointer ${
               activeTab === 'scan'
-                ? 'bg-[var(--color-accent)] text-black font-semibold shadow-md'
+                ? 'bg-[var(--color-accent)] text-[var(--color-accent-ink,#060911)] font-semibold shadow-md'
                 : 'text-slate-400 hover:text-white hover:bg-white/5'
             }`}
           >
@@ -1416,7 +1653,7 @@ export const VisitingCardModal: React.FC<VisitingCardModalProps> = ({ isOpen, on
             }}
             className={`px-3.5 py-2 rounded-xl flex items-center space-x-1.5 transition-all whitespace-nowrap cursor-pointer ${
               activeTab === 'nfc'
-                ? 'bg-[var(--color-accent)] text-black font-semibold shadow-md'
+                ? 'bg-[var(--color-accent)] text-[var(--color-accent-ink,#060911)] font-semibold shadow-md'
                 : 'text-slate-400 hover:text-white hover:bg-white/5'
             }`}
           >
@@ -1432,7 +1669,7 @@ export const VisitingCardModal: React.FC<VisitingCardModalProps> = ({ isOpen, on
             }}
             className={`px-3.5 py-2 rounded-xl flex items-center space-x-1.5 transition-all whitespace-nowrap cursor-pointer ${
               activeTab === 'vcard'
-                ? 'bg-[var(--color-accent)] text-black font-semibold shadow-md'
+                ? 'bg-[var(--color-accent)] text-[var(--color-accent-ink,#060911)] font-semibold shadow-md'
                 : 'text-slate-400 hover:text-white hover:bg-white/5'
             }`}
           >
@@ -1448,7 +1685,7 @@ export const VisitingCardModal: React.FC<VisitingCardModalProps> = ({ isOpen, on
             }}
             className={`px-3.5 py-2 rounded-xl flex items-center space-x-1.5 transition-all whitespace-nowrap cursor-pointer ${
               activeTab === 'print'
-                ? 'bg-[var(--color-accent)] text-black font-semibold shadow-md'
+                ? 'bg-[var(--color-accent)] text-[var(--color-accent-ink,#060911)] font-semibold shadow-md'
                 : 'text-slate-400 hover:text-white hover:bg-white/5'
             }`}
           >
@@ -1470,7 +1707,7 @@ export const VisitingCardModal: React.FC<VisitingCardModalProps> = ({ isOpen, on
                     onClick={() => setCardViewMode('flip')}
                     className={`px-3 py-1.5 rounded-lg flex items-center space-x-1.5 transition-all cursor-pointer ${
                       cardViewMode === 'flip'
-                        ? 'bg-[var(--color-accent)] text-black font-semibold'
+                        ? 'bg-[var(--color-accent)] text-[var(--color-accent-ink,#060911)] font-semibold'
                         : 'text-slate-400 hover:text-white'
                     }`}
                   >
@@ -1483,7 +1720,7 @@ export const VisitingCardModal: React.FC<VisitingCardModalProps> = ({ isOpen, on
                     onClick={() => setCardViewMode('both')}
                     className={`px-3 py-1.5 rounded-lg flex items-center space-x-1.5 transition-all cursor-pointer ${
                       cardViewMode === 'both'
-                        ? 'bg-[var(--color-accent)] text-black font-semibold'
+                        ? 'bg-[var(--color-accent)] text-[var(--color-accent-ink,#060911)] font-semibold'
                         : 'text-slate-400 hover:text-white'
                     }`}
                   >
@@ -1590,7 +1827,7 @@ export const VisitingCardModal: React.FC<VisitingCardModalProps> = ({ isOpen, on
                 <button
                   type="button"
                   onClick={handleDownloadVcf}
-                  className="flex items-center justify-center space-x-2 py-3 px-4 rounded-xl bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-black font-semibold text-xs shadow-lg transition-all cursor-pointer"
+                  className="flex items-center justify-center space-x-2 py-3 px-4 rounded-xl bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-[var(--color-accent-ink,#060911)] font-semibold text-xs shadow-lg transition-all cursor-pointer"
                 >
                   <UserPlus className="w-4 h-4 shrink-0" />
                   <span>{copied === 'vcf' ? 'Contact Saved' : 'Save Contact'}</span>
@@ -1731,7 +1968,7 @@ export const VisitingCardModal: React.FC<VisitingCardModalProps> = ({ isOpen, on
                     <button
                       type="button"
                       onClick={handleDownloadQrPng}
-                      className="px-4 py-2.5 rounded-xl bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-black font-semibold text-xs flex items-center space-x-1.5 transition-colors cursor-pointer shadow-md"
+                      className="px-4 py-2.5 rounded-xl bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-[var(--color-accent-ink,#060911)] font-semibold text-xs flex items-center space-x-1.5 transition-colors cursor-pointer shadow-md"
                     >
                       <Download className="w-4 h-4" />
                       <span>{copied === 'qr-png' ? 'Saved QR' : 'Save QR Image'}</span>
@@ -1770,7 +2007,7 @@ export const VisitingCardModal: React.FC<VisitingCardModalProps> = ({ isOpen, on
                       <button
                         type="button"
                         onClick={startCameraScan}
-                        className="px-3.5 py-2 rounded-xl bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-black font-semibold text-xs flex items-center space-x-1.5 transition-colors cursor-pointer"
+                        className="px-3.5 py-2 rounded-xl bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-[var(--color-accent-ink,#060911)] font-semibold text-xs flex items-center space-x-1.5 transition-colors cursor-pointer"
                       >
                         <Camera className="w-3.5 h-3.5" />
                         <span>Open Camera</span>
@@ -1844,7 +2081,7 @@ export const VisitingCardModal: React.FC<VisitingCardModalProps> = ({ isOpen, on
                           href={scanResult.trim()}
                           target={scanResult.trim().startsWith('http') ? '_blank' : undefined}
                           rel={scanResult.trim().startsWith('http') ? 'noopener noreferrer' : undefined}
-                          className="px-3.5 py-1.5 rounded-lg bg-[var(--color-accent)] text-black font-semibold text-xs"
+                          className="px-3.5 py-1.5 rounded-lg bg-[var(--color-accent)] text-[var(--color-accent-ink,#060911)] font-semibold text-xs"
                         >
                           Open Link
                         </a>
@@ -1932,7 +2169,7 @@ export const VisitingCardModal: React.FC<VisitingCardModalProps> = ({ isOpen, on
                     <button
                       type="button"
                       onClick={handleDownloadVcf}
-                      className="px-5 py-2.5 rounded-xl bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-black font-semibold text-xs flex items-center space-x-2 transition-all cursor-pointer shadow-lg"
+                      className="px-5 py-2.5 rounded-xl bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-[var(--color-accent-ink,#060911)] font-semibold text-xs flex items-center space-x-2 transition-all cursor-pointer shadow-lg"
                     >
                       <UserPlus className="w-4 h-4" />
                       <span>{copied === 'vcf' ? 'Contact Saved' : 'Save Contact'}</span>
@@ -2179,7 +2416,7 @@ export const VisitingCardModal: React.FC<VisitingCardModalProps> = ({ isOpen, on
                     <button
                       type="button"
                       onClick={handleCopySignature}
-                      className="px-4 py-2 rounded-xl bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-black font-semibold text-xs flex items-center space-x-1.5 transition-colors cursor-pointer shadow-md whitespace-nowrap"
+                      className="px-4 py-2 rounded-xl bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-[var(--color-accent-ink,#060911)] font-semibold text-xs flex items-center space-x-1.5 transition-colors cursor-pointer shadow-md whitespace-nowrap"
                     >
                       {copied === 'signature' ? (
                         <Check className="w-4 h-4 text-black" />
@@ -2318,7 +2555,7 @@ export const VisitingCardModal: React.FC<VisitingCardModalProps> = ({ isOpen, on
                   <button
                     type="button"
                     onClick={handlePrintCards}
-                    className="px-4 py-2.5 rounded-xl bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-black font-semibold text-xs flex items-center space-x-1.5 transition-colors shadow-md cursor-pointer"
+                    className="px-4 py-2.5 rounded-xl bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-[var(--color-accent-ink,#060911)] font-semibold text-xs flex items-center space-x-1.5 transition-colors shadow-md cursor-pointer"
                   >
                     <Printer className="w-4 h-4" />
                     <span>Print / Save PDF</span>

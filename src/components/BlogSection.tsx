@@ -83,7 +83,7 @@ export default function BlogSection({ onSelectPost, onViewAllBlog }: BlogSection
             <button
               id="view-all-blogs-btn"
               onClick={onViewAllBlog}
-              className="inline-flex items-center space-x-2 shimmer bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-white font-mono font-bold text-xs px-6 py-3 rounded-full shadow-lg shadow-[var(--color-accent)]/25 transition-all hover:scale-105 cursor-pointer"
+              className="inline-flex items-center space-x-2 shimmer bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-[var(--color-accent-ink,#060911)] font-mono font-bold text-xs px-6 py-3 rounded-full shadow-lg shadow-[var(--color-accent)]/25 transition-all hover:scale-105 cursor-pointer"
             >
               <span>Explore All Articles</span>
               <ArrowRight className="w-3.5 h-3.5" />
@@ -107,7 +107,7 @@ export default function BlogSection({ onSelectPost, onViewAllBlog }: BlogSection
                     loading="lazy"
                   />
                   <div className="absolute top-4 left-4">
-                    <span className="px-3 py-1 rounded-full text-xs font-mono font-bold bg-[var(--color-accent)] text-white shadow-md">
+                    <span className="px-3 py-1 rounded-full text-xs font-mono font-bold bg-[var(--color-accent)] text-[var(--color-accent-ink,#060911)] shadow-md">
                       Featured
                     </span>
                   </div>
@@ -202,7 +202,7 @@ export default function BlogSection({ onSelectPost, onViewAllBlog }: BlogSection
                     Browse topics across Manual Testing, Automation, CI/CD, and ERPNext QA.
                   </p>
                 </div>
-                <div className="w-9 h-9 rounded-full bg-[var(--color-accent)] text-white flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform shadow-lg shadow-[var(--color-accent)]/20">
+                <div className="w-9 h-9 rounded-full bg-[var(--color-accent)] text-[var(--color-accent-ink,#060911)] flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform shadow-lg shadow-[var(--color-accent)]/20">
                   <ArrowRight className="w-4 h-4" />
                 </div>
               </div>

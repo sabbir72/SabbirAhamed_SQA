@@ -64,6 +64,7 @@ import {
 } from '../utils/cloudSync';
 import { PRIMARY_OWNER_EMAIL } from '../firebase';
 import { PERSONAL_INFO } from '../data';
+import { copyToClipboard } from '../utils/clipboard';
 import { 
   DEFAULT_CAREER_OBJECTIVE, 
   ROLE_CAREER_OBJECTIVES, 
@@ -1579,11 +1580,9 @@ ${profile.title || PERSONAL_INFO.title}`;
                         <button
                           type="button"
                           onClick={async () => {
-                            try {
-                              await navigator.clipboard.writeText(window.location.hostname);
+                            const ok = await copyToClipboard(window.location.hostname);
+                            if (ok) {
                               showToast('ডোমেইন কপি হয়েছে — Firebase Authorized Domains-এ পেস্ট করুন।');
-                            } catch {
-                              // ignore
                             }
                           }}
                           className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-white text-[11px] font-medium inline-flex items-center gap-1 cursor-pointer"
@@ -2488,7 +2487,7 @@ ${profile.title || PERSONAL_INFO.title}`;
               {/* Add Project CTA */}
               <button
                 onClick={handleOpenAddProject}
-                className="shimmer inline-flex items-center space-x-2 px-5 py-2.5 rounded-xl bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-white font-mono text-xs font-bold shadow-lg shadow-[var(--color-accent)]/20 transition-all hover:scale-105 cursor-pointer shrink-0"
+                className="shimmer inline-flex items-center space-x-2 px-5 py-2.5 rounded-xl bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-[var(--color-accent-ink,#060911)] font-mono text-xs font-bold shadow-lg shadow-[var(--color-accent)]/20 transition-all hover:scale-105 cursor-pointer shrink-0"
               >
                 <Plus className="w-4 h-4" />
                 <span>Add New Project</span>
@@ -3139,7 +3138,7 @@ ${profile.title || PERSONAL_INFO.title}`;
                           className={`px-1.5 py-1.5 rounded-r-lg text-xs font-mono transition-colors border-l border-black/20 cursor-pointer ${
                             blogCategoryFilter === cat
                               ? 'bg-purple-700 text-white/80 hover:text-white'
-                              : 'bg-white/5 text-[#6B7280] hover:text-red-400 hover:bg-red-500/10'
+                              : 'bg-white/5 text-slate-400 hover:text-red-400 hover:bg-red-500/10'
                           }`}
                           title={`Remove "${cat}" category`}
                         >
@@ -3629,10 +3628,12 @@ ${profile.title || PERSONAL_INFO.title}`;
                 )}
 
                 <button
-                  onClick={() => {
+                  onClick={async () => {
                     const text = clCustomContent || generateAdminCoverLetter(clCompany, clJobTitle, clHiringManager, clLocation, clTone);
-                    navigator.clipboard.writeText(text);
-                    showToast('Cover Letter copied to clipboard!');
+                    const ok = await copyToClipboard(text);
+                    if (ok) {
+                      showToast('Cover Letter copied to clipboard!');
+                    }
                   }}
                   className="inline-flex items-center space-x-1.5 px-4 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-white border border-white/10 text-xs font-mono transition-colors cursor-pointer"
                 >
@@ -3801,10 +3802,12 @@ ${profile.title || PERSONAL_INFO.title}`;
                         <span>Regenerate</span>
                       </button>
                       <button
-                        onClick={() => {
+                        onClick={async () => {
                           const text = clCustomContent || generateAdminCoverLetter(clCompany, clJobTitle, clHiringManager, clLocation, clTone);
-                          navigator.clipboard.writeText(text);
-                          showToast('Cover letter copied!');
+                          const ok = await copyToClipboard(text);
+                          if (ok) {
+                            showToast('Cover letter copied!');
+                          }
                         }}
                         className="px-3 py-1 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-mono text-xs font-bold cursor-pointer transition-colors flex items-center gap-1"
                       >
@@ -4555,7 +4558,7 @@ ${profile.title || PERSONAL_INFO.title}`;
                         {theme.subtitle}
                       </p>
                       <div className="mt-3 pt-2 border-t border-white/[0.06] flex items-center justify-between text-[10px] font-mono">
-                        <span className="text-[#6B7280]">Hex:</span>
+                        <span className="text-slate-400">Hex:</span>
                         <span style={{ color: theme.primary }} className="font-bold">{theme.primary}</span>
                       </div>
                     </button>
@@ -4602,11 +4605,9 @@ ${profile.title || PERSONAL_INFO.title}`;
                               <button
                                 type="button"
                                 onClick={async () => {
-                                  try {
-                                    await navigator.clipboard.writeText(window.location.hostname);
+                                  const ok = await copyToClipboard(window.location.hostname);
+                                  if (ok) {
                                     showToast('ডোমেইন কপি হয়েছে — Firebase Authorized Domains-এ পেস্ট করুন।');
-                                  } catch {
-                                    // ignore
                                   }
                                 }}
                                 className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-white text-[11px] inline-flex items-center gap-1 cursor-pointer"
@@ -5580,7 +5581,7 @@ function ProjectModal({ isOpen: _isOpen, initialProject, onClose, onSave }: Proj
             </button>
             <button
               type="submit"
-              className="px-6 py-2.5 rounded-xl bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-white font-mono text-xs font-bold shadow-lg shadow-[var(--color-accent)]/20"
+              className="px-6 py-2.5 rounded-xl bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-[var(--color-accent-ink,#060911)] font-mono text-xs font-bold shadow-lg shadow-[var(--color-accent)]/20 cursor-pointer"
             >
               Save Project
             </button>

@@ -518,7 +518,7 @@ export default function CreateBlogModal({ isOpen, onClose, postToEdit, onSaved }
                     onClick={() => setCoverImage(preset.url)}
                     className={`px-2.5 py-1 rounded-lg text-[10px] font-mono transition-colors cursor-pointer border ${
                       coverImage === preset.url
-                        ? 'bg-[var(--color-accent)] text-white border-[var(--color-accent)] font-bold'
+                        ? 'bg-[var(--color-accent)] text-[var(--color-accent-ink,#060911)] border-[var(--color-accent)] font-bold'
                         : 'bg-white/5 hover:bg-white/10 text-[#D1D5DB] border-white/10'
                     }`}
                   >
@@ -564,7 +564,7 @@ export default function CreateBlogModal({ isOpen, onClose, postToEdit, onSaved }
                   type="button"
                   onClick={() => setActiveTab('write')}
                   className={`px-3 py-1 rounded-lg flex items-center space-x-1 transition-colors cursor-pointer ${
-                    activeTab === 'write' ? 'bg-[var(--color-accent)] text-white font-bold' : 'text-[#9CA3AF] hover:text-white'
+                    activeTab === 'write' ? 'bg-[var(--color-accent)] text-[var(--color-accent-ink,#060911)] font-bold' : 'text-slate-300 hover:text-white'
                   }`}
                 >
                   <Edit3 className="w-3.5 h-3.5" />
@@ -574,7 +574,7 @@ export default function CreateBlogModal({ isOpen, onClose, postToEdit, onSaved }
                   type="button"
                   onClick={() => setActiveTab('preview')}
                   className={`px-3 py-1 rounded-lg flex items-center space-x-1 transition-colors cursor-pointer ${
-                    activeTab === 'preview' ? 'bg-[var(--color-accent)] text-white font-bold' : 'text-[#9CA3AF] hover:text-white'
+                    activeTab === 'preview' ? 'bg-[var(--color-accent)] text-[var(--color-accent-ink,#060911)] font-bold' : 'text-slate-300 hover:text-white'
                   }`}
                 >
                   <Eye className="w-3.5 h-3.5" />
@@ -726,7 +726,7 @@ export default function CreateBlogModal({ isOpen, onClose, postToEdit, onSaved }
               type="button"
               onClick={handleSubmit}
               disabled={isSubmitting}
-              className="shimmer inline-flex items-center space-x-2 bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-white font-mono text-xs font-bold px-6 py-2.5 rounded-full shadow-lg shadow-[var(--color-accent)]/25 transition-all hover:scale-105 cursor-pointer"
+              className="shimmer inline-flex items-center space-x-2 bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-[var(--color-accent-ink,#060911)] font-mono text-xs font-bold px-6 py-2.5 rounded-full shadow-lg shadow-[var(--color-accent)]/25 transition-all hover:scale-105 cursor-pointer"
             >
               <Save className="w-4 h-4" />
               <span>{isSubmitting ? 'Saving...' : postToEdit ? 'Update Post' : 'Publish Blog'}</span>

@@ -20,6 +20,7 @@ import {
   subscribeBugReportsFromDb,
   USER_SUBMISSIONS_UPDATED_EVENT,
 } from '../utils/userSubmissions';
+import { copyToClipboard } from '../utils/clipboard';
 
 /**
  * BugTracker component displaying defect reports, bug details, and retest execution states.
@@ -92,7 +93,7 @@ export default function BugTracker(): React.ReactNode {
   /**
    * Copies Jira-compliant markup format to user clipboard
    */
-  const copyJiraMarkdown = () => {
+  const copyJiraMarkdown = async () => {
     if (!selectedBug) return;
     const markdown = `
 h2. [${selectedBug.id}] ${selectedBug.title}
@@ -111,9 +112,11 @@ h3. Expected vs Actual
 *Actual:* ${selectedBug.actualResult}
     `.trim();
 
-    navigator.clipboard.writeText(markdown);
-    setCopiedJira(true);
-    setTimeout(() => setCopiedJira(false), 2000);
+    const ok = await copyToClipboard(markdown);
+    if (ok) {
+      setCopiedJira(true);
+      setTimeout(() => setCopiedJira(false), 2000);
+    }
   };
 
   /**
@@ -191,8 +194,8 @@ h3. Expected vs Actual
               onClick={() => setFilterSeverity(sev)}
               className={`px-4 py-2 rounded-full text-xs font-mono transition-all border ${
                 filterSeverity === sev
-                  ? 'bg-[var(--color-accent)] text-white border-[var(--color-accent)] font-bold shadow-lg shadow-[var(--color-accent)]/20'
-                  : 'bg-[#12151C] border-white/10 text-[#D1D5DB] hover:border-[var(--color-accent)]/50 hover:text-white'
+                  ? 'bg-[var(--color-accent)] text-[var(--color-accent-ink,#060911)] border-[var(--color-accent)] font-bold shadow-lg shadow-[var(--color-accent)]/20 cursor-pointer'
+                  : 'bg-[#12151C] border-white/10 text-[#D1D5DB] hover:border-[var(--color-accent)]/50 hover:text-white cursor-pointer'
               }`}
             >
               {sev}
@@ -235,7 +238,7 @@ h3. Expected vs Actual
                   setSubmitError(null);
                   setIsModalOpen(true);
                 }}
-                className="flex items-center space-x-1 px-3 py-1.5 rounded-full bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-white text-[10px] font-mono font-bold transition-all shadow-md shadow-[var(--color-accent)]/20"
+                className="flex items-center space-x-1 px-3 py-1.5 rounded-full bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-[var(--color-accent-ink,#060911)] text-[10px] font-mono font-bold transition-all shadow-md shadow-[var(--color-accent)]/20 cursor-pointer"
               >
                 <Plus className="w-3 h-3" />
                 <span>Log Defect</span>
@@ -368,7 +371,7 @@ h3. Expected vs Actual
                   className={`px-5 py-2.5 rounded-full font-semibold text-xs flex items-center space-x-2 transition-all shrink-0 select-none ${
                     retestingBugId !== null
                       ? 'bg-white/10 text-[#9CA3AF] cursor-not-allowed'
-                      : 'shimmer bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-white shadow-lg shadow-[var(--color-accent)]/20'
+                      : 'shimmer bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-[var(--color-accent-ink,#060911)] shadow-lg shadow-[var(--color-accent)]/20 cursor-pointer'
                   }`}
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${retestingBugId === selectedBug.id ? 'animate-spin' : ''}`} />
@@ -513,7 +516,7 @@ h3. Expected vs Actual
                 <button
                   type="submit"
                   disabled={isSubmitting}
-                  className="px-6 py-2.5 rounded-full bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-white text-xs font-bold transition-all shadow-md shadow-[var(--color-accent)]/20 disabled:opacity-50"
+                  className="px-6 py-2.5 rounded-full bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-[var(--color-accent-ink,#060911)] text-xs font-bold transition-all shadow-md shadow-[var(--color-accent)]/20 disabled:opacity-50 cursor-pointer"
                 >
                   {isSubmitting ? 'Saving to DB...' : 'Create Ticket'}
                 </button>

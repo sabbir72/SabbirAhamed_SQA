@@ -3,6 +3,7 @@ import { GraduationCap, Award, User, Mail, Phone, Building2, Copy, Check } from 
 import { EDUCATION_HISTORY } from '../data';
 import { Reference } from '../types';
 import { getStoredReferences, PORTFOLIO_UPDATED_EVENT } from '../utils/portfolioStore';
+import { copyToClipboard } from '../utils/clipboard';
 
 export default function EducationAndReferences() {
   const [copiedField, setCopiedField] = useState<string | null>(null);
@@ -14,10 +15,12 @@ export default function EducationAndReferences() {
     return () => window.removeEventListener(PORTFOLIO_UPDATED_EVENT, syncReferences);
   }, []);
 
-  const handleCopy = (text: string, field: string) => {
-    navigator.clipboard.writeText(text);
-    setCopiedField(field);
-    setTimeout(() => setCopiedField(null), 2000);
+  const handleCopy = async (text: string, field: string) => {
+    const ok = await copyToClipboard(text);
+    if (ok) {
+      setCopiedField(field);
+      setTimeout(() => setCopiedField(null), 2000);
+    }
   };
 
   return (

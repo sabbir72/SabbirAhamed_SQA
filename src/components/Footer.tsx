@@ -28,6 +28,7 @@ import { getStoredProfile, PORTFOLIO_UPDATED_EVENT } from '../utils/portfolioSto
 import { QaLogo } from './QaLogo';
 import VisitorCounter from './VisitorCounter';
 import { navigateTo, navigateToHomeSection } from '../utils/router';
+import { copyToClipboard } from '../utils/clipboard';
 
 interface FooterProps {
   onOpenVisitingCard?: () => void;
@@ -61,11 +62,13 @@ export default function Footer(_props: FooterProps) {
     setSelectedTab((prev) => (prev === tab ? null : tab));
   };
 
-  const handleCopyEmail = (e: React.MouseEvent) => {
+  const handleCopyEmail = async (e: React.MouseEvent) => {
     e.preventDefault();
-    navigator.clipboard.writeText(liveEmail);
-    setCopiedEmail(true);
-    setTimeout(() => setCopiedEmail(false), 2000);
+    const ok = await copyToClipboard(liveEmail);
+    if (ok) {
+      setCopiedEmail(true);
+      setTimeout(() => setCopiedEmail(false), 2000);
+    }
   };
 
   const scrollToTop = () => {

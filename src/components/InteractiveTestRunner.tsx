@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Play, RotateCcw, CheckCircle2, AlertTriangle, Terminal as TerminalIcon, Cpu, Zap, Activity, Code, FileCode, Copy, Check } from 'lucide-react';
 import { Project, TestLog } from '../types';
 import { getStoredProjects, PORTFOLIO_UPDATED_EVENT } from '../utils/portfolioStore';
+import { copyToClipboard } from '../utils/clipboard';
 
 export default function InteractiveTestRunner() {
   const [projects, setProjects] = useState<Project[]>(() => getStoredProjects());
@@ -375,10 +376,12 @@ WHERE t.transaction_ref = 'TXN-2026-8802'
     }, logInterval);
   };
 
-  const handleCopySnippet = () => {
-    navigator.clipboard.writeText(getProjectCode(selectedProjectId));
-    setCopiedCode(true);
-    setTimeout(() => setCopiedCode(false), 2000);
+  const handleCopySnippet = async () => {
+    const ok = await copyToClipboard(getProjectCode(selectedProjectId));
+    if (ok) {
+      setCopiedCode(true);
+      setTimeout(() => setCopiedCode(false), 2000);
+    }
   };
 
   return (
@@ -404,7 +407,7 @@ WHERE t.transaction_ref = 'TXN-2026-8802'
               onClick={() => setSelectedProjectId(project.id)}
               className={`px-4 py-2 rounded-full text-xs font-mono transition-all border cursor-pointer ${
                 selectedProjectId === project.id
-                  ? 'bg-[var(--color-accent)] text-white border-[var(--color-accent)] font-bold shadow-lg shadow-[var(--color-accent)]/20'
+                  ? 'bg-[var(--color-accent)] text-[var(--color-accent-ink,#060911)] border-[var(--color-accent)] font-bold shadow-lg shadow-[var(--color-accent)]/20'
                   : 'bg-[#12151C] border-white/10 text-[#D1D5DB] hover:border-[var(--color-accent)]/50 hover:text-white'
               }`}
             >
@@ -459,17 +462,17 @@ WHERE t.transaction_ref = 'TXN-2026-8802'
                 className={`flex-1 py-3.5 px-6 rounded-full font-semibold text-xs uppercase tracking-wider flex items-center justify-center space-x-2 transition-all ${
                   isRunning
                     ? 'bg-white/10 text-[#9CA3AF] cursor-not-allowed'
-                    : 'shimmer bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-white shadow-lg shadow-[var(--color-accent)]/20'
+                    : 'shimmer bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-[var(--color-accent-ink,#060911)] shadow-lg shadow-[var(--color-accent)]/20 cursor-pointer'
                 }`}
               >
                 {isRunning ? (
                   <>
-                    <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
                     <span>Executing... {progress}%</span>
                   </>
                 ) : (
                   <>
-                    <Play className="w-4 h-4 fill-white" />
+                    <Play className="w-4 h-4 fill-current" />
                     <span>Execute Test Suite</span>
                   </>
                 )}

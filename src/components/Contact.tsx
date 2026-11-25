@@ -6,6 +6,7 @@ import {
 import { PERSONAL_INFO } from '../data';
 import { getStoredProfile, PORTFOLIO_UPDATED_EVENT } from '../utils/portfolioStore';
 import { submitContactMessageToDb } from '../utils/userSubmissions';
+import { copyToClipboard } from '../utils/clipboard';
 
 interface ContactProps {
   onOpenResumeBuilder?: () => void;
@@ -35,10 +36,12 @@ export default function Contact({ onOpenResumeBuilder, onOpenVisitingCard }: Con
   const liveLinkedinUrl = liveLinkedinRaw.startsWith('http') ? liveLinkedinRaw : `https://${liveLinkedinRaw}`;
   const liveGithub = profile.github || PERSONAL_INFO.github;
 
-  const handleCopyEmail = () => {
-    navigator.clipboard.writeText(liveEmail);
-    setCopiedEmail(true);
-    setTimeout(() => setCopiedEmail(false), 2000);
+  const handleCopyEmail = async () => {
+    const ok = await copyToClipboard(liveEmail);
+    if (ok) {
+      setCopiedEmail(true);
+      setTimeout(() => setCopiedEmail(false), 2000);
+    }
   };
 
   const validateForm = () => {
@@ -390,11 +393,11 @@ export default function Contact({ onOpenResumeBuilder, onOpenVisitingCard }: Con
                     <button
                       type="submit"
                       disabled={status === 'sending'}
-                      className="w-full py-4 bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-white font-bold text-sm rounded-2xl flex items-center justify-center space-x-2.5 transition-all shadow-xl shadow-[var(--color-accent)]/25 hover:shadow-[var(--color-accent)]/40 active:scale-[0.99] cursor-pointer shimmer disabled:opacity-50"
+                      className="w-full py-4 bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-[var(--color-accent-ink,#060911)] font-bold text-sm rounded-2xl flex items-center justify-center space-x-2.5 transition-all shadow-xl shadow-[var(--color-accent)]/25 hover:shadow-[var(--color-accent)]/40 active:scale-[0.99] cursor-pointer shimmer disabled:opacity-50"
                     >
                       {status === 'sending' ? (
                         <span className="flex items-center space-x-2 font-mono">
-                          <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                          <span className="w-4 h-4 border-2 border-[#060911]/30 border-t-[#060911] rounded-full animate-spin" />
                           <span>Sending Message...</span>
                         </span>
                       ) : (

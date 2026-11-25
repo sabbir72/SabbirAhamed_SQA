@@ -8,7 +8,9 @@ import {
 import { PERSONAL_INFO, EDUCATION_HISTORY, BUG_REPORTS } from '../data';
 import { getStoredProjects, getStoredExperiences, getStoredSkills, getStoredReferences, PORTFOLIO_UPDATED_EVENT } from '../utils/portfolioStore';
 import { Reference } from '../types';
-import html2pdf from 'html2pdf.js'; 
+import { copyToClipboard } from '../utils/clipboard';
+import { exportPaginatedPdf, renderA4PreviewPages, triggerVectorPrint } from '../utils/printDocument';
+import { PrintPreviewModal } from './PrintPreviewModal';
 
 // Safe URL normalizer for links embedded inside text
 export const normalizeUrl = (url?: string): string => {
@@ -36,6 +38,7 @@ interface ResumeBuilderModalProps {
 export type TemplateType = 'classic-ats' | 'modern-pro' | 'minimal' | 'executive' | 'portfolio-style';
 export type TargetRoleType = 'all-rounder' | 'automation-qa' | 'api-testing' | 'manual-qa';
 export type AtsFontFamily = 'modern' | 'serif' | 'corporate';
+export type PdfQualityMode = 'under-1mb' | 'normal';
 
 export const DEFAULT_CAREER_OBJECTIVE =
   "Seeking a Software Quality Assurance Engineer position where I can leverage 2 years of hands-on experience in manual and automation testing, solid knowledge of software testing principles, and strong attention to detail to ensure high-quality and reliable software solutions, while continuously learning and growing in a professional environment.";
@@ -113,6 +116,11 @@ export default function ResumeBuilderModal({ isOpen, onClose, onOpenCoverLetter 
   const [copiedText, setCopiedText] = useState(false);
   const [copiedCover, setCopiedCover] = useState(false);
   const [isExportingPdf, setIsExportingPdf] = useState(false);
+  const [pdfQualityMode, setPdfQualityMode] = useState<PdfQualityMode>('under-1mb');
+  const [lastPdfInfo, setLastPdfInfo] = useState<{ sizeLabel: string; mode: PdfQualityMode } | null>(null);
+  const [isPrintPreviewOpen, setIsPrintPreviewOpen] = useState(false);
+  const [isGeneratingPrintPreview, setIsGeneratingPrintPreview] = useState(false);
+  const [printPreviewPages, setPrintPreviewPages] = useState<string[]>([]);
 
   const resumeRef = useRef<HTMLDivElement>(null);
 
@@ -133,7 +141,7 @@ export default function ResumeBuilderModal({ isOpen, onClose, onOpenCoverLetter 
   // Filtered Projects based on user selection
   const selectedProjects = useMemo(() => {
     return PROJECTS.filter(p => selectedProjectIds.includes(p.id));
-  }, [selectedProjectIds]);
+  }, [PROJECTS, selectedProjectIds]);
 
   // Quick Filter handlers
   const toggleProject = (id: string) => {
@@ -204,355 +212,727 @@ export default function ResumeBuilderModal({ isOpen, onClose, onOpenCoverLetter 
     return { totalScore: Math.min(100, score), checks };
   }, [customInfo, activeCareerObjective, selectedProjects]);
 
-  // PDF Export via html2pdf with exact font sync, accurate color conversion, and crisp A4 pagination
+  const formatByteSize = (bytes: number): string => {
+    if (bytes < 1024 * 1024) {
+      return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+    }
+    return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+  };
+
+  // Discrete A4 page-by-page PDF Export with toggleable <1MB vs Normal Quality mode and clickable links
   const handleDownloadPDF = async () => {
-    if (!resumeRef.current) return;
+    if (!resumeRef.current || isExportingPdf) return;
     setIsExportingPdf(true);
 
     try {
-      const fontsReady = (document as Document & { fonts?: { ready: Promise<unknown> } }).fonts?.ready;
-      if (fontsReady) {
-        await Promise.race([fontsReady, new Promise((resolve) => setTimeout(resolve, 700))]);
-      }
-    } catch {
-      // Proceed even if font API is unavailable
-    }
-
-    const element = resumeRef.current;
-
-    // A4 dimensions in mm: [top, left, bottom, right]
-    const a4WidthMm = 210;
-    const margin = [12, 13, 12, 13] as [number, number, number, number];
-    const marginY = margin[0]; // 12mm
-    const marginX = margin[1]; // 13mm
-    const innerWidthMm = a4WidthMm - margin[1] - margin[3]; // 184mm
-    const innerHeightMm = 297 - margin[0] - margin[2]; // 273mm
-
-    // Target width in CSS pixels at 96 DPI: 184mm * 96 / 25.4 = 695.4px -> 695px
-    const targetPxWidth = 695;
-    // Match html2pdf's internal pxPageHeight ratio: floor(width * inner.ratio)
-    const targetPxHeight = Math.floor(targetPxWidth * (innerHeightMm / innerWidthMm));
-
-    // Pre-clean a detached clone BEFORE html2pdf runs pagebreaks.js so pagebreaks.js measures
-    // the exact 695px width & zero-padding layout that html2canvas screenshots (prevents height drift & line slicing)
-    const stagedClone = element.cloneNode(true) as HTMLElement;
-    stagedClone.className = stagedClone.className
-      .replace(/\b(shadow-\S+|rounded-\S+|min-h-\S+|p-\d+|sm:p-\S+|max-w-\S+)\b/g, '')
-      .trim();
-    stagedClone.style.padding = '0px';
-    stagedClone.style.margin = '0px';
-    stagedClone.style.minHeight = 'auto';
-    stagedClone.style.border = 'none';
-    stagedClone.style.boxShadow = 'none';
-    stagedClone.style.borderRadius = '0px';
-    stagedClone.style.width = `${targetPxWidth}px`;
-    stagedClone.style.maxWidth = `${targetPxWidth}px`;
-    stagedClone.style.boxSizing = 'border-box';
-    stagedClone.style.backgroundColor = '#ffffff';
-    stagedClone.style.color = '#111827';
-    stagedClone.style.fontVariantLigatures = 'none';
-
-    const linkOverlays: {
-      url: string;
-      x: number;
-      y: number;
-      w: number;
-      h: number;
-      page: number;
-    }[] = [];
-
-    const opt = {
-      margin: margin,
-      filename: `${getCvBaseFileName()}.pdf`,
-      image: { type: 'jpeg' as const, quality: 0.94 },
-      enableLinks: false,
-      html2canvas: {
-        scale: 2,
-        useCORS: true,
-        logging: false,
-        backgroundColor: '#ffffff',
-        scrollX: 0,
-        scrollY: 0,
-        windowWidth: 960,
-        onclone: (clonedDoc: Document) => {
-          // Accurately convert any oklch(...) color expressions into rgba(...) so backgrounds/borders keep exact tones
-          const colorCache = new Map<string, string>();
-          const colorCanvas = clonedDoc.createElement('canvas');
-          colorCanvas.width = 1;
-          colorCanvas.height = 1;
-          const colorCtx = colorCanvas.getContext('2d', { willReadFrequently: true });
-          const convertOklch = (val: string) => {
-            if (colorCache.has(val)) return colorCache.get(val)!;
-            let resolved = '#111827';
-            if (colorCtx) {
-              try {
-                colorCtx.clearRect(0, 0, 1, 1);
-                colorCtx.fillStyle = 'rgba(0,0,0,0)';
-                colorCtx.fillStyle = val;
-                colorCtx.fillRect(0, 0, 1, 1);
-                const [r, g, b, a] = colorCtx.getImageData(0, 0, 1, 1).data;
-                resolved = a === 0 ? 'transparent' : a < 255 ? `rgba(${r}, ${g}, ${b}, ${(a / 255).toFixed(3)})` : `rgb(${r}, ${g}, ${b})`;
-              } catch {
-                resolved = '#111827';
-              }
-            }
-            colorCache.set(val, resolved);
-            return resolved;
-          };
-
-          const styles = clonedDoc.querySelectorAll('style');
-          styles.forEach((styleTag) => {
-            if (styleTag.innerHTML && styleTag.innerHTML.includes('oklch')) {
-              styleTag.innerHTML = styleTag.innerHTML.replace(/oklch\([^)]+\)/g, (match) => convertOklch(match));
-            }
-          });
-
-          // Inject crisp list indent and ligature-free rendering rules without wiping pagebreak spacer heights
-          const extraStyle = clonedDoc.createElement('style');
-          extraStyle.textContent = `
-            .print-only-resume {
-              padding: 0 !important;
-              margin: 0 !important;
-              min-height: auto !important;
-              box-shadow: none !important;
-              border-radius: 0 !important;
-              font-variant-ligatures: none !important;
-            }
-            .print-only-resume * {
-              box-sizing: border-box !important;
-              font-variant-ligatures: none !important;
-            }
-            ul {
-              list-style-position: outside !important;
-            }
-          `;
-          clonedDoc.head.appendChild(extraStyle);
-
-          const root = clonedDoc.querySelector('.print-only-resume') as HTMLElement | null;
-          if (root) {
-            const rootRect = root.getBoundingClientRect();
-            const mmPerPx = innerWidthMm / (rootRect.width || targetPxWidth);
-
-            const anchorEls = root.querySelectorAll('a[href]');
-            anchorEls.forEach((aEl) => {
-              const a = aEl as HTMLAnchorElement;
-              const rawHref = a.getAttribute('href') || a.href;
-              if (!rawHref || rawHref === '#' || rawHref.startsWith('javascript:')) return;
-              const url = normalizeUrl(rawHref);
-
-              const clientRects = a.getClientRects();
-              for (let i = 0; i < clientRects.length; i++) {
-                const rect = clientRects[i];
-                if (rect.width <= 0 || rect.height <= 0) continue;
-
-                const leftPx = rect.left - rootRect.left;
-                const topPx = rect.top - rootRect.top;
-                const widthPx = rect.width;
-                const heightPx = rect.height;
-
-                const pageNum = Math.floor(topPx / targetPxHeight) + 1;
-                const yInPagePx = topPx % targetPxHeight;
-
-                const xMm = marginX + leftPx * mmPerPx;
-                const yMm = marginY + yInPagePx * mmPerPx;
-                const wMm = widthPx * mmPerPx;
-                const hMm = heightPx * mmPerPx;
-
-                linkOverlays.push({
-                  url,
-                  x: Math.max(0, xMm - 0.5),
-                  y: Math.max(0, yMm - 0.5),
-                  w: wMm + 1.0,
-                  h: hMm + 1.0,
-                  page: pageNum,
-                });
-              }
-            });
-          }
-        },
-      },
-      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' as const, compress: true },
-      pagebreak: {
-        mode: ['css', 'legacy'],
-        avoid: ['.cv-keep-together', '.cv-section-heading', 'h1', 'h2', 'h3', 'li', 'tr'],
-      },
-    };
-
-    html2pdf()
-      .set(opt)
-      .from(stagedClone)
-      .toPdf()
-      .get('pdf')
-      .then((pdf: any) => {
-        if (pdf && pdf.internal) {
-          pdf.link = function (x: number, y: number, w: number, h: number, options: any) {
-            const pageInfo = this.internal.getCurrentPageInfo();
-            const s = this.internal.getCoordinateString;
-            const o = this.internal.getVerticalCoordinateString;
-            pageInfo.pageContext.annotations.push({
-              finalBounds: {
-                x: s(x),
-                y: o(y + h),
-                w: s(x + w),
-                h: o(y),
-              },
-              options: options,
-              type: 'link',
-            });
-          };
-
-          const totalPages = pdf.internal.getNumberOfPages();
-          linkOverlays.forEach((item) => {
-            if (item.page <= totalPages) {
-              pdf.setPage(item.page);
-              pdf.link(item.x, item.y, item.w, item.h, { url: item.url });
-            }
-          });
-          pdf.setPage(totalPages);
-        }
-
-        pdf.save(opt.filename);
-        setIsExportingPdf(false);
-      })
-      .catch((err: unknown) => {
-        console.error('PDF generation error:', err);
-        setIsExportingPdf(false);
-        window.print();
-      });
-  };
-
-  // Browser Print trigger with dedicated isolated iframe, font-ready sync, and crisp A4 layout
-  const handlePrint = () => {
-    try {
-      window.focus();
       const element = resumeRef.current;
-      if (!element) {
-        window.print();
-        return;
-      }
+      const margin = [12, 13, 12, 13] as [number, number, number, number];
+      const filename = `${getCvBaseFileName()}.pdf`;
 
-      const styleSheets = Array.from(document.querySelectorAll('style, link[rel="stylesheet"]'))
-        .map((el) => el.outerHTML)
-        .join('\n');
+      const renderPdfPass = (scale: number, quality: number, compress: boolean) =>
+        exportPaginatedPdf({
+          sourceElement: element,
+          margin,
+          filename,
+          scale,
+          quality,
+          compress,
+          urlNormalizer: normalizeUrl,
+        });
 
-      const printSafeClass = element.className
-        .replace(/\b(shadow-\S+|rounded-\S+|min-h-\S+|p-\d+|sm:p-\S+|max-w-\S+)\b/g, '')
-        .trim();
+      let result: { pdf: any; byteLength: number };
 
-      const iframe = document.createElement('iframe');
-      iframe.style.position = 'fixed';
-      iframe.style.right = '0';
-      iframe.style.bottom = '0';
-      iframe.style.width = '0';
-      iframe.style.height = '0';
-      iframe.style.border = '0';
-      document.body.appendChild(iframe);
-
-      const doc = iframe.contentWindow?.document;
-      if (doc) {
-        doc.open();
-        doc.write(`
-          <!DOCTYPE html>
-          <html>
-            <head>
-              <title>${getCvBaseFileName()}</title>
-              ${styleSheets}
-              <style>
-                @page { size: A4 portrait; margin: 12mm 13mm; }
-                html, body {
-                  background-color: #ffffff !important;
-                  color: #111827 !important;
-                  margin: 0 !important;
-                  padding: 0 !important;
-                  width: 100% !important;
-                  -webkit-print-color-adjust: exact !important;
-                  print-color-adjust: exact !important;
-                }
-                .print-only-resume {
-                  width: 100% !important;
-                  max-width: 100% !important;
-                  min-height: auto !important;
-                  box-shadow: none !important;
-                  border: none !important;
-                  border-radius: 0 !important;
-                  background: #ffffff !important;
-                  color: #111827 !important;
-                  padding: 0 !important;
-                  margin: 0 !important;
-                  font-variant-ligatures: none !important;
-                }
-                .print-only-resume * {
-                  box-sizing: border-box !important;
-                }
-                .cv-section-heading, h1, h2, h3 {
-                  break-after: avoid !important;
-                  page-break-after: avoid !important;
-                  break-inside: avoid !important;
-                  page-break-inside: avoid !important;
-                }
-                .cv-keep-together, li, tr {
-                  break-inside: avoid !important;
-                  page-break-inside: avoid !important;
-                }
-                p {
-                  orphans: 3;
-                  widows: 3;
-                }
-                ul {
-                  list-style-position: outside !important;
-                }
-              </style>
-            </head>
-            <body>
-              <div class="${printSafeClass}">
-                ${element.innerHTML}
-              </div>
-            </body>
-          </html>
-        `);
-        doc.close();
-
-        const triggerIframePrint = () => {
-          try {
-            iframe.contentWindow?.focus();
-            iframe.contentWindow?.print();
-          } catch (e) {
-            console.warn('Iframe print failed, falling back to window.print()', e);
-            window.print();
-          }
-          setTimeout(() => {
-            if (document.body.contains(iframe)) {
-              document.body.removeChild(iframe);
-            }
-          }, 1800);
-        };
-
-        const fontsReady = (doc as Document & { fonts?: { ready: Promise<unknown> } }).fonts?.ready;
-        if (fontsReady) {
-          Promise.race([fontsReady, new Promise((resolve) => setTimeout(resolve, 600))]).then(() => {
-            setTimeout(triggerIframePrint, 120);
-          });
-        } else {
-          setTimeout(triggerIframePrint, 400);
+      if (pdfQualityMode === 'under-1mb') {
+        result = await renderPdfPass(1.85, 0.86, true);
+        if (result.byteLength > 980 * 1024) {
+          result = await renderPdfPass(1.5, 0.72, true);
+        }
+        if (result.byteLength > 995 * 1024) {
+          result = await renderPdfPass(1.25, 0.62, true);
         }
       } else {
-        window.print();
+        // Normal / Full Quality mode (1MB cap turned OFF)
+        result = await renderPdfPass(2.5, 0.99, false);
       }
+
+      if (result.byteLength > 0) {
+        setLastPdfInfo({
+          sizeLabel: formatByteSize(result.byteLength),
+          mode: pdfQualityMode,
+        });
+      }
+
+      result.pdf.save(filename);
     } catch (err) {
-      console.error('Print error:', err);
-      window.print();
+      console.error('PDF generation error:', err);
+      void handlePrint();
+    } finally {
+      setIsExportingPdf(false);
     }
   };
 
-  // Structured Microsoft Word Resume Generator that maintains 100% layout fidelity without breaking
+  // Browser Print trigger with viewport-mounted 1px iframe & sandbox detection
+  const handlePrint = async () => {
+    return triggerVectorPrint({
+      sourceElement: resumeRef.current,
+      documentTitle: getCvBaseFileName(),
+      marginMm: [12, 13, 12, 13],
+      pageMarginCss: '12mm 13mm',
+    });
+  };
+
+  // Opens exact A4 paginated Print & PDF Preview modal when user clicks "Print / PDF"
+  const handleOpenPrintPreview = async () => {
+    setIsPrintPreviewOpen(true);
+    setPrintPreviewPages([]);
+    if (!resumeRef.current) return;
+
+    setIsGeneratingPrintPreview(true);
+    try {
+      const rendered = await renderA4PreviewPages({
+        sourceElement: resumeRef.current,
+        margin: [12, 13, 12, 13],
+      });
+      setPrintPreviewPages(rendered.pages);
+    } catch (err) {
+      console.error('Print preview render error:', err);
+    } finally {
+      setIsGeneratingPrintPreview(false);
+    }
+  };
+
+  // Structured Microsoft Word Resume Generator matching active template, fonts, colors & alignment 1:1 with PDF
   const generateWordResumeHtml = () => {
-    return `
+    const esc = (value?: string | number | null): string =>
+      String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+
+    const activeFontStack =
+      fontFamily === 'serif'
+        ? "'Merriweather', Georgia, Cambria, 'Times New Roman', serif"
+        : fontFamily === 'corporate'
+        ? "'Source Sans 3', Calibri, 'Segoe UI', Arial, sans-serif"
+        : "'Inter', Calibri, 'Segoe UI', Arial, sans-serif";
+
+    const portfolioOrigin = typeof window !== 'undefined' ? window.location.origin : 'https://sabbir-sqa.vercel.app';
+    const linkedinUrl = normalizeUrl(customInfo.linkedin);
+    const githubUrl = normalizeUrl(customInfo.github);
+    const portfolioUrl = normalizeUrl(portfolioOrigin);
+
+    const renderSectionHeading = (titleText: string) => {
+      if (template === 'modern-pro') {
+        return `
+          <table width="100%" border="0" cellpadding="0" cellspacing="0" style="width:100%; border-collapse:collapse; margin:10pt 0 5pt 0; page-break-after:avoid; break-after:avoid;">
+            <tr>
+              <td style="border-left:3pt solid #f59e0b; padding:0 0 0 7pt; font-size:8.5pt; font-weight:bold; text-transform:uppercase; color:#0f172a; line-height:1.3;">
+                ${esc(titleText)}
+              </td>
+            </tr>
+          </table>
+        `;
+      }
+      if (template === 'minimal') {
+        return `
+          <div style="font-size:8.5pt; font-weight:bold; text-transform:uppercase; color:#0f172a; margin:10pt 0 4pt 0; line-height:1.35; page-break-after:avoid; break-after:avoid;">
+            ${esc(titleText)}
+          </div>
+        `;
+      }
+      if (template === 'portfolio-style') {
+        return `
+          <div style="font-size:8.5pt; font-weight:bold; text-transform:uppercase; color:#ea580c; margin:10pt 0 4pt 0; line-height:1.35; page-break-after:avoid; break-after:avoid;">
+            ${esc(titleText)}
+          </div>
+        `;
+      }
+      // classic-ats & executive
+      return `
+        <table width="100%" border="0" cellpadding="0" cellspacing="0" style="width:100%; border-collapse:collapse; margin:10pt 0 5pt 0; page-break-after:avoid; break-after:avoid;">
+          <tr>
+            <td style="font-size:8.5pt; font-weight:bold; text-transform:uppercase; color:#0f172a; border-bottom:1.15pt solid #0f172a; padding:0 0 3pt 0; line-height:1.35;">
+              ${esc(titleText)}
+            </td>
+          </tr>
+        </table>
+      `;
+    };
+
+    const renderExperienceItems = () =>
+      WORK_EXPERIENCE.map((exp) => {
+        const parsed = exp.highlights.map(parseHighlightItem);
+        const scopeLines = parsed.filter((item) => item.isScope);
+        const bulletLines = parsed.filter((item) => !item.isScope);
+        const companyColor = template === 'minimal' ? '#334155' : '#1e293b';
+
+        return `
+          <div style="margin-bottom:7pt;">
+            <table width="100%" border="0" cellpadding="0" cellspacing="0" style="width:100%; border-collapse:collapse; page-break-inside:avoid; break-inside:avoid; page-break-after:avoid; break-after:avoid;">
+              <tr>
+                <td style="text-align:left; vertical-align:top; font-size:8.5pt; font-weight:bold; color:#0f172a; padding:0;">${esc(exp.role)}</td>
+                <td style="text-align:right; vertical-align:top; font-size:7.5pt; font-weight:bold; color:${template === 'classic-ats' ? '#1e293b' : '#334155'}; white-space:nowrap; padding:0;">${esc(exp.period)}</td>
+              </tr>
+              <tr>
+                <td style="text-align:left; vertical-align:top; font-size:7.5pt; font-weight:600; color:${companyColor}; padding:1.5pt 0 0 0;">${esc(exp.company)}</td>
+                <td style="text-align:right; vertical-align:top; font-size:7.5pt; color:${template === 'classic-ats' ? '#334155' : '#475569'}; white-space:nowrap; padding:1.5pt 0 0 0;">${esc(exp.location)}</td>
+              </tr>
+            </table>
+            ${scopeLines
+              .map(
+                (s) =>
+                  `<p style="margin:2pt 0 0 0; font-size:7.5pt; font-weight:600; color:#0f172a; line-height:1.38;">${esc(s.text)}</p>`
+              )
+              .join('')}
+            ${
+              bulletLines.length > 0
+                ? `<ul style="margin:2pt 0 0 13pt; padding:0; color:#111827;">
+                    ${bulletLines
+                      .map(
+                        (b) =>
+                          `<li style="font-size:8pt; line-height:1.4; color:#111827; margin-bottom:2pt; page-break-inside:avoid; break-inside:avoid;">${esc(b.text)}</li>`
+                      )
+                      .join('')}
+                  </ul>`
+                : ''
+            }
+          </div>
+        `;
+      }).join('');
+
+    const renderTwoColGrid = <T,>(items: T[], renderCell: (item: T) => string, gapPt = 10) => {
+      if (items.length === 0) return '';
+      const rows: string[] = [];
+      for (let i = 0; i < items.length; i += 2) {
+        const left = items[i];
+        const right = items[i + 1];
+        rows.push(`
+          <tr style="page-break-inside:avoid; break-inside:avoid;">
+            <td width="49%" style="width:49%; vertical-align:top; padding:0 ${gapPt / 2}pt 4.5pt 0;">${renderCell(left)}</td>
+            <td width="49%" style="width:49%; vertical-align:top; padding:0 0 4.5pt ${gapPt / 2}pt;">${right ? renderCell(right) : ''}</td>
+          </tr>
+        `);
+      }
+      return `
+        <table width="100%" border="0" cellpadding="0" cellspacing="0" style="width:100%; border-collapse:collapse; table-layout:fixed;">
+          ${rows.join('')}
+        </table>
+      `;
+    };
+
+    const renderReferencesBlock = (headingTitle: string) => {
+      if (portfolioReferences.length === 0) return '';
+      return `
+        <div style="page-break-inside:avoid; break-inside:avoid;">
+          ${renderSectionHeading(headingTitle)}
+          ${renderTwoColGrid(
+            portfolioReferences,
+            (ref) => `
+              <div style="font-size:7.5pt; line-height:1.38; color:#111827;">
+                <p style="margin:0; font-size:7.5pt; font-weight:bold; color:#0f172a; line-height:1.38;">${esc(ref.name)}</p>
+                <p style="margin:0; font-size:7.5pt; color:#334155; line-height:1.38;">${esc(ref.role)}, ${esc(ref.company)}</p>
+                <p style="margin:0; font-size:7.5pt; color:#475569; line-height:1.38;">
+                  <a href="mailto:${esc(ref.email)}" style="color:#475569; text-decoration:none;">${esc(ref.email)}</a> | <a href="tel:${esc(ref.phone)}" style="color:#475569; text-decoration:none;">${esc(ref.phone)}</a>
+                </p>
+              </div>
+            `,
+            14
+          )}
+        </div>
+      `;
+    };
+
+    const renderEducationBlock = (headingTitle: string, withDetails: boolean) => `
+      <div style="margin-bottom:9pt; page-break-inside:avoid; break-inside:avoid;">
+        ${renderSectionHeading(headingTitle)}
+        ${EDUCATION_HISTORY.map(
+          (edu) => `
+            <div style="margin-bottom:${withDetails ? '4.5pt' : '3pt'}; page-break-inside:avoid; break-inside:avoid;">
+              <table width="100%" border="0" cellpadding="0" cellspacing="0" style="width:100%; border-collapse:collapse;">
+                <tr>
+                  <td style="text-align:left; vertical-align:top; font-size:8pt; color:#111827; padding:0;">
+                    <span style="font-weight:bold; color:#0f172a;">${esc(edu.degree)}</span>
+                    <span style="font-weight:${template === 'classic-ats' || template === 'portfolio-style' ? '600' : '500'}; color:#334155;"> — ${esc(edu.institution)}</span>
+                  </td>
+                  <td style="text-align:right; vertical-align:top; font-size:7.5pt; font-weight:bold; color:${template === 'classic-ats' ? '#1e293b' : '#334155'}; white-space:nowrap; padding:0;">${esc(edu.period)}</td>
+                </tr>
+              </table>
+              ${
+                withDetails && edu.details
+                  ? `<p style="margin:1.5pt 0 0 0; font-size:7.5pt; color:#334155; line-height:1.36;">${esc(edu.details)}</p>`
+                  : ''
+              }
+            </div>
+          `
+        ).join('')}
+      </div>
+    `;
+
+    let bodyMarkup = '';
+
+    if (template === 'modern-pro') {
+      bodyMarkup = `
+        <!-- Header Banner -->
+        <table width="100%" border="0" cellpadding="0" cellspacing="0" style="width:100%; border-collapse:collapse; margin-bottom:10pt; page-break-inside:avoid; break-inside:avoid;">
+          <tr>
+            <td style="background-color:#0f172a; padding:10pt 14pt; color:#ffffff;">
+              <div style="font-size:16pt; font-weight:bold; text-transform:uppercase; color:#ffffff; line-height:1.2; margin:0 0 2pt 0;">${esc(customInfo.name)}</div>
+              <div style="font-size:8.5pt; font-weight:bold; text-transform:uppercase; letter-spacing:0.4pt; color:#fbbf24; margin:0 0 5pt 0;">${esc(customInfo.title)}</div>
+              <div style="font-size:7.5pt; color:#e2e8f0; line-height:1.4;">
+                <span>${esc(customInfo.location)}</span>
+                &nbsp;|&nbsp;
+                <a href="tel:${esc(customInfo.phone)}" style="color:#ffffff; font-weight:600; text-decoration:none;">${esc(customInfo.phone)}</a>
+                &nbsp;|&nbsp;
+                <a href="mailto:${esc(customInfo.email)}" style="color:#ffffff; font-weight:600; text-decoration:none;">${esc(customInfo.email)}</a>
+                &nbsp;|&nbsp;
+                <a href="${esc(linkedinUrl)}" style="color:#fbbf24; font-weight:600; text-decoration:underline;">LinkedIn</a>
+                &nbsp;|&nbsp;
+                <a href="${esc(githubUrl)}" style="color:#fbbf24; font-weight:600; text-decoration:underline;">GitHub</a>
+                &nbsp;|&nbsp;
+                <a href="${esc(portfolioUrl)}" style="color:#fbbf24; font-weight:600; text-decoration:underline;">Portfolio</a>
+              </div>
+            </td>
+          </tr>
+        </table>
+
+        <!-- Career Objective -->
+        <div style="margin-bottom:9pt; page-break-inside:avoid; break-inside:avoid;">
+          ${renderSectionHeading('Career Objective')}
+          <p style="margin:0; font-size:8pt; color:#111827; line-height:1.44; text-align:left;">${esc(activeCareerObjective)}</p>
+        </div>
+
+        <!-- Core Technical Toolkit -->
+        <div style="margin-bottom:9pt; page-break-inside:avoid; break-inside:avoid;">
+          ${renderSectionHeading('Core Technical Toolkit')}
+          ${renderTwoColGrid(
+            SKILL_CATEGORIES,
+            (cat) => `
+              <table width="100%" border="0" cellpadding="0" cellspacing="0" style="width:100%; border-collapse:collapse; background-color:#f8fafc; border:0.75pt solid #cbd5e1;">
+                <tr>
+                  <td style="padding:4.5pt 7pt; vertical-align:top;">
+                    <div style="font-size:7.5pt; font-weight:bold; text-transform:uppercase; color:#0f172a; margin-bottom:2pt;">${esc(cat.category)}</div>
+                    <div style="font-size:7.5pt; color:#1e293b; line-height:1.35;">${esc(cat.items.join(', '))}</div>
+                  </td>
+                </tr>
+              </table>
+            `,
+            6
+          )}
+        </div>
+
+        <!-- Work History -->
+        <div style="margin-bottom:9pt;">
+          ${renderSectionHeading('Work History')}
+          ${renderExperienceItems()}
+        </div>
+
+        <!-- Selected SQA Projects -->
+        ${
+          selectedProjects.length > 0
+            ? `<div style="margin-bottom:9pt;">
+                ${renderSectionHeading('Selected SQA Projects')}
+                ${selectedProjects
+                  .map(
+                    (p) => `
+                    <table width="100%" border="0" cellpadding="0" cellspacing="0" style="width:100%; border-collapse:collapse; background-color:#f8fafc; border:0.75pt solid #cbd5e1; margin-bottom:4.5pt; page-break-inside:avoid; break-inside:avoid;">
+                      <tr>
+                        <td style="padding:5pt 7pt; vertical-align:top;">
+                          <table width="100%" border="0" cellpadding="0" cellspacing="0" style="width:100%; border-collapse:collapse; margin-bottom:2pt;">
+                            <tr>
+                              <td style="text-align:left; vertical-align:top; font-size:8pt; font-weight:bold; color:#0f172a;">${esc(p.title)}</td>
+                              <td style="text-align:right; vertical-align:top; white-space:nowrap;">
+                                <span style="font-size:7pt; font-weight:bold; background-color:#e2e8f0; color:#0f172a; padding:1pt 4pt;">${esc(p.type)}</span>
+                                ${
+                                  p.link
+                                    ? `&nbsp;&nbsp;<a href="${esc(normalizeUrl(p.link))}" style="font-size:7.5pt; font-weight:600; color:#0a66c2; text-decoration:underline;">GitHub</a>`
+                                    : ''
+                                }
+                              </td>
+                            </tr>
+                          </table>
+                          <p style="margin:0; font-size:8pt; color:#1e293b; line-height:1.38; text-align:left;">${esc(p.description)}</p>
+                        </td>
+                      </tr>
+                    </table>
+                  `
+                  )
+                  .join('')}
+              </div>`
+            : ''
+        }
+
+        ${renderEducationBlock('Education', false)}
+        ${renderReferencesBlock('References')}
+      `;
+    } else if (template === 'minimal') {
+      bodyMarkup = `
+        <!-- Minimal Header -->
+        <div style="margin-bottom:9pt; page-break-inside:avoid; break-inside:avoid;">
+          <div style="font-size:16.5pt; font-weight:600; color:#0f172a; line-height:1.2; margin:0 0 2pt 0;">${esc(customInfo.name)}</div>
+          <div style="font-size:8.5pt; font-weight:600; color:#334155; margin:0 0 3pt 0;">${esc(customInfo.title)} | ${esc(customInfo.location)}</div>
+          <div style="font-size:8pt; font-weight:500; color:#1e293b; padding-bottom:6pt; border-bottom:0.75pt solid #cbd5e1;">
+            <a href="mailto:${esc(customInfo.email)}" style="color:#0f172a; font-weight:600; text-decoration:none;">${esc(customInfo.email)}</a>
+            &nbsp;|&nbsp;
+            <a href="tel:${esc(customInfo.phone)}" style="color:#0f172a; font-weight:600; text-decoration:none;">${esc(customInfo.phone)}</a>
+            &nbsp;|&nbsp;
+            <a href="${esc(linkedinUrl)}" style="color:#0a66c2; font-weight:600; text-decoration:underline;">LinkedIn</a>
+            &nbsp;|&nbsp;
+            <a href="${esc(githubUrl)}" style="color:#0f172a; font-weight:600; text-decoration:underline;">GitHub</a>
+            &nbsp;|&nbsp;
+            <a href="${esc(portfolioUrl)}" style="color:#c2410c; font-weight:600; text-decoration:underline;">Portfolio</a>
+          </div>
+        </div>
+
+        <!-- Career Objective -->
+        <div style="margin-bottom:9pt; page-break-inside:avoid; break-inside:avoid;">
+          ${renderSectionHeading('Career Objective')}
+          <p style="margin:0; font-size:8pt; color:#111827; line-height:1.44; text-align:left;">${esc(activeCareerObjective)}</p>
+        </div>
+
+        <!-- Experience -->
+        <div style="margin-bottom:9pt;">
+          ${renderSectionHeading('Experience')}
+          ${renderExperienceItems()}
+        </div>
+
+        <!-- Projects -->
+        ${
+          selectedProjects.length > 0
+            ? `<div style="margin-bottom:9pt;">
+                ${renderSectionHeading('Projects')}
+                ${selectedProjects
+                  .map(
+                    (p) => `
+                    <div style="margin-bottom:5pt; page-break-inside:avoid; break-inside:avoid;">
+                      <table width="100%" border="0" cellpadding="0" cellspacing="0" style="width:100%; border-collapse:collapse; margin-bottom:1.5pt;">
+                        <tr>
+                          <td style="text-align:left; vertical-align:top; font-size:8pt; font-weight:bold; color:#0f172a;">${esc(p.title)}</td>
+                          <td style="text-align:right; vertical-align:top; white-space:nowrap;">
+                            ${
+                              p.link
+                                ? `<a href="${esc(normalizeUrl(p.link))}" style="font-size:7.5pt; font-weight:600; color:#0a66c2; text-decoration:underline;">GitHub</a>`
+                                : ''
+                            }
+                          </td>
+                        </tr>
+                      </table>
+                      <p style="margin:0; font-size:8pt; color:#1e293b; line-height:1.4; text-align:left;">${esc(p.description)}</p>
+                    </div>
+                  `
+                  )
+                  .join('')}
+              </div>`
+            : ''
+        }
+
+        <!-- Skills -->
+        <div style="margin-bottom:9pt; page-break-inside:avoid; break-inside:avoid;">
+          ${renderSectionHeading('Skills')}
+          <p style="margin:0; font-size:8pt; color:#111827; line-height:1.42; font-weight:500;">${esc(
+            SKILL_CATEGORIES.flatMap((c) => c.items).join(' • ')
+          )}</p>
+        </div>
+
+        ${renderEducationBlock('Education', false)}
+        ${renderReferencesBlock('References')}
+      `;
+    } else if (template === 'executive') {
+      bodyMarkup = `
+        <!-- Executive Header -->
+        <table width="100%" border="0" cellpadding="0" cellspacing="0" style="width:100%; border-collapse:collapse; margin-bottom:9pt; border-bottom:2pt solid #0f172a; page-break-inside:avoid; break-inside:avoid;">
+          <tr>
+            <td style="text-align:left; vertical-align:top; padding:0 10pt 7pt 0;">
+              <div style="font-size:16pt; font-weight:bold; text-transform:uppercase; color:#0f172a; line-height:1.2; margin:0 0 2pt 0;">${esc(customInfo.name)}</div>
+              <div style="font-size:8.5pt; font-weight:bold; text-transform:uppercase; letter-spacing:0.35pt; color:#334155;">${esc(customInfo.title)}</div>
+            </td>
+            <td style="text-align:right; vertical-align:top; white-space:nowrap; font-size:7.5pt; color:#111827; line-height:1.45; padding:0 0 7pt 0;">
+              <div>
+                <a href="mailto:${esc(customInfo.email)}" style="color:#0f172a; font-weight:bold; text-decoration:none;">${esc(customInfo.email)}</a> | <a href="tel:${esc(customInfo.phone)}" style="color:#0f172a; font-weight:600; text-decoration:none;">${esc(customInfo.phone)}</a>
+              </div>
+              <div style="font-weight:500; color:#334155;">${esc(customInfo.location)}</div>
+              <div style="font-weight:600; padding-top:1pt;">
+                <a href="${esc(linkedinUrl)}" style="color:#0a66c2; text-decoration:underline;">LinkedIn</a>
+                &nbsp;|&nbsp;
+                <a href="${esc(githubUrl)}" style="color:#0f172a; text-decoration:underline;">GitHub</a>
+                &nbsp;|&nbsp;
+                <a href="${esc(portfolioUrl)}" style="color:#c2410c; text-decoration:underline;">Portfolio</a>
+              </div>
+            </td>
+          </tr>
+        </table>
+
+        <!-- Key Metrics Banner -->
+        <table width="100%" border="0" cellpadding="0" cellspacing="0" style="width:100%; border-collapse:collapse; background-color:#f3f4f6; border:0.75pt solid #d1d5db; margin-bottom:9pt; page-break-inside:avoid; break-inside:avoid;">
+          <tr>
+            <td width="25%" style="text-align:center; padding:5.5pt 4pt;">
+              <div style="font-size:9pt; font-weight:bold; color:#0f172a;">${esc(customInfo.experienceYears || '2')}+ Yrs</div>
+              <div style="font-size:7.5pt; font-weight:600; color:#334155;">Experience</div>
+            </td>
+            <td width="25%" style="text-align:center; padding:5.5pt 4pt;">
+              <div style="font-size:9pt; font-weight:bold; color:#0f172a;">150+</div>
+              <div style="font-size:7.5pt; font-weight:600; color:#334155;">Test Cases</div>
+            </td>
+            <td width="25%" style="text-align:center; padding:5.5pt 4pt;">
+              <div style="font-size:9pt; font-weight:bold; color:#0f172a;">100+</div>
+              <div style="font-size:7.5pt; font-weight:600; color:#334155;">Bugs Logged</div>
+            </td>
+            <td width="25%" style="text-align:center; padding:5.5pt 4pt;">
+              <div style="font-size:9pt; font-weight:bold; color:#0f172a;">0%</div>
+              <div style="font-size:7.5pt; font-weight:600; color:#334155;">Error Rate</div>
+            </td>
+          </tr>
+        </table>
+
+        <!-- Career Objective -->
+        <div style="margin-bottom:9pt; page-break-inside:avoid; break-inside:avoid;">
+          ${renderSectionHeading('Career Objective')}
+          <p style="margin:0; font-size:8pt; color:#111827; line-height:1.44; text-align:left;">${esc(activeCareerObjective)}</p>
+        </div>
+
+        <!-- Leadership & Technical Capabilities -->
+        <div style="margin-bottom:9pt; page-break-inside:avoid; break-inside:avoid;">
+          ${renderSectionHeading('Leadership & Technical Capabilities')}
+          ${renderTwoColGrid(
+            SKILL_CATEGORIES,
+            (c) => `
+              <div style="font-size:8pt; line-height:1.38;">
+                <span style="font-weight:bold; color:#0f172a;">${esc(c.category)}: </span>
+                <span style="color:#1e293b; font-weight:500;">${esc(c.items.join(', '))}</span>
+              </div>
+            `,
+            12
+          )}
+        </div>
+
+        <!-- Professional Career History -->
+        <div style="margin-bottom:9pt;">
+          ${renderSectionHeading('Professional Career History')}
+          ${renderExperienceItems()}
+        </div>
+
+        <!-- Key Deliverables & Projects -->
+        ${
+          selectedProjects.length > 0
+            ? `<div style="margin-bottom:9pt;">
+                ${renderSectionHeading('Key Deliverables & Projects')}
+                ${selectedProjects
+                  .map(
+                    (p) => `
+                    <div style="margin-bottom:5pt; page-break-inside:avoid; break-inside:avoid;">
+                      <table width="100%" border="0" cellpadding="0" cellspacing="0" style="width:100%; border-collapse:collapse; margin-bottom:1.5pt;">
+                        <tr>
+                          <td style="text-align:left; vertical-align:top; font-size:8pt; font-weight:bold; color:#0f172a;">${esc(p.title)}</td>
+                          <td style="text-align:right; vertical-align:top; white-space:nowrap;">
+                            ${
+                              p.link
+                                ? `<a href="${esc(normalizeUrl(p.link))}" style="font-size:7.5pt; font-weight:600; color:#0a66c2; text-decoration:underline;">GitHub Repo</a>`
+                                : ''
+                            }
+                          </td>
+                        </tr>
+                      </table>
+                      <p style="margin:0; font-size:8pt; color:#1e293b; line-height:1.4; text-align:left;">${esc(p.description)}</p>
+                    </div>
+                  `
+                  )
+                  .join('')}
+              </div>`
+            : ''
+        }
+
+        ${renderEducationBlock('Education', false)}
+        ${renderReferencesBlock('References')}
+      `;
+    } else if (template === 'portfolio-style') {
+      bodyMarkup = `
+        <!-- Portfolio Style Header -->
+        <table width="100%" border="0" cellpadding="0" cellspacing="0" style="width:100%; border-collapse:collapse; margin-bottom:9pt; border-bottom:1.5pt solid #f97316; page-break-inside:avoid; break-inside:avoid;">
+          <tr>
+            <td style="text-align:left; vertical-align:top; padding:0 10pt 7pt 0;">
+              <div style="font-size:16pt; font-weight:bold; color:#0f172a; line-height:1.2; margin:0 0 2pt 0;">${esc(customInfo.name)}</div>
+              <div style="font-size:8.5pt; font-weight:bold; text-transform:uppercase; color:#ea580c; margin:0 0 2pt 0;">${esc(customInfo.title)}</div>
+              <div style="font-size:8pt; font-weight:500; color:#334155;">${esc(customInfo.location)}</div>
+            </td>
+            <td style="text-align:right; vertical-align:top; white-space:nowrap; font-size:7.5pt; color:#111827; line-height:1.45; padding:0 0 7pt 0;">
+              <div><a href="mailto:${esc(customInfo.email)}" style="color:#0f172a; font-weight:bold; text-decoration:none;">${esc(customInfo.email)}</a></div>
+              <div><a href="tel:${esc(customInfo.phone)}" style="color:#0f172a; text-decoration:none;">${esc(customInfo.phone)}</a></div>
+              <div style="font-weight:600; padding-top:1pt;">
+                <a href="${esc(linkedinUrl)}" style="color:#0a66c2; text-decoration:underline;">LinkedIn</a>
+                &nbsp;|&nbsp;
+                <a href="${esc(githubUrl)}" style="color:#0f172a; text-decoration:underline;">GitHub</a>
+                &nbsp;|&nbsp;
+                <a href="${esc(portfolioUrl)}" style="color:#c2410c; text-decoration:underline;">Portfolio</a>
+              </div>
+            </td>
+          </tr>
+        </table>
+
+        <!-- Career Objective -->
+        <div style="margin-bottom:9pt; page-break-inside:avoid; break-inside:avoid;">
+          ${renderSectionHeading('Career Objective')}
+          <p style="margin:0; font-size:8pt; color:#111827; line-height:1.44; text-align:left;">${esc(activeCareerObjective)}</p>
+        </div>
+
+        <!-- SQA Toolkit & Capabilities -->
+        <div style="margin-bottom:9pt; page-break-inside:avoid; break-inside:avoid;">
+          ${renderSectionHeading('SQA Toolkit & Capabilities')}
+          <table width="100%" border="0" cellpadding="0" cellspacing="0" style="width:100%; border-collapse:collapse;">
+            ${SKILL_CATEGORIES.map(
+              (cat) => `
+              <tr>
+                <td width="118pt" style="width:118pt; vertical-align:top; font-size:8pt; font-weight:bold; color:#0f172a; padding:0 8pt 3pt 0; line-height:1.38;">${esc(cat.category)}:</td>
+                <td style="vertical-align:top; font-size:8pt; color:#1e293b; padding:0 0 3pt 0; line-height:1.38;">${esc(cat.items.join(', '))}</td>
+              </tr>
+            `
+            ).join('')}
+          </table>
+        </div>
+
+        <!-- Experience & STLC Workflow -->
+        <div style="margin-bottom:9pt;">
+          ${renderSectionHeading('Experience & STLC Workflow')}
+          ${renderExperienceItems()}
+        </div>
+
+        <!-- Verified Automation & QA Repositories -->
+        ${
+          selectedProjects.length > 0
+            ? `<div style="margin-bottom:9pt;">
+                ${renderSectionHeading('Verified Automation & QA Repositories')}
+                ${selectedProjects
+                  .map(
+                    (p) => `
+                    <table width="100%" border="0" cellpadding="0" cellspacing="0" style="width:100%; border-collapse:collapse; background-color:#ffffff; border:0.75pt solid #cbd5e1; margin-bottom:4.5pt; page-break-inside:avoid; break-inside:avoid;">
+                      <tr>
+                        <td style="padding:5pt 7pt; vertical-align:top;">
+                          <table width="100%" border="0" cellpadding="0" cellspacing="0" style="width:100%; border-collapse:collapse; margin-bottom:2pt;">
+                            <tr>
+                              <td style="text-align:left; vertical-align:top; font-size:8pt; font-weight:bold; color:#0f172a;">${esc(p.title)}</td>
+                              <td style="text-align:right; vertical-align:top; white-space:nowrap;">
+                                <span style="font-size:7pt; font-weight:bold; color:#1d4ed8;">${esc(p.type)}</span>
+                                ${
+                                  p.link
+                                    ? `&nbsp;&nbsp;<a href="${esc(normalizeUrl(p.link))}" style="font-size:7.5pt; font-weight:600; color:#0a66c2; text-decoration:underline;">GitHub</a>`
+                                    : ''
+                                }
+                              </td>
+                            </tr>
+                          </table>
+                          <p style="margin:0; font-size:8pt; color:#1e293b; line-height:1.38; text-align:left;">${esc(p.description)}</p>
+                        </td>
+                      </tr>
+                    </table>
+                  `
+                  )
+                  .join('')}
+              </div>`
+            : ''
+        }
+
+        ${renderEducationBlock('Education', false)}
+        ${renderReferencesBlock('References')}
+      `;
+    } else {
+      // classic-ats (DEFAULT)
+      bodyMarkup = `
+        <!-- Classic ATS Centered Header -->
+        <div style="text-align:center; margin-bottom:9pt; page-break-inside:avoid; break-inside:avoid;">
+          <div style="font-size:16pt; font-weight:bold; text-transform:uppercase; color:#0f172a; line-height:1.2; margin:0 0 2pt 0;">${esc(customInfo.name)}</div>
+          <div style="font-size:8.5pt; font-weight:bold; text-transform:uppercase; letter-spacing:0.35pt; color:#1e293b; margin:0 0 3pt 0;">${esc(customInfo.title)}</div>
+          <div style="font-size:8pt; font-weight:500; color:#1e293b; margin:0 0 2.5pt 0;">
+            ${customInfo.location ? `${esc(customInfo.location)} &nbsp;|&nbsp; ` : ''}
+            <a href="tel:${esc(customInfo.phone)}" style="color:#0f172a; font-weight:600; text-decoration:none;">${esc(customInfo.phone)}</a>
+            &nbsp;|&nbsp;
+            <a href="mailto:${esc(customInfo.email)}" style="color:#0f172a; font-weight:600; text-decoration:none;">${esc(customInfo.email)}</a>
+          </div>
+          <div style="font-size:8pt; color:#1e293b; padding-bottom:6pt; border-bottom:1.15pt solid #0f172a;">
+            LinkedIn: <a href="${esc(linkedinUrl)}" style="color:#0a66c2; font-weight:600; text-decoration:underline;">View Profile</a>
+            &nbsp;|&nbsp;
+            GitHub: <a href="${esc(githubUrl)}" style="color:#0f172a; font-weight:600; text-decoration:underline;">Repositories</a>
+            &nbsp;|&nbsp;
+            Portfolio: <a href="${esc(portfolioUrl)}" style="color:#c2410c; font-weight:600; text-decoration:underline;">Live Portfolio</a>
+          </div>
+        </div>
+
+        <!-- Career Objective -->
+        <div style="margin-bottom:9pt; page-break-inside:avoid; break-inside:avoid;">
+          ${renderSectionHeading('Career Objective')}
+          <p style="margin:0; font-size:8pt; color:#111827; line-height:1.44; text-align:left;">${esc(activeCareerObjective)}</p>
+        </div>
+
+        <!-- Technical Skills & Core Competencies -->
+        <div style="margin-bottom:9pt; page-break-inside:avoid; break-inside:avoid;">
+          ${renderSectionHeading('Technical Skills & Core Competencies')}
+          <table width="100%" border="0" cellpadding="0" cellspacing="0" style="width:100%; border-collapse:collapse;">
+            ${SKILL_CATEGORIES.map(
+              (cat) => `
+              <tr>
+                <td width="118pt" style="width:118pt; vertical-align:top; font-size:8pt; font-weight:bold; color:#0f172a; padding:0 8pt 3pt 0; line-height:1.4;">${esc(cat.category)}:</td>
+                <td style="vertical-align:top; font-size:8pt; color:#1e293b; padding:0 0 3pt 0; line-height:1.4;">${esc(cat.items.join(', '))}</td>
+              </tr>
+            `
+            ).join('')}
+          </table>
+        </div>
+
+        <!-- Professional Experience -->
+        <div style="margin-bottom:9pt;">
+          ${renderSectionHeading('Professional Experience')}
+          ${renderExperienceItems()}
+        </div>
+
+        <!-- Featured SQA Automation & Testing Projects -->
+        ${
+          selectedProjects.length > 0
+            ? `<div style="margin-bottom:9pt;">
+                ${renderSectionHeading('Featured SQA Automation & Testing Projects')}
+                ${selectedProjects
+                  .map(
+                    (proj) => `
+                    <div style="margin-bottom:6pt; page-break-inside:avoid; break-inside:avoid;">
+                      <table width="100%" border="0" cellpadding="0" cellspacing="0" style="width:100%; border-collapse:collapse; margin-bottom:1.5pt;">
+                        <tr>
+                          <td style="text-align:left; vertical-align:top; font-size:8pt; font-weight:bold; color:#0f172a;">
+                            ${esc(proj.title)} <span style="font-size:7.2pt; font-weight:600; color:#475569;">(${esc(proj.type)})</span>
+                          </td>
+                          <td style="text-align:right; vertical-align:top; white-space:nowrap;">
+                            ${
+                              proj.link
+                                ? `<a href="${esc(normalizeUrl(proj.link))}" style="font-size:7.5pt; font-weight:600; color:#0a66c2; text-decoration:underline;">GitHub Repo</a>`
+                                : ''
+                            }
+                          </td>
+                        </tr>
+                      </table>
+                      <p style="margin:0 0 1.5pt 0; font-size:8pt; color:#1e293b; line-height:1.4; text-align:left;">${esc(proj.description)}</p>
+                      ${
+                        proj.tags && proj.tags.length > 0
+                          ? `<p style="margin:0; font-size:7.5pt; color:#334155; line-height:1.35;">
+                              <span style="font-weight:bold; color:#0f172a;">Tools:</span> ${esc(proj.tags.join(' • '))}
+                            </p>`
+                          : ''
+                      }
+                    </div>
+                  `
+                  )
+                  .join('')}
+              </div>`
+            : ''
+        }
+
+        ${renderEducationBlock('Education & Certifications', true)}
+        ${renderReferencesBlock('Professional References')}
+      `;
+    }
+
+    return `<!DOCTYPE html>
 <html xmlns:o='urn:schemas-microsoft-com:office:office'
       xmlns:w='urn:schemas-microsoft-com:office:word'
       xmlns='http://www.w3.org/TR/REC-html40'>
 <head>
   <meta charset='utf-8'>
-  <title>${customInfo.name} - SQA Engineer Resume</title>
+  <title>${esc(customInfo.name)} - SQA Engineer Resume</title>
   <!--[if gte mso 9]>
   <xml>
     <w:WordDocument>
@@ -564,219 +944,33 @@ export default function ResumeBuilderModal({ isOpen, onClose, onOpenCoverLetter 
   <![endif]-->
   <style>
     @page Section1 {
-      size: 595.3pt 841.9pt; /* Standard A4 */
-      margin: 36.0pt 36.0pt 36.0pt 36.0pt; /* 0.5 inch margins */
-      mso-header-margin: 36.0pt;
-      mso-footer-margin: 36.0pt;
+      size: 595.3pt 841.9pt; /* A4 Portrait matching PDF */
+      margin: 34.0pt 36.85pt 34.0pt 36.85pt; /* 12mm top/bottom, 13mm left/right matching PDF */
+      mso-header-margin: 24.0pt;
+      mso-footer-margin: 24.0pt;
       mso-paper-source: 0;
     }
     div.Section1 { page: Section1; }
     body {
-      font-family: 'Calibri', 'Arial', 'Segoe UI', sans-serif;
-      font-size: 10pt;
-      line-height: 1.35;
-      color: #111111;
+      font-family: ${activeFontStack};
+      font-size: 8pt;
+      line-height: 1.42;
+      color: #111827;
       background-color: #ffffff;
       margin: 0;
       padding: 0;
     }
-    h1 {
-      font-family: 'Calibri', 'Arial', sans-serif;
-      font-size: 20pt;
-      font-weight: bold;
-      text-align: center;
-      margin: 0 0 2pt 0;
-      color: #000000;
-      text-transform: uppercase;
-      letter-spacing: 0.5pt;
-    }
-    .sub-title {
-      font-size: 11pt;
-      font-weight: bold;
-      text-align: center;
-      color: #222222;
-      margin: 0 0 4pt 0;
-      text-transform: uppercase;
-    }
-    .contact-bar {
-      font-size: 9.5pt;
-      text-align: center;
-      color: #222222;
-      margin: 0 0 8pt 0;
-      line-height: 1.4;
-    }
-    .contact-bar a {
-      color: #0a66c2;
-      text-decoration: underline;
-    }
-    .section-title {
-      font-size: 11pt;
-      font-weight: bold;
-      text-transform: uppercase;
-      color: #000000;
-      border-bottom: 1.5pt solid #000000;
-      padding-bottom: 2pt;
-      margin: 12pt 0 4pt 0;
-      letter-spacing: 0.5pt;
-      page-break-after: avoid;
-      break-after: avoid;
-    }
-    table.data-table {
-      width: 100%;
-      border-collapse: collapse;
-      margin-top: 3pt;
-      margin-bottom: 2pt;
-      page-break-inside: avoid;
-      break-inside: avoid;
-    }
-    .keep-block {
-      page-break-inside: avoid;
-      break-inside: avoid;
-    }
-    td.left-col {
-      text-align: left;
-      vertical-align: top;
-      font-size: 10pt;
-    }
-    td.right-col {
-      text-align: right;
-      vertical-align: top;
-      font-size: 9.5pt;
-      color: #222222;
-      font-weight: bold;
-      white-space: nowrap;
-    }
-    ul.bullet-list {
-      margin: 2pt 0 6pt 16pt;
-      padding: 0;
-    }
-    li.bullet-item {
-      font-size: 9.5pt;
-      line-height: 1.38;
-      margin-bottom: 2.5pt;
-      color: #1a1a1a;
-      page-break-inside: avoid;
-      break-inside: avoid;
-    }
-    p {
-      margin: 0 0 4pt 0;
-      font-size: 9.5pt;
-      line-height: 1.38;
-    }
-    a {
-      color: #0a66c2;
-      text-decoration: underline;
+    p, div, td, li, span {
+      font-family: ${activeFontStack};
     }
   </style>
 </head>
 <body>
-<div class="Section1">
-  <!-- Header Title & Contact -->
-  <h1>${customInfo.name}</h1>
-  <div class="sub-title">${customInfo.title}</div>
-  <div class="contact-bar">
-    ${customInfo.location ? `${customInfo.location} | ` : ''}
-    <a href="tel:${customInfo.phone}">${customInfo.phone}</a> | 
-    <a href="mailto:${customInfo.email}">${customInfo.email}</a><br>
-    LinkedIn: <a href="${normalizeUrl(customInfo.linkedin)}">(Click Here)</a> | 
-    GitHub: <a href="${normalizeUrl(customInfo.github)}">(Click Here)</a> | 
-    Portfolio: <a href="${normalizeUrl(window.location.origin)}">(Click Here)</a>
+  <div class="Section1">
+    ${bodyMarkup}
   </div>
-
-  <!-- Career Objective -->
-  <div class="section-title">CAREER OBJECTIVE</div>
-  <p class="keep-block">${activeCareerObjective}</p>
-
-  <!-- Core Skills -->
-  <div class="section-title">CORE TECHNICAL SKILLS</div>
-  <table class="data-table" border="0" cellpadding="0" cellspacing="0">
-    ${SKILL_CATEGORIES.map(c => `
-      <tr>
-        <td class="left-col" style="width: 28%; font-weight: bold; padding: 2pt 0; vertical-align: top;">${c.category}:</td>
-        <td class="left-col" style="padding: 2pt 0; vertical-align: top;">${c.items.join(', ')}</td>
-      </tr>
-    `).join('')}
-  </table>
-
-  <!-- Work Experience -->
-  <div class="section-title">WORK EXPERIENCE</div>
-  ${WORK_EXPERIENCE.map(exp => `
-    <table class="data-table" border="0" cellpadding="0" cellspacing="0" style="page-break-after: avoid; break-after: avoid;">
-      <tr>
-        <td class="left-col" style="width: 68%;"><b>${exp.role}</b></td>
-        <td class="right-col" style="width: 32%;">${exp.period}</td>
-      </tr>
-      <tr>
-        <td class="left-col" style="width: 68%; color: #334155;">${exp.company}</td>
-        <td class="right-col" style="width: 32%; font-weight: normal; color: #475569;">${exp.location}</td>
-      </tr>
-    </table>
-    <ul class="bullet-list">
-      ${exp.highlights.map(h => {
-        const parsed = parseHighlightItem(h);
-        return parsed.isScope
-          ? `<li class="bullet-item" style="list-style: none; margin-left: -14pt; font-weight: bold; color: #0f172a;">${parsed.text}</li>`
-          : `<li class="bullet-item">${parsed.text}</li>`;
-      }).join('')}
-    </ul>
-  `).join('')}
-
-  <!-- Key Projects -->
-  ${selectedProjects.length > 0 ? `
-    <div class="section-title">KEY SQA PROJECTS</div>
-    ${selectedProjects.map(proj => `
-      <div class="keep-block" style="margin-bottom: 6pt;">
-        <table class="data-table" border="0" cellpadding="0" cellspacing="0">
-          <tr>
-            <td class="left-col" style="width: 75%;">
-              <b>${proj.title}</b>
-              ${proj.link ? ` [ <a href="${normalizeUrl(proj.link)}">GitHub Repo</a> ]` : ''}
-            </td>
-            <td class="right-col" style="width: 25%; color: #555555;">[ ${proj.type.toUpperCase()} ]</td>
-          </tr>
-        </table>
-        <p style="margin-bottom: 2pt;">${proj.description}</p>
-        <p style="font-size: 9pt; color: #444444; margin-bottom: 4pt;">
-          <b>Tools & Tech:</b> ${proj.tags.join(', ')}
-          ${proj.metrics && proj.metrics.length > 0 ? ` | <b>Metrics:</b> ${proj.metrics.map(m => `${m.label}: ${m.value}`).join(' • ')}` : ''}
-        </p>
-      </div>
-    `).join('')}
-  ` : ''}
-
-  <!-- Education -->
-  <div class="section-title">EDUCATION</div>
-  ${EDUCATION_HISTORY.map(edu => `
-    <div class="keep-block" style="margin-bottom: 4pt;">
-      <table class="data-table" border="0" cellpadding="0" cellspacing="0">
-        <tr>
-          <td class="left-col" style="width: 70%;"><b>${edu.degree}</b> - ${edu.institution}</td>
-          <td class="right-col" style="width: 30%;">${edu.period} | ${edu.location}</td>
-        </tr>
-      </table>
-      ${edu.details ? `<p style="font-size: 9pt; color: #444444; margin-top: 1pt; margin-bottom: 2pt;">${edu.details}</p>` : ''}
-    </div>
-  `).join('')}
-
-  <!-- Professional References -->
-  ${portfolioReferences.length > 0 ? `
-    <div class="section-title">PROFESSIONAL REFERENCES</div>
-    <table class="data-table" border="0" cellpadding="0" cellspacing="0">
-      ${portfolioReferences.map(ref => `
-        <tr>
-          <td class="left-col" style="padding-bottom: 4pt;">
-            <b>${ref.name}</b><br>
-            ${ref.role}, ${ref.company}<br>
-            <span style="font-size: 9pt; color: #444444;">Email: <a href="mailto:${ref.email}">${ref.email}</a> | Phone: <a href="tel:${ref.phone}">${ref.phone}</a></span>
-          </td>
-        </tr>
-      `).join('')}
-    </table>
-  ` : ''}
-</div>
 </body>
-</html>
-    `;
+</html>`;
   };
 
   // Word Document (.doc / .docx compatible) Export trigger with 100% stable formatting
@@ -797,7 +991,7 @@ export default function ResumeBuilderModal({ isOpen, onClose, onOpenCoverLetter 
   };
 
   // Plain Text Copying
-  const handleCopyPlainText = () => {
+  const handleCopyPlainText = async () => {
     let text = `${customInfo.name.toUpperCase()}\n${customInfo.title}\n`;
     text += `Email: ${customInfo.email} | Phone: ${customInfo.phone} | Location: ${customInfo.location}\n`;
     text += `LinkedIn: ${customInfo.linkedin} | GitHub: ${customInfo.github}\n\n`;
@@ -826,9 +1020,11 @@ export default function ResumeBuilderModal({ isOpen, onClose, onOpenCoverLetter 
       text += `${edu.degree} - ${edu.institution} (${edu.period})\n`;
     });
 
-    navigator.clipboard.writeText(text);
-    setCopiedText(true);
-    setTimeout(() => setCopiedText(false), 2000);
+    const ok = await copyToClipboard(text);
+    if (ok) {
+      setCopiedText(true);
+      setTimeout(() => setCopiedText(false), 2000);
+    }
   };
 
   // Generated Cover Letter
@@ -864,10 +1060,12 @@ Sabbir Ahamed
 Software Quality Assurance Engineer`;
   }, [customInfo, targetCompany, targetJobTitle]);
 
-  const handleCopyCoverLetter = () => {
-    navigator.clipboard.writeText(generatedCoverLetter);
-    setCopiedCover(true);
-    setTimeout(() => setCopiedCover(false), 2000);
+  const handleCopyCoverLetter = async () => {
+    const ok = await copyToClipboard(generatedCoverLetter);
+    if (ok) {
+      setCopiedCover(true);
+      setTimeout(() => setCopiedCover(false), 2000);
+    }
   };
 
   if (!isOpen) return null;
@@ -900,39 +1098,67 @@ Software Quality Assurance Engineer`;
         </div>
 
         {/* Action Export Buttons */}
-        <div className="flex items-center space-x-1.5 sm:space-x-2.5">
+        <div className="flex items-center space-x-1.5 sm:space-x-2">
           <button
+            type="button"
             onClick={handleDownloadDOCX}
-            className="hidden sm:flex items-center space-x-1.5 px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-lg bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 text-blue-300 text-xs font-mono font-medium transition-colors cursor-pointer"
+            className="hidden sm:flex items-center space-x-1.5 px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-lg bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 text-blue-200 text-xs font-mono font-semibold transition-colors cursor-pointer"
             title="Download formatted Word resume (.doc / .docx compatible, no layout breaks)"
           >
-            <FileText className="w-3.5 h-3.5 text-blue-400" />
+            <FileText className="w-3.5 h-3.5 text-blue-300" />
             <span>Word (.doc)</span>
           </button>
 
           <button
-            onClick={handlePrint}
-            className="flex items-center space-x-1.5 px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-lg bg-white/10 hover:bg-white/15 text-white text-xs font-mono font-medium transition-colors cursor-pointer"
-            title="Print or Save to 100% Vector PDF via Browser Print (Ultra-lightweight <150KB with clickable links)"
+            type="button"
+            onClick={handleOpenPrintPreview}
+            className="flex items-center space-x-1.5 px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-lg bg-white/10 hover:bg-white/15 border border-white/15 text-white text-xs font-mono font-semibold transition-colors cursor-pointer"
+            title="Preview exact A4 pages, Print, or Save PDF"
           >
-            <Printer className="w-3.5 h-3.5 text-amber-400" />
+            <Printer className="w-3.5 h-3.5 text-amber-300" />
             <span>Print / PDF</span>
           </button>
 
           <button
-            onClick={handleDownloadPDF}
-            disabled={isExportingPdf}
-            className="flex items-center space-x-1.5 px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-white text-xs font-mono font-semibold shadow-lg shadow-[var(--color-accent)]/20 transition-all cursor-pointer disabled:opacity-50"
-            title="Download PDF under 1MB with crisp 192 DPI and active clickable links"
+            type="button"
+            onClick={() => setPdfQualityMode((prev) => (prev === 'under-1mb' ? 'normal' : 'under-1mb'))}
+            className={`hidden md:flex items-center space-x-1.5 px-2.5 py-1.5 sm:py-2 rounded-lg border text-[11px] font-mono font-bold transition-colors cursor-pointer ${
+              pdfQualityMode === 'under-1mb'
+                ? 'bg-emerald-500/15 hover:bg-emerald-500/25 border-emerald-400/40 text-emerald-300'
+                : 'bg-amber-500/15 hover:bg-amber-500/25 border-amber-400/40 text-amber-200'
+            }`}
+            title="Switch between Under 1MB compressed PDF and Normal Full Quality PDF"
           >
-            <Download className="w-3.5 h-3.5" />
-            <span>{isExportingPdf ? 'Exporting...' : 'Download PDF (<1MB)'}</span>
+            <span>{pdfQualityMode === 'under-1mb' ? 'Limit <1MB: ON' : 'Normal Size: ON'}</span>
           </button>
 
           <button
+            type="button"
+            onClick={handleDownloadPDF}
+            disabled={isExportingPdf}
+            className="flex items-center space-x-1.5 px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-[var(--color-accent-ink,#060911)] text-xs font-mono font-bold shadow-lg shadow-[var(--color-accent)]/20 transition-all cursor-pointer disabled:opacity-50"
+            title={
+              pdfQualityMode === 'under-1mb'
+                ? 'Download PDF strictly under 1MB with clickable links'
+                : 'Download Normal Full Quality PDF (1MB limit OFF) with clickable links'
+            }
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span>
+              {isExportingPdf
+                ? 'Exporting...'
+                : pdfQualityMode === 'under-1mb'
+                ? 'Download PDF (<1MB)'
+                : 'Download PDF (Normal)'}
+            </span>
+          </button>
+
+          <button
+            type="button"
             onClick={onClose}
-            className="p-2 rounded-lg bg-white/5 hover:bg-white/10 text-white transition-colors cursor-pointer ml-1 sm:ml-2"
+            className="p-2 rounded-lg bg-white/10 hover:bg-white/20 text-white transition-colors cursor-pointer ml-1 sm:ml-2"
             title="Close Resume Builder"
+            aria-label="Close Resume Builder"
           >
             <X className="w-5 h-5" />
           </button>
@@ -948,27 +1174,55 @@ Software Quality Assurance Engineer`;
           {/* Navigation Control Tabs */}
           <div className="grid grid-cols-4 gap-1 p-1 bg-[#12151C] rounded-xl border border-white/10 text-xs font-mono">
             <button
+              type="button"
               onClick={() => setActiveTab('preview')}
-              className={`py-2 rounded-lg text-center transition-colors cursor-pointer ${activeTab === 'preview' ? 'bg-[var(--color-accent)] text-white font-bold' : 'text-[#9CA3AF] hover:text-white'}`}
+              className={`py-2 rounded-lg text-center transition-colors cursor-pointer ${
+                activeTab === 'preview'
+                  ? 'bg-[var(--color-accent)] text-[var(--color-accent-ink,#060911)] font-extrabold'
+                  : 'text-slate-300 hover:text-white'
+              }`}
             >
               Template
             </button>
             <button
+              type="button"
               onClick={() => setActiveTab('projects-filter')}
-              className={`py-2 rounded-lg text-center transition-colors cursor-pointer relative ${activeTab === 'projects-filter' ? 'bg-[var(--color-accent)] text-white font-bold' : 'text-[#9CA3AF] hover:text-white'}`}
+              className={`py-2 rounded-lg text-center transition-colors cursor-pointer relative ${
+                activeTab === 'projects-filter'
+                  ? 'bg-[var(--color-accent)] text-[var(--color-accent-ink,#060911)] font-extrabold'
+                  : 'text-slate-300 hover:text-white'
+              }`}
             >
               Projects
-              <span className="ml-1 text-[9px] bg-white/20 px-1 rounded-full">{selectedProjectIds.length}</span>
+              <span
+                className={`ml-1 text-[9px] px-1 rounded-full ${
+                  activeTab === 'projects-filter'
+                    ? 'bg-black/20 text-[var(--color-accent-ink,#060911)] font-bold'
+                    : 'bg-white/15 text-slate-200'
+                }`}
+              >
+                {selectedProjectIds.length}
+              </span>
             </button>
             <button
+              type="button"
               onClick={() => setActiveTab('ats-score')}
-              className={`py-2 rounded-lg text-center transition-colors cursor-pointer ${activeTab === 'ats-score' ? 'bg-[var(--color-accent)] text-white font-bold' : 'text-[#9CA3AF] hover:text-white'}`}
+              className={`py-2 rounded-lg text-center transition-colors cursor-pointer ${
+                activeTab === 'ats-score'
+                  ? 'bg-[var(--color-accent)] text-[var(--color-accent-ink,#060911)] font-extrabold'
+                  : 'text-slate-300 hover:text-white'
+              }`}
             >
               ATS ({atsAnalysis.totalScore}%)
             </button>
             <button
+              type="button"
               onClick={() => setActiveTab('cover-letter')}
-              className={`py-2 rounded-lg text-center transition-colors cursor-pointer ${activeTab === 'cover-letter' ? 'bg-[var(--color-accent)] text-white font-bold' : 'text-[#9CA3AF] hover:text-white'}`}
+              className={`py-2 rounded-lg text-center transition-colors cursor-pointer ${
+                activeTab === 'cover-letter'
+                  ? 'bg-[var(--color-accent)] text-[var(--color-accent-ink,#060911)] font-extrabold'
+                  : 'text-slate-300 hover:text-white'
+              }`}
             >
               Cover
             </button>
@@ -1031,12 +1285,20 @@ Software Quality Assurance Engineer`;
                       onClick={() => setFontFamily(f.id as AtsFontFamily)}
                       className={`p-2 rounded-xl border text-left transition-all cursor-pointer ${
                         fontFamily === f.id
-                          ? 'bg-[var(--color-accent)] border-[var(--color-accent)] text-white font-bold shadow-sm'
-                          : 'bg-[#12151C] border-white/10 text-[#9CA3AF] hover:text-white hover:border-white/20'
+                          ? 'bg-[var(--color-accent)] border-[var(--color-accent)] text-[var(--color-accent-ink,#060911)] font-bold shadow-sm'
+                          : 'bg-[#12151C] border-white/10 text-slate-200 hover:text-white hover:border-white/25'
                       }`}
                     >
                       <span className="block text-xs font-bold leading-tight">{f.label}</span>
-                      <span className={`block text-[9px] mt-0.5 ${fontFamily === f.id ? 'text-white/80' : 'text-[#6B7280]'}`}>{f.sub}</span>
+                      <span
+                        className={`block text-[9px] mt-0.5 ${
+                          fontFamily === f.id
+                            ? 'text-[var(--color-accent-ink,#060911)]/80 font-semibold'
+                            : 'text-slate-400'
+                        }`}
+                      >
+                        {f.sub}
+                      </span>
                     </button>
                   ))}
                 </div>
@@ -1154,76 +1416,151 @@ Software Quality Assurance Engineer`;
                 </div>
               </div>
 
-              {/* Extra Download Options */}
-              <div className="pt-2 border-t border-white/10 space-y-2">
+              {/* Extra Download Options & PDF Size/Quality Switcher */}
+              <div className="pt-2 border-t border-white/10 space-y-2.5">
                 <div className="flex items-center justify-between">
-                  <label className="text-xs font-mono text-[#9CA3AF] uppercase">Export Formats</label>
-                  <span className="text-[10px] font-mono text-emerald-400">PDF & Word Ready</span>
+                  <label className="text-xs font-mono text-slate-200 font-bold uppercase">Export Formats &amp; PDF Size</label>
+                  <span className="text-[10px] font-mono text-emerald-400 font-semibold">PDF &amp; Word Ready</span>
+                </div>
+
+                {/* Toggleable PDF Size & Quality Mode */}
+                <div className="p-2.5 rounded-xl bg-[#12151C] border border-white/10 space-y-2">
+                  <div className="flex items-center justify-between text-[11px] font-mono">
+                    <span className="text-slate-200 font-semibold">PDF Size &amp; Quality Mode</span>
+                    {lastPdfInfo && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 font-bold">
+                        Last: {lastPdfInfo.sizeLabel}
+                      </span>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-2 gap-1.5 font-mono text-[11px]">
+                    <button
+                      type="button"
+                      onClick={() => setPdfQualityMode('under-1mb')}
+                      className={`p-2 rounded-lg border text-left transition-all cursor-pointer ${
+                        pdfQualityMode === 'under-1mb'
+                          ? 'bg-[var(--color-accent)] border-[var(--color-accent)] text-[var(--color-accent-ink,#060911)] font-bold shadow-sm'
+                          : 'bg-[#0B0D12] border-white/10 text-slate-200 hover:border-white/25 hover:text-white'
+                      }`}
+                    >
+                      <span className="block text-xs font-bold leading-tight">Under 1 MB</span>
+                      <span
+                        className={`block text-[9px] mt-0.5 ${
+                          pdfQualityMode === 'under-1mb'
+                            ? 'text-[var(--color-accent-ink,#060911)]/80 font-semibold'
+                            : 'text-slate-400'
+                        }`}
+                      >
+                        1MB Cap ON • Portal Safe
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setPdfQualityMode('normal')}
+                      className={`p-2 rounded-lg border text-left transition-all cursor-pointer ${
+                        pdfQualityMode === 'normal'
+                          ? 'bg-[var(--color-accent)] border-[var(--color-accent)] text-[var(--color-accent-ink,#060911)] font-bold shadow-sm'
+                          : 'bg-[#0B0D12] border-white/10 text-slate-200 hover:border-white/25 hover:text-white'
+                      }`}
+                    >
+                      <span className="block text-xs font-bold leading-tight">Normal Quality</span>
+                      <span
+                        className={`block text-[9px] mt-0.5 ${
+                          pdfQualityMode === 'normal'
+                            ? 'text-[var(--color-accent-ink,#060911)]/80 font-semibold'
+                            : 'text-slate-400'
+                        }`}
+                      >
+                        1MB Cap OFF • 2.5x HD
+                      </span>
+                    </button>
+                  </div>
                 </div>
 
                 <div className="flex flex-col gap-2">
                   <button
+                    type="button"
                     onClick={handleDownloadDOCX}
-                    className="w-full flex items-center justify-between py-2 px-3 bg-blue-600/10 hover:bg-blue-600/20 border border-blue-500/30 rounded-lg text-xs font-mono text-blue-200 transition-colors cursor-pointer text-left"
+                    className="w-full flex items-center justify-between py-2 px-3 bg-blue-600/15 hover:bg-blue-600/25 border border-blue-500/35 rounded-lg text-xs font-mono text-blue-100 transition-colors cursor-pointer text-left"
                     title="Clean ATS table layout that never breaks in Word"
                   >
                     <div className="flex items-center space-x-2">
-                      <FileText className="w-4 h-4 text-blue-400 shrink-0" />
+                      <FileText className="w-4 h-4 text-blue-300 shrink-0" />
                       <div>
                         <div className="font-bold text-white">Download Word (.doc)</div>
-                        <div className="text-[10px] text-blue-300/80">Zero layout break • Native MS Word tables</div>
+                        <div className="text-[10px] text-blue-200">Zero layout break • Native MS Word tables</div>
                       </div>
                     </div>
-                    <Download className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                    <Download className="w-3.5 h-3.5 text-blue-300 shrink-0" />
                   </button>
 
                   <button
+                    type="button"
                     onClick={handleDownloadPDF}
                     disabled={isExportingPdf}
-                    className="w-full flex items-center justify-between py-2 px-3 bg-[var(--color-accent)]/10 hover:bg-[var(--color-accent)]/20 border border-[var(--color-accent)]/30 rounded-lg text-xs font-mono text-[var(--color-accent)] transition-colors cursor-pointer text-left disabled:opacity-50"
-                    title="Direct PDF download with clickable links and under 1MB size"
+                    className="w-full flex items-center justify-between py-2 px-3 bg-[var(--color-accent)]/15 hover:bg-[var(--color-accent)]/25 border border-[var(--color-accent)]/40 rounded-lg text-xs font-mono text-white transition-colors cursor-pointer text-left disabled:opacity-50"
+                    title={
+                      pdfQualityMode === 'under-1mb'
+                        ? 'Direct PDF download with clickable links and strictly under 1MB size'
+                        : 'Direct PDF download at full 2.5x normal high quality without 1MB compression'
+                    }
                   >
                     <div className="flex items-center space-x-2">
                       <Download className="w-4 h-4 text-[var(--color-accent)] shrink-0" />
                       <div>
-                        <div className="font-bold text-white">Direct PDF (&lt; 1MB)</div>
-                        <div className="text-[10px] text-gray-300">Clickable links • 192 DPI high sharpness</div>
+                        <div className="font-bold text-white">
+                          {isExportingPdf
+                            ? 'Generating PDF...'
+                            : pdfQualityMode === 'under-1mb'
+                            ? 'Direct PDF (< 1MB)'
+                            : 'Direct PDF (Normal Size)'}
+                        </div>
+                        <div className="text-[10px] text-slate-200">
+                          {pdfQualityMode === 'under-1mb'
+                            ? 'Clickable links • Compressed under 1MB'
+                            : 'Clickable links • 2.5x Ultra-Sharp Quality'}
+                        </div>
                       </div>
                     </div>
-                    <span className="text-[10px] bg-[var(--color-accent)]/20 px-1.5 py-0.5 rounded text-white font-bold">~500KB</span>
+                    <span className="text-[10px] bg-[var(--color-accent)] px-1.5 py-0.5 rounded text-[var(--color-accent-ink,#060911)] font-bold shrink-0">
+                      {pdfQualityMode === 'under-1mb' ? '<1MB' : 'HD Full'}
+                    </span>
                   </button>
 
                   <button
+                    type="button"
                     onClick={handlePrint}
-                    className="w-full flex items-center justify-between py-2 px-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-xs font-mono text-gray-200 transition-colors cursor-pointer text-left"
+                    className="w-full flex items-center justify-between py-2 px-3 bg-white/10 hover:bg-white/15 border border-white/15 rounded-lg text-xs font-mono text-slate-100 transition-colors cursor-pointer text-left"
                     title="Use browser print dialog to save 100% Vector PDF"
                   >
                     <div className="flex items-center space-x-2">
-                      <Printer className="w-4 h-4 text-amber-400 shrink-0" />
+                      <Printer className="w-4 h-4 text-amber-300 shrink-0" />
                       <div>
                         <div className="font-bold text-white">Print / Vector PDF</div>
-                        <div className="text-[10px] text-gray-400">Ctrl+P • 100% Vector & Selectable Text</div>
+                        <div className="text-[10px] text-slate-300">Ctrl+P • 100% Vector &amp; Selectable Text</div>
                       </div>
                     </div>
-                    <span className="text-[10px] bg-amber-400/20 px-1.5 py-0.5 rounded text-amber-300 font-bold">&lt;100KB</span>
+                    <span className="text-[10px] bg-amber-400/20 px-1.5 py-0.5 rounded text-amber-200 font-bold shrink-0">Vector</span>
                   </button>
 
                   <button
+                    type="button"
                     onClick={handleCopyPlainText}
-                    className="w-full flex items-center justify-center space-x-2 py-2 px-3 bg-[#12151C] hover:bg-white/10 border border-white/10 rounded-lg text-xs font-mono text-white transition-colors cursor-pointer"
+                    className="w-full flex items-center justify-center space-x-2 py-2 px-3 bg-[#12151C] hover:bg-white/10 border border-white/15 rounded-lg text-xs font-mono text-white transition-colors cursor-pointer"
                   >
-                    {copiedText ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5 text-amber-400" />}
+                    {copiedText ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5 text-amber-300" />}
                     <span>{copiedText ? 'Copied to Clipboard!' : 'Copy Plain Text ATS'}</span>
                   </button>
                 </div>
 
                 {/* Suggestions / Advice Box */}
-                <div className="mt-2 p-2.5 rounded-lg bg-white/5 border border-white/10 text-[11px] font-sans text-gray-300 space-y-1.5 leading-relaxed">
+                <div className="mt-2 p-2.5 rounded-lg bg-white/5 border border-white/10 text-[11px] font-sans text-slate-200 space-y-1.5 leading-relaxed">
                   <div className="font-bold font-mono text-xs text-amber-300 flex items-center gap-1">
-                    <span>💡 Quality & Format Advice:</span>
+                    <span>💡 Quality &amp; Format Advice:</span>
                   </div>
-                  <ul className="space-y-1 text-[10.5px] text-gray-300 list-disc list-inside">
-                    <li><strong className="text-white">PDF:</strong> All links (LinkedIn, GitHub, Portfolio, Email, Phone) are active &amp; clickable. Size is strictly optimized under 1MB.</li>
+                  <ul className="space-y-1 text-[10.5px] text-slate-200 list-disc list-inside">
+                    <li><strong className="text-white">PDF (&lt;1MB / Normal):</strong> Toggle between strict &lt;1MB portal upload mode and full uncompressed HD quality anytime. All links stay active &amp; clickable.</li>
                     <li><strong className="text-white">Word (.doc):</strong> Created with native Word tables, so job dates and titles never break or overlap when opened in Word or Google Docs.</li>
                     <li><strong className="text-white">Print / Vector:</strong> Best for ATS portals that demand pure vector PDFs without raster compression.</li>
                   </ul>
@@ -1293,7 +1630,7 @@ Software Quality Assurance Engineer`;
                         {isChecked ? (
                           <CheckSquare className="w-4 h-4 text-[var(--color-accent)]" />
                         ) : (
-                          <Square className="w-4 h-4 text-white/30" />
+                          <Square className="w-4 h-4 text-slate-400" />
                         )}
                       </button>
                       <div className="flex-1 min-w-0">
@@ -1383,8 +1720,9 @@ Software Quality Assurance Engineer`;
                   />
                 </div>
                 <button
+                  type="button"
                   onClick={handleCopyCoverLetter}
-                  className="w-full flex items-center justify-center space-x-2 py-2.5 bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-white rounded-lg text-xs font-mono font-bold transition-all cursor-pointer shadow-lg"
+                  className="w-full flex items-center justify-center space-x-2 py-2.5 bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-[var(--color-accent-ink,#060911)] rounded-lg text-xs font-mono font-bold transition-all cursor-pointer shadow-lg"
                 >
                   {copiedCover ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
                   <span>{copiedCover ? 'Cover Letter Copied!' : 'Copy Cover Letter'}</span>
@@ -1443,14 +1781,14 @@ Software Quality Assurance Engineer`;
                       Portfolio: <a href={normalizeUrl(window.location.origin)} target="_blank" rel="noopener noreferrer" className="hover:underline font-semibold" style={{ color: '#c2410c', textDecoration: 'underline' }}>Live Portfolio</a>
                     </span>
                   </p>
-                  <div style={{ height: '1.5px', backgroundColor: '#0f172a', width: '100%' }} />
+                  <div style={{ height: '1.5px', backgroundColor: '#0f172a', width: '100%', marginTop: '3px' }} />
                 </div>
 
                 {/* Career Objective */}
                 <div className="cv-keep-together mb-3.5">
                   <div className="cv-section-heading mb-1.5">
-                    <h2 className="text-[11px] font-bold uppercase text-[#0f172a] leading-[1.35] pb-1">Career Objective</h2>
-                    <div style={{ height: '1.5px', backgroundColor: '#0f172a', width: '100%' }} />
+                    <h2 className="text-[11px] font-bold uppercase text-[#0f172a] leading-[1.45] pb-1.5">Career Objective</h2>
+                    <div style={{ height: '1.5px', backgroundColor: '#0f172a', width: '100%', marginTop: '2px' }} />
                   </div>
                   <p className="text-[10.5px] text-[#111827] leading-[1.44] text-left">{activeCareerObjective}</p>
                 </div>
@@ -1458,12 +1796,12 @@ Software Quality Assurance Engineer`;
                 {/* Technical Skills */}
                 <div className="cv-keep-together mb-3.5">
                   <div className="cv-section-heading mb-1.5">
-                    <h2 className="text-[11px] font-bold uppercase text-[#0f172a] leading-[1.35] pb-1">Technical Skills &amp; Core Competencies</h2>
-                    <div style={{ height: '1.5px', backgroundColor: '#0f172a', width: '100%' }} />
+                    <h2 className="text-[11px] font-bold uppercase text-[#0f172a] leading-[1.45] pb-1.5">Technical Skills &amp; Core Competencies</h2>
+                    <div style={{ height: '1.5px', backgroundColor: '#0f172a', width: '100%', marginTop: '2px' }} />
                   </div>
                   <div className="text-[10.5px]">
                     {SKILL_CATEGORIES.map((cat) => (
-                      <div key={cat.category} className="grid grid-cols-[155px_1fr] gap-x-3 items-start leading-[1.4] mb-1">
+                      <div key={cat.category} className="cv-pdf-item grid grid-cols-[155px_1fr] gap-x-3 items-start leading-[1.4] mb-1">
                         <span className="font-bold text-[#0f172a]">{cat.category}:</span>
                         <span className="text-[#1e293b]">{cat.items.join(', ')}</span>
                       </div>
@@ -1474,8 +1812,8 @@ Software Quality Assurance Engineer`;
                 {/* Professional Experience */}
                 <div className="mb-3.5">
                   <div className="cv-section-heading mb-1.5">
-                    <h2 className="text-[11px] font-bold uppercase text-[#0f172a] leading-[1.35] pb-1">Professional Experience</h2>
-                    <div style={{ height: '1.5px', backgroundColor: '#0f172a', width: '100%' }} />
+                    <h2 className="text-[11px] font-bold uppercase text-[#0f172a] leading-[1.45] pb-1.5">Professional Experience</h2>
+                    <div style={{ height: '1.5px', backgroundColor: '#0f172a', width: '100%', marginTop: '2px' }} />
                   </div>
                   {WORK_EXPERIENCE.map((exp) => {
                     const parsed = exp.highlights.map(parseHighlightItem);
@@ -1519,11 +1857,11 @@ Software Quality Assurance Engineer`;
                 {selectedProjects.length > 0 && (
                   <div className="mb-3.5">
                     <div className="cv-section-heading mb-1.5">
-                      <h2 className="text-[11px] font-bold uppercase text-[#0f172a] leading-[1.35] pb-1">Featured SQA Automation &amp; Testing Projects</h2>
-                      <div style={{ height: '1.5px', backgroundColor: '#0f172a', width: '100%' }} />
+                      <h2 className="text-[11px] font-bold uppercase text-[#0f172a] leading-[1.45] pb-1.5">Featured SQA Automation &amp; Testing Projects</h2>
+                      <div style={{ height: '1.5px', backgroundColor: '#0f172a', width: '100%', marginTop: '2px' }} />
                     </div>
                     {selectedProjects.map((proj) => (
-                      <div key={proj.id} className="cv-keep-together text-[10.5px] mb-2">
+                      <div key={proj.id} className="cv-keep-together cv-pdf-item text-[10.5px] mb-2">
                         <div className="flex justify-between items-start gap-4 font-bold text-[#0f172a] mb-0.5">
                           <span>
                             {proj.title} <span className="text-[9.5px] font-semibold text-[#475569]">({proj.type})</span>
@@ -1541,20 +1879,9 @@ Software Quality Assurance Engineer`;
                           )}
                         </div>
                         <p className="text-[#1e293b] leading-[1.4] text-left mb-0.5">{proj.description}</p>
-                        {(proj.tags || (proj.metrics && proj.metrics.length > 0)) && (
+                        {proj.tags && proj.tags.length > 0 && (
                           <p className="text-[10px] text-[#334155] leading-[1.35]">
-                            {proj.tags && (
-                              <>
-                                <span className="font-bold text-[#0f172a]">Tools:</span> {proj.tags.join(' • ')}
-                              </>
-                            )}
-                            {proj.metrics && proj.metrics.length > 0 && (
-                              <span>
-                                {proj.tags ? '  |  ' : ''}
-                                <span className="font-bold text-[#0f172a]">Impact:</span>{' '}
-                                {proj.metrics.map(m => `${m.label}: ${m.value}`).join(' • ')}
-                              </span>
-                            )}
+                            <span className="font-bold text-[#0f172a]">Tools:</span> {proj.tags.join(' • ')}
                           </p>
                         )}
                       </div>
@@ -1565,11 +1892,11 @@ Software Quality Assurance Engineer`;
                 {/* Education */}
                 <div className="cv-keep-together mb-3.5">
                   <div className="cv-section-heading mb-1.5">
-                    <h2 className="text-[11px] font-bold uppercase text-[#0f172a] leading-[1.35] pb-1">Education &amp; Certifications</h2>
-                    <div style={{ height: '1.5px', backgroundColor: '#0f172a', width: '100%' }} />
+                    <h2 className="text-[11px] font-bold uppercase text-[#0f172a] leading-[1.45] pb-1.5">Education &amp; Certifications</h2>
+                    <div style={{ height: '1.5px', backgroundColor: '#0f172a', width: '100%', marginTop: '2px' }} />
                   </div>
                   {EDUCATION_HISTORY.map((edu) => (
-                    <div key={edu.id} className="text-[10.5px] mb-1.5">
+                    <div key={edu.id} className="cv-pdf-item text-[10.5px] mb-1.5">
                       <div className="flex justify-between items-start gap-4">
                         <span className="font-bold text-[#0f172a]">
                           {edu.degree} <span className="font-semibold text-[#334155]">— {edu.institution}</span>
@@ -1589,14 +1916,14 @@ Software Quality Assurance Engineer`;
 
                 {/* References (grouped cleanly so neither heading nor contact line ever splits across pages) */}
                 {portfolioReferences.length > 0 && (
-                  <div className="cv-keep-together">
+                  <div className="cv-keep-together pb-1">
                     <div className="cv-section-heading mb-1.5">
-                      <h2 className="text-[11px] font-bold uppercase text-[#0f172a] leading-[1.35] pb-1">Professional References</h2>
-                      <div style={{ height: '1.5px', backgroundColor: '#0f172a', width: '100%' }} />
+                      <h2 className="text-[11px] font-bold uppercase text-[#0f172a] leading-[1.45] pb-1.5">Professional References</h2>
+                      <div style={{ height: '1.5px', backgroundColor: '#0f172a', width: '100%', marginTop: '2px' }} />
                     </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5">
+                    <div className="cv-refs-grid grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5 pb-1">
                       {portfolioReferences.map((ref) => (
-                        <div key={ref.id} className="text-[10px] text-[#111827] leading-[1.38]">
+                        <div key={ref.id} className="cv-pdf-item text-[10px] text-[#111827] leading-[1.38] pb-0.5">
                           <p className="font-bold text-[#0f172a]">{ref.name}</p>
                           <p className="text-[#334155]">{ref.role}, {ref.company}</p>
                           <p className="text-[#475569]">{ref.email} | {ref.phone}</p>
@@ -1723,7 +2050,7 @@ Software Quality Assurance Engineer`;
                 <div className="cv-keep-together mb-3.5">
                   <h2 className="cv-section-heading text-[11px] font-bold uppercase border-l-4 pl-2.5 mb-1.5 leading-[1.3]" style={{ color: '#0f172a', borderColor: '#f59e0b' }}>Education</h2>
                   {EDUCATION_HISTORY.map((edu) => (
-                    <div key={edu.id} className="flex justify-between items-start gap-4 text-[10.5px] mb-1">
+                    <div key={edu.id} className="cv-pdf-item flex justify-between items-start gap-4 text-[10.5px] mb-1">
                       <div>
                         <span className="font-bold" style={{ color: '#0f172a' }}>{edu.degree}</span> <span className="font-medium" style={{ color: '#334155' }}>— {edu.institution}</span>
                       </div>
@@ -1734,11 +2061,11 @@ Software Quality Assurance Engineer`;
 
                 {/* References */}
                 {portfolioReferences.length > 0 && (
-                  <div className="cv-keep-together">
+                  <div className="cv-keep-together pb-1">
                     <h2 className="cv-section-heading text-[11px] font-bold uppercase border-l-4 pl-2.5 mb-1.5 leading-[1.3]" style={{ color: '#0f172a', borderColor: '#f59e0b' }}>References</h2>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5">
+                    <div className="cv-refs-grid grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5 pb-1">
                       {portfolioReferences.map((ref) => (
-                        <div key={ref.id} className="text-[10px] leading-[1.38]" style={{ color: '#111827' }}>
+                        <div key={ref.id} className="cv-pdf-item text-[10px] leading-[1.38] pb-0.5" style={{ color: '#111827' }}>
                           <p className="font-bold" style={{ color: '#0f172a' }}>{ref.name}</p>
                           <p style={{ color: '#334155' }}>{ref.role}, {ref.company}</p>
                           <p style={{ color: '#475569' }}>{ref.email} | {ref.phone}</p>
@@ -1851,7 +2178,7 @@ Software Quality Assurance Engineer`;
                 <div className="cv-keep-together mb-3.5">
                   <h2 className="cv-section-heading text-[11px] font-bold uppercase text-[#0f172a] mb-1">Education</h2>
                   {EDUCATION_HISTORY.map((edu) => (
-                    <div key={edu.id} className="flex justify-between items-start gap-4 text-[10.5px] text-[#111827] font-medium mb-1">
+                    <div key={edu.id} className="cv-pdf-item flex justify-between items-start gap-4 text-[10.5px] text-[#111827] font-medium mb-1">
                       <span><span className="font-bold text-[#0f172a]">{edu.degree}</span> — {edu.institution}</span>
                       <span className="text-[10px] font-bold shrink-0 whitespace-nowrap tabular-nums">{edu.period}</span>
                     </div>
@@ -1859,11 +2186,11 @@ Software Quality Assurance Engineer`;
                 </div>
 
                 {portfolioReferences.length > 0 && (
-                  <div className="cv-keep-together">
+                  <div className="cv-keep-together pb-1">
                     <h2 className="cv-section-heading text-[11px] font-bold uppercase text-[#0f172a] mb-1">References</h2>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5">
+                    <div className="cv-refs-grid grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5 pb-1">
                       {portfolioReferences.map((ref) => (
-                        <div key={ref.id} className="text-[10px] text-[#111827] leading-[1.38]">
+                        <div key={ref.id} className="cv-pdf-item text-[10px] text-[#111827] leading-[1.38] pb-0.5">
                           <p className="font-bold text-[#0f172a]">{ref.name}</p>
                           <p className="text-[#334155]">{ref.role}, {ref.company}</p>
                           <p className="text-[#475569]">{ref.email} | {ref.phone}</p>
@@ -1912,20 +2239,20 @@ Software Quality Assurance Engineer`;
                 {/* Career Objective */}
                 <div className="cv-keep-together mb-3.5">
                   <div className="cv-section-heading mb-1.5">
-                    <h2 className="text-[11px] font-bold uppercase text-[#0f172a] leading-[1.35] pb-1">Career Objective</h2>
-                    <div style={{ height: '1.5px', backgroundColor: '#0f172a', width: '100%' }} />
+                    <h2 className="text-[11px] font-bold uppercase text-[#0f172a] leading-[1.45] pb-1.5">Career Objective</h2>
+                    <div style={{ height: '1.5px', backgroundColor: '#0f172a', width: '100%', marginTop: '2px' }} />
                   </div>
                   <p className="text-[10.5px] text-[#111827] leading-[1.44] text-left">{activeCareerObjective}</p>
                 </div>
 
                 <div className="cv-keep-together mb-3.5">
                   <div className="cv-section-heading mb-1.5">
-                    <h2 className="text-[11px] font-bold uppercase text-[#0f172a] leading-[1.35] pb-1">Leadership &amp; Technical Capabilities</h2>
-                    <div style={{ height: '1.5px', backgroundColor: '#0f172a', width: '100%' }} />
+                    <h2 className="text-[11px] font-bold uppercase text-[#0f172a] leading-[1.45] pb-1.5">Leadership &amp; Technical Capabilities</h2>
+                    <div style={{ height: '1.5px', backgroundColor: '#0f172a', width: '100%', marginTop: '2px' }} />
                   </div>
                   <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-[10.5px] items-start">
                     {SKILL_CATEGORIES.map((c) => (
-                      <div key={c.category} className="leading-[1.38]">
+                      <div key={c.category} className="cv-pdf-item leading-[1.38]">
                         <span className="font-bold text-[#0f172a]">{c.category}: </span>
                         <span className="text-[#1e293b] font-medium">{c.items.join(', ')}</span>
                       </div>
@@ -1935,8 +2262,8 @@ Software Quality Assurance Engineer`;
 
                 <div className="mb-3.5">
                   <div className="cv-section-heading mb-1.5">
-                    <h2 className="text-[11px] font-bold uppercase text-[#0f172a] leading-[1.35] pb-1">Professional Career History</h2>
-                    <div style={{ height: '1.5px', backgroundColor: '#0f172a', width: '100%' }} />
+                    <h2 className="text-[11px] font-bold uppercase text-[#0f172a] leading-[1.45] pb-1.5">Professional Career History</h2>
+                    <div style={{ height: '1.5px', backgroundColor: '#0f172a', width: '100%', marginTop: '2px' }} />
                   </div>
                   {WORK_EXPERIENCE.map((exp) => {
                     const parsed = exp.highlights.map(parseHighlightItem);
@@ -1979,11 +2306,11 @@ Software Quality Assurance Engineer`;
                 {selectedProjects.length > 0 && (
                   <div className="mb-3.5">
                     <div className="cv-section-heading mb-1.5">
-                      <h2 className="text-[11px] font-bold uppercase text-[#0f172a] leading-[1.35] pb-1">Key Deliverables &amp; Projects</h2>
-                      <div style={{ height: '1.5px', backgroundColor: '#0f172a', width: '100%' }} />
+                      <h2 className="text-[11px] font-bold uppercase text-[#0f172a] leading-[1.45] pb-1.5">Key Deliverables &amp; Projects</h2>
+                      <div style={{ height: '1.5px', backgroundColor: '#0f172a', width: '100%', marginTop: '2px' }} />
                     </div>
                     {selectedProjects.map((p) => (
-                      <div key={p.id} className="cv-keep-together text-[10.5px] mb-1.5">
+                      <div key={p.id} className="cv-keep-together cv-pdf-item text-[10.5px] mb-1.5">
                         <div className="flex justify-between items-start gap-4 mb-0.5">
                           <span className="font-bold text-[#0f172a]">{p.title}</span>
                           {p.link && (
@@ -2006,11 +2333,11 @@ Software Quality Assurance Engineer`;
 
                 <div className="cv-keep-together mb-3.5">
                   <div className="cv-section-heading mb-1.5">
-                    <h2 className="text-[11px] font-bold uppercase text-[#0f172a] leading-[1.35] pb-1">Education</h2>
-                    <div style={{ height: '1.5px', backgroundColor: '#0f172a', width: '100%' }} />
+                    <h2 className="text-[11px] font-bold uppercase text-[#0f172a] leading-[1.45] pb-1.5">Education</h2>
+                    <div style={{ height: '1.5px', backgroundColor: '#0f172a', width: '100%', marginTop: '2px' }} />
                   </div>
                   {EDUCATION_HISTORY.map((e) => (
-                    <div key={e.id} className="flex justify-between items-start gap-4 text-[10.5px] text-[#111827] mb-1">
+                    <div key={e.id} className="cv-pdf-item flex justify-between items-start gap-4 text-[10.5px] text-[#111827] mb-1">
                       <span><span className="font-bold text-[#0f172a]">{e.degree}</span> — {e.institution}</span>
                       <span className="text-[10px] font-bold shrink-0 whitespace-nowrap tabular-nums">{e.period}</span>
                     </div>
@@ -2018,14 +2345,14 @@ Software Quality Assurance Engineer`;
                 </div>
 
                 {portfolioReferences.length > 0 && (
-                  <div className="cv-keep-together">
+                  <div className="cv-keep-together pb-1">
                     <div className="cv-section-heading mb-1.5">
-                      <h2 className="text-[11px] font-bold uppercase text-[#0f172a] leading-[1.35] pb-1">References</h2>
-                      <div style={{ height: '1.5px', backgroundColor: '#0f172a', width: '100%' }} />
+                      <h2 className="text-[11px] font-bold uppercase text-[#0f172a] leading-[1.45] pb-1.5">References</h2>
+                      <div style={{ height: '1.5px', backgroundColor: '#0f172a', width: '100%', marginTop: '2px' }} />
                     </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5">
+                    <div className="cv-refs-grid grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5 pb-1">
                       {portfolioReferences.map((ref) => (
-                        <div key={ref.id} className="text-[10px] text-[#111827] leading-[1.38]">
+                        <div key={ref.id} className="cv-pdf-item text-[10px] text-[#111827] leading-[1.38] pb-0.5">
                           <p className="font-bold text-[#0f172a]">{ref.name}</p>
                           <p className="text-[#334155]">{ref.role}, {ref.company}</p>
                           <p className="text-[#475569]">{ref.email} | {ref.phone}</p>
@@ -2159,7 +2486,7 @@ Software Quality Assurance Engineer`;
                   {EDUCATION_HISTORY.map((edu) => (
                     <div
                       key={edu.id}
-                      className="flex justify-between items-start gap-4 text-[10.5px] text-[#111827] font-medium mb-1"
+                      className="cv-pdf-item flex justify-between items-start gap-4 text-[10.5px] text-[#111827] font-medium mb-1"
                     >
                       <span>
                         <span className="font-bold text-[#0f172a]">{edu.degree}</span> <span className="font-semibold text-[#334155]">— {edu.institution}</span>
@@ -2170,11 +2497,11 @@ Software Quality Assurance Engineer`;
                 </div>
 
                 {portfolioReferences.length > 0 && (
-                  <div className="cv-keep-together">
+                  <div className="cv-keep-together pb-1">
                     <h2 className="cv-section-heading text-[11px] font-bold uppercase mb-1" style={{ color: '#ea580c' }}>References</h2>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5">
+                    <div className="cv-refs-grid grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5 pb-1">
                       {portfolioReferences.map((ref) => (
-                        <div key={ref.id} className="text-[10px] text-[#111827] leading-[1.38]">
+                        <div key={ref.id} className="cv-pdf-item text-[10px] text-[#111827] leading-[1.38] pb-0.5">
                           <p className="font-bold text-[#0f172a]">{ref.name}</p>
                           <p className="text-[#334155]">{ref.role}, {ref.company}</p>
                           <p className="text-[#475569]">{ref.email} | {ref.phone}</p>
@@ -2191,6 +2518,24 @@ Software Quality Assurance Engineer`;
         </div>
 
       </div>
+
+      <PrintPreviewModal
+        isOpen={isPrintPreviewOpen}
+        onClose={() => setIsPrintPreviewOpen(false)}
+        title="ATS Resume"
+        fileName={`${getCvBaseFileName()}.pdf`}
+        pages={printPreviewPages}
+        margin={[12, 13, 12, 13]}
+        isLoading={isGeneratingPrintPreview}
+        isExportingPdf={isExportingPdf}
+        pdfQualityMode={pdfQualityMode}
+        onTogglePdfQualityMode={() =>
+          setPdfQualityMode((prev) => (prev === 'under-1mb' ? 'normal' : 'under-1mb'))
+        }
+        onDownloadPdf={handleDownloadPDF}
+        onPrintNow={handlePrint}
+        lastPdfInfo={lastPdfInfo}
+      />
     </div>
   );
 }

@@ -3,6 +3,7 @@
 
 :root {
   --color-accent: #00D2FF;
+  --color-accent-ink: #060911;
   --color-accent-light: #38BDF8;
   --color-accent-hover: #0284C7;
   --color-accent-glow: rgba(0, 210, 255, 0.28);
@@ -18,6 +19,7 @@
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
 
   --color-accent: var(--color-accent, #00D2FF);
+  --color-accent-ink: var(--color-accent-ink, #060911);
   --color-accent-light: var(--color-accent-light, #38BDF8);
   --color-accent-hover: var(--color-accent-hover, #0284C7);
   --color-dark-bg: var(--color-dark-bg, #080B11);
@@ -151,6 +153,54 @@ body {
   animation: floatFast 3.2s ease-in-out infinite;
 }
 
+/* Screen + PDF Export Pagination Utilities */
+.cv-section-heading {
+  break-after: avoid;
+  page-break-after: avoid;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+.cv-keep-together,
+.cv-pdf-item,
+.cv-pdf-row {
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+.pdf-page-spacer {
+  display: block !important;
+  width: 100% !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: none !important;
+  background: transparent !important;
+}
+
+.cv-pdf-exporting {
+  padding: 0 0 16px 0 !important;
+  margin: 0 !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  min-height: auto !important;
+  overflow: visible !important;
+  box-shadow: none !important;
+  border: none !important;
+  border-radius: 0 !important;
+  background-color: #ffffff !important;
+  color: #111827 !important;
+  font-variant-ligatures: none !important;
+}
+
+.cv-pdf-exporting * {
+  box-sizing: border-box !important;
+  font-variant-ligatures: none !important;
+}
+
+.cv-pdf-exporting .cv-refs-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+}
+
 /* Print CSS setup for ATS Resume and AI Cover Letter Export */
 @media print {
   html, body {
@@ -208,6 +258,10 @@ body {
     min-height: auto !important;
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
+  }
+
+  .print-only-resume .cv-refs-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
   }
 
   /* Cover Letter Print Layout */
@@ -279,6 +333,8 @@ body {
   }
 
   .cv-keep-together,
+  .cv-pdf-item,
+  .cv-pdf-row,
   .print-only-resume li,
   .print-only-resume tr,
   .print-cover-letter-root p,

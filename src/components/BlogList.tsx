@@ -288,7 +288,7 @@ export default function BlogList({ onSelectPost }: BlogListProps) {
                 <div className="absolute inset-0 bg-gradient-to-t from-[#12151C] via-transparent to-transparent lg:bg-gradient-to-r lg:from-transparent lg:to-[#12151C]" />
                 
                 <div className="absolute top-4 left-4 z-10 flex items-center space-x-2">
-                  <span className="px-3 py-1 rounded-full bg-[var(--color-accent)] text-white font-mono text-xs font-bold uppercase tracking-wider shadow-lg flex items-center space-x-1">
+                  <span className="px-3 py-1 rounded-full bg-[var(--color-accent)] text-[var(--color-accent-ink,#060911)] font-mono text-xs font-bold uppercase tracking-wider shadow-lg flex items-center space-x-1">
                     <Sparkles className="w-3 h-3" />
                     <span>Featured Article</span>
                   </span>
@@ -350,7 +350,7 @@ export default function BlogList({ onSelectPost }: BlogListProps) {
                   <div className="flex items-center space-x-2">
                     <button
                       onClick={() => onSelectPost(featuredArticle.slug)}
-                      className="inline-flex items-center space-x-2 shimmer bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-white font-mono font-bold text-xs px-5 py-2.5 rounded-full shadow-lg shadow-[var(--color-accent)]/20 transition-all hover:scale-105 cursor-pointer"
+                      className="inline-flex items-center space-x-2 shimmer bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-[var(--color-accent-ink,#060911)] font-mono font-bold text-xs px-5 py-2.5 rounded-full shadow-lg shadow-[var(--color-accent)]/20 transition-all hover:scale-105 cursor-pointer"
                     >
                       <span>Read Article</span>
                       <ArrowRight className="w-3.5 h-3.5" />
